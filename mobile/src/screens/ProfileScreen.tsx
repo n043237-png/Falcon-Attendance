@@ -297,13 +297,14 @@ export default function ProfileScreen() {
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.inputLabel}>Phone Number</Text>
+            <Text style={styles.inputLabel}>Phone Number (10 digits)</Text>
             <TextInput
               style={styles.input}
               value={phone}
-              onChangeText={setPhone}
-              keyboardType="phone-pad"
-              placeholder="+91 98765 43210"
+              onChangeText={(text) => setPhone(text.replace(/\D/g, '').slice(0, 10))}
+              keyboardType="number-pad"
+              maxLength={10}
+              placeholder="10-digit mobile number"
               placeholderTextColor="#94A3B8"
             />
 

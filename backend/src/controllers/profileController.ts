@@ -8,15 +8,25 @@ import { NotificationService } from '../services/notificationService';
 import { EmployeeProfileService } from '../services/employeeProfileService';
 import { DocumentService } from '../services/documentService';
 
+const phoneTenDigitSchema = z
+  .string()
+  .transform((val) => val.replace(/\D/g, ''))
+  .refine((val) => val === '' || val.length === 10, {
+    message: 'Phone number must be exactly 10 digits'
+  })
+  .optional()
+  .or(z.literal(''))
+  .or(z.null());
+
 const selfUpdateProfileSchema = z.object({
-  phone: z.string().max(20).optional(),
+  phone: phoneTenDigitSchema,
   name: z.string().min(2).max(100).optional(),
   personalEmail: z.string().email().optional().or(z.literal('')).or(z.null()),
   currentAddress: z.string().max(500).optional().or(z.literal('')).or(z.null()),
   emergencyContactName: z.string().max(100).optional().or(z.literal('')).or(z.null()),
   emergencyContactRelationship: z.string().max(50).optional().or(z.literal('')).or(z.null()),
-  emergencyContactPhone: z.string().max(20).optional().or(z.literal('')).or(z.null()),
-  emergencyContactAltPhone: z.string().max(20).optional().or(z.literal('')).or(z.null()),
+  emergencyContactPhone: phoneTenDigitSchema,
+  emergencyContactAltPhone: phoneTenDigitSchema,
   profilePhotoUrl: z.string().max(1000).nullable().optional().or(z.literal(''))
 });
 

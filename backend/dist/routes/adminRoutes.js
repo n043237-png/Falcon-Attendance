@@ -113,6 +113,7 @@ router.get('/leave', adminLeaveController_1.getAdminLeaves);
 router.patch('/leave/:id/approve', adminLeaveController_1.approveLeave);
 router.patch('/leave/:id/reject', adminLeaveController_1.rejectLeave);
 router.post('/leave/adjust-balance', adminLeaveController_1.adjustEmployeeLeaveBalance);
+router.get('/leave/balance/:employeeId', adminLeaveController_1.getEmployeeLeaveBalance);
 router.get('/leave/adjust-history/:employeeId', adminLeaveController_1.getLeaveAdjustmentHistory);
 router.get('/employees', adminEmployeeController_1.getEmployees);
 router.get('/employees/next-id', adminEmployeeController_1.getNextEmployeeIdHandler);

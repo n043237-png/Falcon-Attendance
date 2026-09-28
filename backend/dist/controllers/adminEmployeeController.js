@@ -16,7 +16,15 @@ const documentService_1 = require("../services/documentService");
 const createEmployeeSchema = zod_1.z.object({
     name: zod_1.z.string().min(2).max(100),
     email: zod_1.z.string().email(),
-    phone: zod_1.z.string().max(20).optional(),
+    phone: zod_1.z
+        .string()
+        .transform((val) => val.replace(/\D/g, ''))
+        .refine((val) => val === '' || val.length === 10, {
+        message: 'Phone number must be exactly 10 digits'
+    })
+        .optional()
+        .or(zod_1.z.literal(''))
+        .or(zod_1.z.null()),
     department: zod_1.z.string().max(100).optional(),
     designation: zod_1.z.string().max(100).optional(),
     joiningDate: zod_1.z
@@ -151,9 +159,13 @@ const getEmployees = async (req, res) => {
              s.name as "shiftName",
              s.code as "shiftCode",
              s.start_time as "shiftStartTime",
-             s.end_time as "shiftEndTime"
+             s.end_time as "shiftEndTime",
+             lb.current_balance::float as "leaveBalance",
+             lb.accrued_leave::float as "accruedLeave",
+             lb.used_paid_leave::float as "usedPaidLeave"
       FROM users u
       LEFT JOIN shifts s ON s.id = u.shift_id
+      LEFT JOIN leave_balances lb ON lb.employee_id = u.id AND lb.year = EXTRACT(YEAR FROM CURRENT_DATE)
       ${filterQuery}
       ORDER BY u.id DESC
       LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}
@@ -169,6 +181,11 @@ const getEmployees = async (req, res) => {
                 rec.provisionalEndDate = new Date(rec.provisionalEndDate).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
             }
             rec.roles = Array.isArray(rec.roles) ? rec.roles : [rec.role || 'employee'];
+            rec.leaveBalances = rec.leaveBalance !== null && rec.leaveBalance !== undefined ? {
+                currentBalance: rec.leaveBalance,
+                accruedLeave: rec.accruedLeave || 0,
+                usedPaidLeave: rec.usedPaidLeave || 0
+            } : { currentBalance: 0, accruedLeave: 0, usedPaidLeave: 0 };
             return rec;
         });
         res.json({

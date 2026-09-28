@@ -13,7 +13,15 @@ import { DocumentService } from '../services/documentService';
 const createEmployeeSchema = z.object({
   name: z.string().min(2).max(100),
   email: z.string().email(),
-  phone: z.string().max(20).optional(),
+  phone: z
+    .string()
+    .transform((val) => val.replace(/\D/g, ''))
+    .refine((val) => val === '' || val.length === 10, {
+      message: 'Phone number must be exactly 10 digits'
+    })
+    .optional()
+    .or(z.literal(''))
+    .or(z.null()),
   department: z.string().max(100).optional(),
   designation: z.string().max(100).optional(),
   joiningDate: z

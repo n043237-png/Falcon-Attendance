@@ -95,13 +95,14 @@ export default function AddEmployeeScreen({ navigation, route }: any) {
           onChangeText={(text) => setFormData({ ...formData, password: text })}
         />
 
-        <Text style={styles.label}>Phone Number</Text>
+        <Text style={styles.label}>Phone Number (10 digits)</Text>
         <TextInput
           style={styles.input}
-          placeholder="+1234567890"
-          keyboardType="phone-pad"
+          placeholder="10-digit mobile number"
+          keyboardType="number-pad"
+          maxLength={10}
           value={formData.phone}
-          onChangeText={(text) => setFormData({ ...formData, phone: text })}
+          onChangeText={(text) => setFormData({ ...formData, phone: text.replace(/\D/g, '').slice(0, 10) })}
         />
 
         <Text style={styles.label}>Department</Text>

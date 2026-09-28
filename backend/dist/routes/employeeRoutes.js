@@ -17,7 +17,7 @@ router.use(auth_1.employeeOnly);
 router.get('/dashboard', async (req, res) => {
     const userId = req.user.id;
     try {
-        const today = new Date().toISOString().split('T')[0];
+        const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
         // Today's attendance
         const todayRes = await (0, db_1.query)(`SELECT * FROM attendance WHERE employee_id = $1 AND attendance_date = $2`, [userId, today]);
         // Leave Balances
@@ -35,11 +35,60 @@ router.get('/dashboard', async (req, res) => {
         const notifRes = await (0, db_1.query)(`SELECT * FROM notifications WHERE employee_id = $1 ORDER BY sent_at DESC LIMIT 5`, [userId]);
         // Assigned Shift
         const assignedShift = await shiftService_1.ShiftService.getEmployeeShift(userId);
+        const now = new Date();
+        const currentYear = now.getFullYear();
+        const currentMonth = now.getMonth() + 1;
+        const startOfMonth = `${currentYear}-${String(currentMonth).padStart(2, '0')}-01`;
+        // Current month attendance stats
+        const monthStatsRes = await (0, db_1.query)(`
+      SELECT 
+        COUNT(*) FILTER (WHERE status = 'PRESENT') as present_count,
+        COUNT(*) FILTER (WHERE status = 'LATE') as late_count,
+        COUNT(*) FILTER (WHERE status = 'HALF_DAY') as half_day_count,
+        COUNT(*) FILTER (WHERE status = 'ABSENT') as absent_count,
+        COUNT(*) FILTER (WHERE status = 'ON_LEAVE') as leave_count,
+        COALESCE(SUM(working_minutes), 0) as total_working_minutes
+      FROM attendance 
+      WHERE employee_id = $1 
+        AND attendance_date >= $2 
+        AND attendance_date <= $3
+    `, [userId, startOfMonth, today]);
+        // User profile info
+        const userRes = await (0, db_1.query)(`
+      SELECT id, name, employee_id as employee_code, email, phone, designation, department, profile_photo_url, role
+      FROM users WHERE id = $1
+    `, [userId]);
+        // Latest payslip
+        const payslipRes = await (0, db_1.query)(`
+      SELECT month, year, file_url as "fileUrl", generated_date as "generatedDate"
+      FROM salary_slips
+      WHERE employee_id = $1
+      ORDER BY year DESC, month DESC
+      LIMIT 1
+    `, [userId]);
+        const mRow = monthStatsRes.rows[0] || {};
+        const presentCount = parseInt(mRow.present_count || '0');
+        const lateCount = parseInt(mRow.late_count || '0');
+        const halfDayCount = parseInt(mRow.half_day_count || '0');
+        const absentCount = parseInt(mRow.absent_count || '0');
+        const leaveCount = parseInt(mRow.leave_count || '0');
+        const totalWorkingMinutes = parseInt(mRow.total_working_minutes || '0');
         res.json({
             today_status: todayRes.rows[0] || null,
             leave_balances,
             recent_notifications: notifRes.rows,
-            assigned_shift: assignedShift
+            assigned_shift: assignedShift,
+            profile: userRes.rows[0] || null,
+            month_stats: {
+                present: presentCount,
+                late: lateCount,
+                half_day: halfDayCount,
+                absent: absentCount,
+                leave: leaveCount,
+                total_working_minutes: totalWorkingMinutes,
+                total_days_worked: presentCount + lateCount + halfDayCount
+            },
+            latest_payslip: payslipRes.rows[0] || null
         });
     }
     catch (error) {

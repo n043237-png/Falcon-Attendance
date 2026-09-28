@@ -463,6 +463,11 @@ export default function AdminEmployees() {
       return;
     }
 
+    if (formData.phone && formData.phone.trim().length > 0 && formData.phone.trim().length !== 10) {
+      alert('Phone number must be exactly 10 digits.');
+      return;
+    }
+
     if (!selectedUser && useCustomId) {
       const trimmed = (formData.customEmployeeId || '').trim();
       if (!trimmed) {
@@ -1322,10 +1327,18 @@ export default function AdminEmployees() {
                 <Form.Group>
                   <Form.Label>Phone Number</Form.Label>
                   <Form.Control
+                    type="tel"
+                    inputMode="numeric"
+                    maxLength={10}
                     value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    placeholder="+91 98765 43210"
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value.replace(/\D/g, '').slice(0, 10) })}
+                    placeholder="10-digit mobile number"
                   />
+                  {formData.phone && formData.phone.length > 0 && formData.phone.length < 10 && (
+                    <Form.Text className="text-warning small d-block mt-1">
+                      Must be exactly 10 digits ({formData.phone.length}/10)
+                    </Form.Text>
+                  )}
                 </Form.Group>
               </Col>
               {!selectedUser && (
@@ -1995,7 +2008,15 @@ export default function AdminEmployees() {
                         <Col sm={6}>
                           <label className="text-muted small fw-semibold">Mobile Phone</label>
                           {detailEditing ? (
-                            <Form.Control size="sm" value={adminEditProfileForm.phone} onChange={(e) => setAdminEditProfileForm({ ...adminEditProfileForm, phone: e.target.value })} />
+                            <Form.Control
+                              size="sm"
+                              type="tel"
+                              inputMode="numeric"
+                              maxLength={10}
+                              placeholder="10-digit mobile number"
+                              value={adminEditProfileForm.phone}
+                              onChange={(e) => setAdminEditProfileForm({ ...adminEditProfileForm, phone: e.target.value.replace(/\D/g, '').slice(0, 10) })}
+                            />
                           ) : (
                             <div className="p-2 rounded bg-white border small fw-medium">{detailProfile?.phone || '-'}</div>
                           )}
@@ -2081,7 +2102,15 @@ export default function AdminEmployees() {
                         <Col sm={6}>
                           <label className="text-muted small fw-semibold">Emergency Contact Phone</label>
                           {detailEditing ? (
-                            <Form.Control size="sm" value={adminEditProfileForm.emergencyContactPhone} onChange={(e) => setAdminEditProfileForm({ ...adminEditProfileForm, emergencyContactPhone: e.target.value })} />
+                            <Form.Control
+                              size="sm"
+                              type="tel"
+                              inputMode="numeric"
+                              maxLength={10}
+                              placeholder="10-digit number"
+                              value={adminEditProfileForm.emergencyContactPhone}
+                              onChange={(e) => setAdminEditProfileForm({ ...adminEditProfileForm, emergencyContactPhone: e.target.value.replace(/\D/g, '').slice(0, 10) })}
+                            />
                           ) : (
                             <div className="p-2 rounded bg-white border small fw-medium">{detailProfile?.emergencyContactPhone || 'Not set'}</div>
                           )}
@@ -2089,7 +2118,15 @@ export default function AdminEmployees() {
                         <Col sm={6}>
                           <label className="text-muted small fw-semibold">Alternate Emergency Phone</label>
                           {detailEditing ? (
-                            <Form.Control size="sm" value={adminEditProfileForm.emergencyContactAltPhone} onChange={(e) => setAdminEditProfileForm({ ...adminEditProfileForm, emergencyContactAltPhone: e.target.value })} />
+                            <Form.Control
+                              size="sm"
+                              type="tel"
+                              inputMode="numeric"
+                              maxLength={10}
+                              placeholder="10-digit number"
+                              value={adminEditProfileForm.emergencyContactAltPhone}
+                              onChange={(e) => setAdminEditProfileForm({ ...adminEditProfileForm, emergencyContactAltPhone: e.target.value.replace(/\D/g, '').slice(0, 10) })}
+                            />
                           ) : (
                             <div className="p-2 rounded bg-white border small">{detailProfile?.emergencyContactAltPhone || 'Not set'}</div>
                           )}

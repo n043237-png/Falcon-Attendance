@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getLeaveAdjustmentHistory = exports.adjustEmployeeLeaveBalance = exports.rejectLeave = exports.approveLeave = exports.getAdminLeaves = exports.initializeLeaves = exports.isInitialized = void 0;
+exports.getEmployeeLeaveBalance = exports.getLeaveAdjustmentHistory = exports.adjustEmployeeLeaveBalance = exports.rejectLeave = exports.approveLeave = exports.getAdminLeaves = exports.initializeLeaves = exports.isInitialized = void 0;
 const db_1 = require("../db");
 const zod_1 = require("zod");
 const notificationService_1 = require("../services/notificationService");
@@ -94,7 +94,7 @@ const getAdminLeaves = async (req, res) => {
     `, queryParams);
         const total = parseInt(countRes.rows[0].count);
         const histRes = await (0, db_1.query)(`
-      SELECT lr.id, u.name as employee_name, u.employee_id as employee_code, lr.leave_type as "leaveType",
+      SELECT lr.id, lr.employee_id as employee_user_id, u.name as employee_name, u.employee_id as employee_code, lr.leave_type as "leaveType",
              lr.from_date, lr.to_date, lr.days, lr.reason, lr.status, lr.created_at, u.profile_photo_url as profile_photo_url
       FROM leave_requests lr
       JOIN users u ON lr.employee_id = u.id
@@ -107,6 +107,7 @@ const getAdminLeaves = async (req, res) => {
             data: {
                 items: histRes.rows.map(rec => ({
                     id: rec.id,
+                    userId: rec.employee_user_id,
                     employeeName: rec.employee_name,
                     employeeId: rec.employee_code,
                     profilePhotoUrl: rec.profile_photo_url,
@@ -430,3 +431,53 @@ const getLeaveAdjustmentHistory = async (req, res) => {
     }
 };
 exports.getLeaveAdjustmentHistory = getLeaveAdjustmentHistory;
+const getEmployeeLeaveBalance = async (req, res) => {
+    try {
+        const employeeId = parseInt(req.params.employeeId);
+        if (!employeeId || isNaN(employeeId)) {
+            res.status(400).json({ success: false, error: { message: 'Valid employee ID required' } });
+            return;
+        }
+        const year = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }).substring(0, 4);
+        const result = await (0, db_1.query)(`
+      SELECT 
+        id,
+        employee_id as "employeeId",
+        year,
+        accrued_leave::float as "accruedLeave",
+        used_paid_leave::float as "usedPaidLeave",
+        leave_without_pay::float as "leaveWithoutPay",
+        current_balance::float as "currentBalance",
+        last_credit_date as "lastCreditDate"
+      FROM leave_balances
+      WHERE employee_id = $1 AND year = $2
+    `, [employeeId, year]);
+        if (result.rows.length === 0) {
+            res.json({
+                success: true,
+                data: {
+                    employeeId,
+                    year: parseInt(year),
+                    accruedLeave: 0,
+                    usedPaidLeave: 0,
+                    leaveWithoutPay: 0,
+                    currentBalance: 0,
+                    isInitialized: false
+                }
+            });
+            return;
+        }
+        res.json({
+            success: true,
+            data: {
+                ...result.rows[0],
+                isInitialized: true
+            }
+        });
+    }
+    catch (error) {
+        console.error('getEmployeeLeaveBalance error:', error);
+        res.status(500).json({ success: false, error: { message: 'Failed to fetch leave balance' } });
+    }
+};
+exports.getEmployeeLeaveBalance = getEmployeeLeaveBalance;

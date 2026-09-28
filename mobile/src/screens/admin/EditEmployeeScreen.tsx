@@ -92,12 +92,14 @@ export default function EditEmployeeScreen({ route, navigation }: any) {
         </View>
 
         <View style={styles.formGroup}>
-          <Text style={styles.label}>Phone Number</Text>
+          <Text style={styles.label}>Phone Number (10 digits)</Text>
           <TextInput
             style={styles.input}
             value={phone}
-            onChangeText={setPhone}
-            keyboardType="phone-pad"
+            onChangeText={(text) => setPhone(text.replace(/\D/g, '').slice(0, 10))}
+            keyboardType="number-pad"
+            maxLength={10}
+            placeholder="10-digit mobile number"
           />
         </View>
 

@@ -11,15 +11,24 @@ const upload_1 = require("../middlewares/upload");
 const notificationService_1 = require("../services/notificationService");
 const employeeProfileService_1 = require("../services/employeeProfileService");
 const documentService_1 = require("../services/documentService");
+const phoneTenDigitSchema = zod_1.z
+    .string()
+    .transform((val) => val.replace(/\D/g, ''))
+    .refine((val) => val === '' || val.length === 10, {
+    message: 'Phone number must be exactly 10 digits'
+})
+    .optional()
+    .or(zod_1.z.literal(''))
+    .or(zod_1.z.null());
 const selfUpdateProfileSchema = zod_1.z.object({
-    phone: zod_1.z.string().max(20).optional(),
+    phone: phoneTenDigitSchema,
     name: zod_1.z.string().min(2).max(100).optional(),
     personalEmail: zod_1.z.string().email().optional().or(zod_1.z.literal('')).or(zod_1.z.null()),
     currentAddress: zod_1.z.string().max(500).optional().or(zod_1.z.literal('')).or(zod_1.z.null()),
     emergencyContactName: zod_1.z.string().max(100).optional().or(zod_1.z.literal('')).or(zod_1.z.null()),
     emergencyContactRelationship: zod_1.z.string().max(50).optional().or(zod_1.z.literal('')).or(zod_1.z.null()),
-    emergencyContactPhone: zod_1.z.string().max(20).optional().or(zod_1.z.literal('')).or(zod_1.z.null()),
-    emergencyContactAltPhone: zod_1.z.string().max(20).optional().or(zod_1.z.literal('')).or(zod_1.z.null()),
+    emergencyContactPhone: phoneTenDigitSchema,
+    emergencyContactAltPhone: phoneTenDigitSchema,
     profilePhotoUrl: zod_1.z.string().max(1000).nullable().optional().or(zod_1.z.literal(''))
 });
 const changePasswordSchema = zod_1.z.object({
