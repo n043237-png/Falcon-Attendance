@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "node -e \"if(process.platform==='linux'){try{require('@rolldown/binding-linux-x64-gnu')}catch{require('child_process').execSync('npm i @rolldown/binding-linux-x64-gnu --no-save',{stdio:'inherit'})}}\" && tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview"
   },
@@ -28,5 +28,9 @@
     "oxlint": "^1.79.0",
     "typescript": "~6.0.2",
     "vite": "^8.2.2"
+  },
+  "optionalDependencies": {
+    "@rolldown/binding-linux-x64-gnu": "1.2.6",
+    "@rolldown/binding-linux-x64-musl": "1.2.6"
   }
 }
