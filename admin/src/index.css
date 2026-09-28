@@ -649,3 +649,21 @@ p, span, div, label {
   transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* Compact Table & Actions */
+.no-caret::after {
+  display: none !important;
+}
+
+.table-sticky-actions th:last-child,
+.table-sticky-actions td:last-child {
+  position: sticky;
+  right: 0;
+  background-color: #fff;
+  z-index: 2;
+  box-shadow: -4px 0 8px rgba(15, 23, 42, 0.04);
+}
+
+.table-sticky-actions th:last-child {
+  background-color: #F8FAFC !important;
+}
+

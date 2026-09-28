@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Form, Row, Col, Spinner, Alert, Button, Pagination, Modal, Badge, ProgressBar } from 'react-bootstrap';
+import { Table, Form, Row, Col, Spinner, Alert, Button, Pagination, Modal, Badge, ProgressBar, Dropdown } from 'react-bootstrap';
 import {
   Users,
   Search,
@@ -35,7 +35,8 @@ import {
   Save,
   X,
   ShieldCheck,
-  User as UserIcon
+  User as UserIcon,
+  MoreVertical
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import Avatar from '../components/common/Avatar';
@@ -907,7 +908,7 @@ export default function AdminEmployees() {
         ) : (
           <>
             <div className="table-responsive" style={{ border: 'none', borderRadius: 0 }}>
-              <table className="table table-hover mb-0">
+              <table className="table table-hover align-middle table-sticky-actions mb-0">
                 <thead>
                   <tr>
                     <th>Employee</th>
@@ -917,7 +918,7 @@ export default function AdminEmployees() {
                     <th>Role</th>
                     <th>Status</th>
                     <th>Job Status</th>
-                    <th className="text-end">Actions</th>
+                    <th className="text-end" style={{ width: '230px', minWidth: '230px' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -997,84 +998,108 @@ export default function AdminEmployees() {
                             </span>
                           )}
                         </td>
-                        <td className="text-end">
-                          <div className="d-inline-flex gap-2">
-                            {r.jobStatus === 'Provisional' && (
-                              <>
-                                <button
-                                  className="btn btn-outline-success btn-sm d-inline-flex align-items-center gap-1"
-                                  onClick={() => openPermanentModal(r)}
-                                  title="Mark as Permanent"
-                                >
-                                  <CheckCircle size={13} />
-                                  <span>Permanent</span>
-                                </button>
-                                <button
-                                  className="btn btn-outline-warning btn-sm d-inline-flex align-items-center gap-1"
-                                  onClick={() => openExtendModal(r)}
-                                  title="Extend Provisional Period"
-                                >
-                                  <Calendar size={13} />
-                                  <span>Extend</span>
-                                </button>
-                              </>
-                            )}
+                        <td className="text-end" style={{ width: '230px', minWidth: '230px' }}>
+                          <div className="d-inline-flex align-items-center gap-1.5">
                             <button
-                              className="btn btn-secondary btn-sm"
+                              className="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-1 px-2 py-1"
                               onClick={() => openDetail(r)}
                               title="View details"
+                              style={{ fontSize: '12.5px', height: '30px' }}
                             >
                               <Eye size={13} />
                               <span>View</span>
                             </button>
                             <button
-                              className="btn btn-outline-primary btn-sm d-inline-flex align-items-center gap-1"
+                              className="btn btn-outline-primary btn-sm d-inline-flex align-items-center gap-1 px-2 py-1"
                               onClick={() => openAdjustLeave(r, r.leaveBalances?.currentBalance ?? 0)}
                               title="Adjust Leave Balance"
+                              style={{ fontSize: '12.5px', height: '30px' }}
                             >
                               <CalendarPlus size={13} />
                               <span>Leave</span>
                             </button>
                             <button
-                              className="btn btn-secondary btn-sm"
+                              className="btn btn-primary btn-sm d-inline-flex align-items-center gap-1 px-2.5 py-1"
                               onClick={() => openEdit(r)}
                               title="Edit employee"
+                              style={{ fontSize: '12.5px', height: '30px' }}
                             >
                               <Edit2 size={13} />
                               <span>Edit</span>
                             </button>
-                            <button
-                              className={`btn btn-sm ${r.status === 'active' ? 'btn-outline-danger' : 'btn-success'}`}
-                              onClick={() => handleToggleStatus(r)}
-                              title={r.status === 'active' ? 'Deactivate' : 'Activate'}
-                            >
-                              {r.status === 'active' ? <UserX size={13} /> : <UserCheck size={13} />}
-                              <span>{r.status === 'active' ? 'Deactivate' : 'Activate'}</span>
-                            </button>
-                            <button
-                              className="btn btn-secondary btn-sm"
-                              onClick={() => handleResetPassword(r)}
-                              title="Reset password"
-                            >
-                              <Key size={13} />
-                              <span>Reset</span>
-                            </button>
-                            <button
-                              className="btn btn-outline-danger btn-sm"
-                              onClick={() => handleDeleteEmployee(r)}
-                              disabled={r.id === currentUser?.id}
-                              title={r.id === currentUser?.id ? 'Cannot delete yourself' : 'Delete employee completely'}
-                            >
-                              <Trash2 size={13} />
-                              <span>Delete</span>
-                            </button>
+
+                            <Dropdown align="end" className="d-inline-block">
+                              <Dropdown.Toggle
+                                variant="light"
+                                size="sm"
+                                className="no-caret d-inline-flex align-items-center justify-content-center p-0 border bg-white"
+                                style={{ width: '30px', height: '30px', borderRadius: '6px' }}
+                                title="More actions"
+                              >
+                                <MoreVertical size={15} className="text-secondary" />
+                              </Dropdown.Toggle>
+
+                              <Dropdown.Menu style={{ fontSize: '13px', minWidth: '190px' }} className="shadow border py-1">
+                                {r.jobStatus === 'Provisional' && (
+                                  <>
+                                    <Dropdown.Item
+                                      onClick={() => openPermanentModal(r)}
+                                      className="d-flex align-items-center gap-2 text-success py-1.5"
+                                    >
+                                      <CheckCircle size={14} />
+                                      <span>Mark as Permanent</span>
+                                    </Dropdown.Item>
+                                    <Dropdown.Item
+                                      onClick={() => openExtendModal(r)}
+                                      className="d-flex align-items-center gap-2 text-warning py-1.5"
+                                    >
+                                      <Calendar size={14} />
+                                      <span>Extend Provisional</span>
+                                    </Dropdown.Item>
+                                    <Dropdown.Divider className="my-1" />
+                                  </>
+                                )}
+                                <Dropdown.Item
+                                  onClick={() => handleToggleStatus(r)}
+                                  className="d-flex align-items-center gap-2 py-1.5"
+                                >
+                                  {r.status === 'active' ? (
+                                    <>
+                                      <UserX size={14} className="text-warning" />
+                                      <span>Deactivate Employee</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <UserCheck size={14} className="text-success" />
+                                      <span>Activate Employee</span>
+                                    </>
+                                  )}
+                                </Dropdown.Item>
+                                <Dropdown.Item
+                                  onClick={() => handleResetPassword(r)}
+                                  className="d-flex align-items-center gap-2 py-1.5"
+                                >
+                                  <Key size={14} className="text-muted" />
+                                  <span>Reset Password</span>
+                                </Dropdown.Item>
+                                <Dropdown.Divider className="my-1" />
+                                <Dropdown.Item
+                                  onClick={() => handleDeleteEmployee(r)}
+                                  disabled={r.id === currentUser?.id}
+                                  className="d-flex align-items-center gap-2 text-danger py-1.5"
+                                >
+                                  <Trash2 size={14} />
+                                  <span>Delete Employee</span>
+                                </Dropdown.Item>
+                              </Dropdown.Menu>
+                            </Dropdown>
                           </div>
                         </td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={6} className="text-center py-5 text-muted">
+                      <td colSpan={8} className="text-center py-5 text-muted">
                         No employees found matching the filters.
                       </td>
                     </tr>
