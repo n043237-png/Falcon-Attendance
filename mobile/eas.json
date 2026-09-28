@@ -14,13 +14,13 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://falcon-attendance.onrender.com"
+        "EXPO_PUBLIC_API_URL": "https://falcon-attendance-bcyo.onrender.com"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://falcon-attendance.onrender.com"
+        "EXPO_PUBLIC_API_URL": "https://falcon-attendance-bcyo.onrender.com"
       }
     }
   },
