@@ -57,6 +57,9 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     );
 
     // Don't send the password hash back
+    if (user.email) {
+      user.email = user.email.toLowerCase().trim();
+    }
     const { password_hash, ...userWithoutPassword } = user;
     let photoUrl = user.profile_photo_url;
     if (photoUrl && typeof photoUrl === 'string' && photoUrl.startsWith('/')) {
@@ -102,6 +105,9 @@ export const getMe = async (req: AuthRequest, res: Response): Promise<void> => {
     }
 
     const dbUser = result.rows[0];
+    if (dbUser.email) {
+      dbUser.email = dbUser.email.toLowerCase().trim();
+    }
     const rawRoles = dbUser.roles;
     dbUser.roles = Array.isArray(rawRoles)
       ? rawRoles.map((r: any) => String(r).toLowerCase())

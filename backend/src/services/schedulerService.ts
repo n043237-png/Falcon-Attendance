@@ -5,6 +5,22 @@ import { NotificationService } from './notificationService';
 import { checkAndSendLateAttendanceAlerts } from './whatsappService';
 
 export function startScheduler() {
+  // 1-Month Retention Policy: Clean up notifications older than 30 days on startup
+  cleanupExpiredNotifications().catch((err) =>
+    console.error('[Scheduler] Initial notification retention cleanup error:', err)
+  );
+
+  // Daily Notification Retention Cleanup - Runs every night at 00:05 AM IST
+  cron.schedule('5 0 * * *', async () => {
+    try {
+      await cleanupExpiredNotifications();
+    } catch (e) {
+      console.error('[Scheduler] Daily notification cleanup error:', e);
+    }
+  }, {
+    timezone: 'Asia/Kolkata'
+  });
+
   // 10:00 AM IST - Daily Morning Attendance Check-In Reminder Push Notification
   cron.schedule('0 10 * * 1-6', async () => {
     try {
@@ -60,7 +76,8 @@ export function startScheduler() {
     timezone: 'Asia/Kolkata'
   });
 
-  // 11:00 AM IST - Daily Late Attendance WhatsApp Alerts
+  // 11:00 AM IST - Daily Late Attendance WhatsApp Alerts (Disabled per request)
+  /*
   cron.schedule('0 11 * * *', async () => {
     try {
       console.log('[Scheduler] 11:00 AM IST: Checking late attendance and sending WhatsApp alerts...');
@@ -71,6 +88,7 @@ export function startScheduler() {
   }, {
     timezone: 'Asia/Kolkata'
   });
+  */
 
   // Quarterly Credit Engine - Runs every day at 00:01
   cron.schedule('1 0 * * *', async () => {
@@ -140,14 +158,17 @@ export function startScheduler() {
     }
   });
 
-  // Daily Attendance Processing - Runs every 15 minutes
-  cron.schedule('*/15 * * * *', async () => {
+  // Daily Attendance Processing - Runs every minute
+  cron.schedule('* * * * *', async () => {
     try {
       const now = new Date();
       // Current date in IST
       const dateStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
       // Current time in IST (HH:MM:SS)
       const timeStr = now.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata' }); // 24hr format
+
+      // 0. FIVE-MINUTE REMINDERS: 5 min before late mark (Login) & 5 min before shift end (Logout)
+      await checkAndSendFiveMinuteReminders(dateStr, timeStr);
 
       const settings = await getAttendanceSettings();
 
@@ -248,12 +269,14 @@ export function startScheduler() {
           }
         }
 
-        // WhatsApp Late Attendance Alerts (Idempotent: skips if already sent today)
+        // WhatsApp Late Attendance Alerts (Disabled per request)
+        /*
         try {
           await checkAndSendLateAttendanceAlerts(dateStr);
         } catch (e: any) {
           console.error('[Scheduler] WhatsApp late alert check error:', e);
         }
+        */
       }
 
       // 2. CHECKOUT MISSING PROCESSING
@@ -295,3 +318,168 @@ export function startScheduler() {
     }
   });
 }
+
+/**
+ * Checks for 5-minute pre-late login reminder and 5-minute pre-shift-end logout reminder
+ * Executed every minute across all active shifts
+ */
+export async function checkAndSendFiveMinuteReminders(dateStr: string, timeStr: string) {
+  try {
+    const isWeekend = new Date(dateStr).getDay() === 0;
+    if (isWeekend) return;
+
+    const holidayRes = await query(
+      'SELECT id FROM holidays WHERE holiday_date = $1 AND is_active = true',
+      [dateStr]
+    );
+    if (holidayRes.rows.length > 0) return;
+
+    const shiftsRes = await query('SELECT * FROM shifts WHERE status = $1', ['active']);
+    if (shiftsRes.rows.length === 0) return;
+
+    const [currH, currM] = timeStr.split(':').map(Number);
+    const currentTotalMins = currH * 60 + currM;
+
+    for (const shift of shiftsRes.rows) {
+      // -------------------------------------------------------------
+      // 1. Alert 5 minutes before late mark login
+      // -------------------------------------------------------------
+      const lateThresholdTime = shift.late_after || shift.start_time;
+      const [lateH, lateM] = lateThresholdTime.split(':').map(Number);
+      const lateThresholdTotalMins = lateH * 60 + lateM;
+      const loginAlertMins = (lateThresholdTotalMins - 5 + 1440) % 1440;
+
+      if (currentTotalMins === loginAlertMins) {
+        // Find employees assigned to this shift (or default shift) who haven't checked in today
+        const missingLoginRes = await query(`
+          SELECT u.id, u.name, u.employee_id
+          FROM users u
+          WHERE u.status = 'active'
+            AND (u.shift_id = $1 OR (u.shift_id IS NULL AND $1 = (SELECT id FROM shifts ORDER BY id ASC LIMIT 1)))
+            AND NOT EXISTS (
+              SELECT 1 FROM attendance a 
+              WHERE a.employee_id = u.id AND a.attendance_date = $2 AND a.check_in IS NOT NULL
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM leave_requests lr 
+              WHERE lr.employee_id = u.id 
+                AND lr.status = 'APPROVED' 
+                AND lr.from_date <= $2 
+                AND lr.to_date >= $2
+            )
+        `, [shift.id, dateStr]);
+
+        const format12 = (tStr: string) => {
+          const [h, m] = tStr.split(':').map(Number);
+          const ampm = h >= 12 ? 'PM' : 'AM';
+          const h12 = h % 12 || 12;
+          return `${h12}:${m < 10 ? '0' + m : m} ${ampm}`;
+        };
+        const formattedLate = format12(lateThresholdTime);
+
+        for (const emp of missingLoginRes.rows) {
+          try {
+            const alreadyNotified = await query(
+              `SELECT id FROM notifications 
+               WHERE recipient_user_id = $1 
+                 AND title = '⏰ 5 Mins Left: Check In Soon!' 
+                 AND attendance_date = $2`,
+              [emp.id, dateStr]
+            );
+
+            if (alreadyNotified.rows.length === 0) {
+              await NotificationService.notifyUser(emp.id, {
+                title: '⏰ 5 Mins Left: Check In Soon!',
+                message: `Only 5 minutes left! Please check in before ${formattedLate} to avoid being marked late today.`,
+                type: 'Attendance',
+                priority: 'High',
+                actionUrl: '/home',
+                attendanceDate: dateStr,
+              });
+              console.log(`[Scheduler] 5-min pre-late reminder sent to ${emp.name} (${emp.employee_id}) for shift ${shift.name}`);
+            }
+          } catch (err) {
+            console.error(`Failed to send 5-min pre-late reminder to ${emp.id}:`, err);
+          }
+        }
+      }
+
+      // -------------------------------------------------------------
+      // 2. Alert 5 minutes before shift end / logout
+      // -------------------------------------------------------------
+      const [endH, endM] = shift.end_time.split(':').map(Number);
+      const endTotalMins = endH * 60 + endM;
+      const logoutAlertMins = (endTotalMins - 5 + 1440) % 1440;
+
+      if (currentTotalMins === logoutAlertMins) {
+        // Find employees who checked in today but have not checked out yet
+        const missingLogoutRes = await query(`
+          SELECT u.id, u.name, u.employee_id
+          FROM users u
+          JOIN attendance a ON a.employee_id = u.id AND a.attendance_date = $2
+          WHERE u.status = 'active'
+            AND (u.shift_id = $1 OR (u.shift_id IS NULL AND $1 = (SELECT id FROM shifts ORDER BY id ASC LIMIT 1)))
+            AND a.check_in IS NOT NULL
+            AND a.check_out IS NULL
+        `, [shift.id, dateStr]);
+
+        const format12 = (tStr: string) => {
+          const [h, m] = tStr.split(':').map(Number);
+          const ampm = h >= 12 ? 'PM' : 'AM';
+          const h12 = h % 12 || 12;
+          return `${h12}:${m < 10 ? '0' + m : m} ${ampm}`;
+        };
+        const formattedEnd = format12(shift.end_time);
+
+        for (const emp of missingLogoutRes.rows) {
+          try {
+            const alreadyNotified = await query(
+              `SELECT id FROM notifications 
+               WHERE recipient_user_id = $1 
+                 AND title = '⏰ 5 Mins Left: Shift Ending Soon' 
+                 AND attendance_date = $2`,
+              [emp.id, dateStr]
+            );
+
+            if (alreadyNotified.rows.length === 0) {
+              await NotificationService.notifyUser(emp.id, {
+                title: '⏰ 5 Mins Left: Shift Ending Soon',
+                message: `Your shift ends at ${formattedEnd}. Please remember to check out before leaving.`,
+                type: 'Attendance',
+                priority: 'High',
+                actionUrl: '/home',
+                attendanceDate: dateStr,
+              });
+              console.log(`[Scheduler] 5-min pre-logout reminder sent to ${emp.name} (${emp.employee_id}) for shift ${shift.name}`);
+            }
+          } catch (err) {
+            console.error(`Failed to send 5-min pre-logout reminder to ${emp.id}:`, err);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[Scheduler] Error in checkAndSendFiveMinuteReminders:', err);
+  }
+}
+
+/**
+ * Automatically purge notifications older than 30 days (1 month)
+ */
+export async function cleanupExpiredNotifications(): Promise<number> {
+  try {
+    const res = await query(
+      `DELETE FROM notifications WHERE created_at < (NOW() - INTERVAL '30 days') RETURNING id`
+    );
+    const count = res.rows.length;
+    if (count > 0) {
+      console.log(`[Retention Policy] Purged ${count} notification(s) older than 30 days (1 month).`);
+    }
+    return count;
+  } catch (error) {
+    console.error('[Retention Policy] Failed to cleanup expired notifications:', error);
+    return 0;
+  }
+}
+
+

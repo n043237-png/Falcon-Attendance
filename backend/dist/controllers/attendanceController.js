@@ -402,10 +402,18 @@ const getToday = async (req, res) => {
         const record = existRes.rows[0];
         const holiday = holRes.rows[0];
         const leave = leaveRes.rows[0];
+        // Fetch employee shift details for local reminder sync
+        const userShiftRes = await (0, db_1.query)(`
+      SELECT s.id, s.name, s.start_time as "startTime", s.end_time as "endTime", s.grace_minutes as "graceMinutes", s.late_after as "lateAfter"
+      FROM users u
+      LEFT JOIN shifts s ON s.id = COALESCE(u.shift_id, (SELECT id FROM shifts ORDER BY id ASC LIMIT 1))
+      WHERE u.id = $1
+    `, [employeeId]);
+        const userShift = userShiftRes.rows[0] || null;
         // Compute absolute state
         const result = (0, attendanceStatusService_1.calculateStatus)(today, record, setRes, holiday, leave, new Date());
         if (result.status === 'NOT_MARKED') {
-            res.json({ success: true, data: { attendance: null } });
+            res.json({ success: true, data: { attendance: null, shift: userShift } });
             return;
         }
         res.json({
@@ -421,7 +429,8 @@ const getToday = async (req, res) => {
                     isLate: result.isLate,
                     holidayName: holiday ? holiday.name : null,
                     leaveType: leave ? leave.leave_type : null
-                }
+                },
+                shift: userShift
             }
         });
     }

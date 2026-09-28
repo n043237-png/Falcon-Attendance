@@ -52,7 +52,7 @@ export const getNotifications = async (req: AuthRequest, res: Response): Promise
     // Role-based recipient restriction:
     // Employees ONLY see notifications directed to them or their role.
     // Admins see notifications directed to them or admin role.
-    let filterQuery = `WHERE deleted_at IS NULL AND (recipient_user_id = $1 OR (role = $2 AND recipient_user_id IS NULL))`;
+    let filterQuery = `WHERE deleted_at IS NULL AND created_at >= (NOW() - INTERVAL '30 days') AND (recipient_user_id = $1 OR (role = $2 AND recipient_user_id IS NULL))`;
     const queryParams: any[] = [userId, userRole];
 
     if (search) {
@@ -94,6 +94,7 @@ export const getNotifications = async (req: AuthRequest, res: Response): Promise
        FROM notifications 
        WHERE deleted_at IS NULL 
          AND is_read = FALSE 
+         AND created_at >= (NOW() - INTERVAL '30 days')
          AND (recipient_user_id = $1 OR (role = $2 AND recipient_user_id IS NULL))`,
       [userId, userRole]
     );
@@ -145,6 +146,7 @@ export const getUnreadNotifications = async (req: AuthRequest, res: Response): P
        FROM notifications 
        WHERE deleted_at IS NULL 
          AND is_read = FALSE 
+         AND created_at >= (NOW() - INTERVAL '30 days')
          AND (recipient_user_id = $1 OR (role = $2 AND recipient_user_id IS NULL))`,
       [userId, userRole]
     );
@@ -157,6 +159,7 @@ export const getUnreadNotifications = async (req: AuthRequest, res: Response): P
               created_at as "createdAt"
        FROM notifications
        WHERE deleted_at IS NULL 
+         AND created_at >= (NOW() - INTERVAL '30 days')
          AND (recipient_user_id = $1 OR (role = $2 AND recipient_user_id IS NULL))
        ORDER BY created_at DESC
        LIMIT 10`,

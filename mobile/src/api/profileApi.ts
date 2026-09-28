@@ -67,3 +67,45 @@ export const changePassword = async (token: string, data: any) => {
     return error.response?.data || { success: false, error: { message: 'No internet connection. Please try again.' } };
   }
 };
+
+export const uploadProfilePhoto = async (token: string, uri: string) => {
+  try {
+    const formData = new FormData();
+    const filename = uri.split('/').pop() || 'profile.jpg';
+    const match = /\.(\w+)$/.exec(filename);
+    let type = match ? `image/${match[1].toLowerCase()}` : 'image/jpeg';
+    if (type === 'image/jpg') type = 'image/jpeg';
+
+    formData.append('photo', {
+      uri,
+      name: filename,
+      type,
+    } as any);
+
+    const base = API_URL.endsWith('/') ? API_URL.slice(0, -1) : API_URL;
+    const response = await fetch(`${base}/api/profile/photo`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData,
+    });
+
+    const data = await response.json();
+    return data;
+  } catch (error: any) {
+    return { success: false, error: { message: error.message || 'Failed to upload photo.' } };
+  }
+};
+
+export const deleteProfilePhoto = async (token: string) => {
+  try {
+    const res = await axios.delete(`${API_URL}/api/profile/photo`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    return res.data;
+  } catch (error: any) {
+    return error.response?.data || { success: false, error: { message: 'Failed to delete photo.' } };
+  }
+};
+

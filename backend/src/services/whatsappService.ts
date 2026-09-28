@@ -167,20 +167,6 @@ export async function sendLateAttendanceAlert(employee: LateEmployee, dateStr: s
     console.error('[WhatsApp Service] Failed to save log:', err);
   }
 
-  // 5. Also log an in-app administrative notification for transparency
-  try {
-    await NotificationService.notifyAdmins({
-      title: 'Late Attendance Alert Sent',
-      message: `WhatsApp alert sent for ${employee.name} (${employee.employeeId}) to ${phone}.`,
-      type: 'Attendance',
-      priority: 'High',
-      actionUrl: '/attendance',
-      attendanceDate: dateStr,
-    });
-  } catch (err) {
-    // Non-blocking
-  }
-
   return true;
 }
 

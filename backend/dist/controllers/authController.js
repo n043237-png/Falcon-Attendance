@@ -42,6 +42,9 @@ const login = async (req, res) => {
             : [String(user.role || 'employee').toLowerCase()];
         const token = jsonwebtoken_1.default.sign({ id: user.id, employee_id: user.employee_id, role: user.role, roles }, JWT_SECRET, { expiresIn: '7d' });
         // Don't send the password hash back
+        if (user.email) {
+            user.email = user.email.toLowerCase().trim();
+        }
         const { password_hash, ...userWithoutPassword } = user;
         let photoUrl = user.profile_photo_url;
         if (photoUrl && typeof photoUrl === 'string' && photoUrl.startsWith('/')) {
@@ -81,6 +84,9 @@ const getMe = async (req, res) => {
             return;
         }
         const dbUser = result.rows[0];
+        if (dbUser.email) {
+            dbUser.email = dbUser.email.toLowerCase().trim();
+        }
         const rawRoles = dbUser.roles;
         dbUser.roles = Array.isArray(rawRoles)
             ? rawRoles.map((r) => String(r).toLowerCase())

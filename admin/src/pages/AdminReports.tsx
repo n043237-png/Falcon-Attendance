@@ -164,6 +164,17 @@ export default function AdminReports() {
     return `${h}h ${m}m`;
   };
 
+  const formatLateMinutes = (minutes: number) => {
+    if (!minutes || minutes <= 0) return '';
+    const totalMinutes = Math.round(minutes);
+    const h = Math.floor(totalMinutes / 60);
+    const m = totalMinutes % 60;
+    if (h > 0) {
+      return m > 0 ? `${h}h ${m}m` : `${h}h`;
+    }
+    return `${m}m`;
+  };
+
   const formatTime = (isoString: string) => {
     if (!isoString) return '--:--';
     return new Date(isoString).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
@@ -591,7 +602,11 @@ export default function AdminReports() {
                     <td>
                       <div className="d-flex align-items-center gap-1">
                         {getStatusBadge(d.status)}
-                        {d.isLate && <span className="badge bg-warning">LATE</span>}
+                        {d.isLate && (
+                          <span className="badge bg-warning">
+                            LATE{d.lateMinutes ? ` (${formatLateMinutes(d.lateMinutes)})` : ''}
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td>{formatTime(d.checkIn)}</td>

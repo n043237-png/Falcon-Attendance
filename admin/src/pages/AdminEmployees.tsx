@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Form, Row, Col, Spinner, Alert, Button, Pagination, Modal, Badge, ProgressBar, Dropdown } from 'react-bootstrap';
+import { Table, Form, Row, Col, Spinner, Alert, Button, Pagination, Modal, Badge, ProgressBar, Dropdown, InputGroup } from 'react-bootstrap';
 import {
   Users,
   Search,
@@ -46,6 +46,13 @@ import AdjustLeaveModal from '../components/common/AdjustLeaveModal';
 
 const STANDARD_DEPARTMENTS = ['Lidar', 'BIM', 'GIS', 'HR', 'ADMIN', 'Sales'] as const;
 
+const REPORTING_MANAGERS = [
+  'Amit Malik',
+  'Sajid Zafar',
+  'Anoop Singh',
+  'Darab Ahmed'
+] as const;
+
 const resolveDeptSelection = (dept: string | null | undefined): { selectValue: string; customValue: string } => {
   if (!dept || !dept.trim()) {
     return { selectValue: '', customValue: '' };
@@ -75,6 +82,7 @@ export default function AdminEmployees() {
 
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [showAdminPassword, setShowAdminPassword] = useState(false);
 
   // Modals
   const [showForm, setShowForm] = useState(false);
@@ -146,7 +154,10 @@ export default function AdminEmployees() {
     jobStatus: 'Permanent' as 'Permanent' | 'Provisional',
     provisionalStartDate: '',
     provisionalEndDate: '',
-    shiftId: undefined as number | undefined
+    shiftId: undefined as number | undefined,
+    motherName: '',
+    fatherName: '',
+    reportingManager: ''
   });
 
   // Adjust Leave Balance Modal
@@ -336,7 +347,10 @@ export default function AdminEmployees() {
       jobStatus: 'Permanent',
       provisionalStartDate: '',
       provisionalEndDate: '',
-      shiftId: availableShifts.length > 0 ? availableShifts[0].id : 1
+      shiftId: availableShifts.length > 0 ? availableShifts[0].id : 1,
+      motherName: '',
+      fatherName: '',
+      reportingManager: ''
     });
     setShowForm(true);
   };
@@ -380,7 +394,10 @@ export default function AdminEmployees() {
             ? user.provisionalEndDate.split('T')[0]
             : String(user.provisionalEndDate).slice(0, 10))
         : '',
-      shiftId: user.shiftId || 1
+      shiftId: user.shiftId || 1,
+      motherName: user.motherName || '',
+      fatherName: user.fatherName || '',
+      reportingManager: user.reportingManager || ''
     });
     setShowForm(true);
   };
@@ -627,7 +644,10 @@ export default function AdminEmployees() {
       branchName: p?.branchName || '',
       upiId: p?.upiId || '',
       aadhaarNumber: p?.aadhaarNumber || '',
-      panNumber: p?.panNumber || ''
+      panNumber: p?.panNumber || '',
+      motherName: p?.motherName || '',
+      fatherName: p?.fatherName || '',
+      reportingManager: p?.reportingManager || p?.reportingManagerName || ''
     });
   };
 
@@ -676,12 +696,52 @@ export default function AdminEmployees() {
   };
 
   const handleAdminSaveProfile = async (userId: number) => {
+    // 1. Validate Aadhaar Number (if provided and unmasked)
+    let cleanedAadhaar = adminEditProfileForm.aadhaarNumber ? adminEditProfileForm.aadhaarNumber.trim() : '';
+    if (cleanedAadhaar && !cleanedAadhaar.includes('X') && !cleanedAadhaar.includes('*')) {
+      cleanedAadhaar = cleanedAadhaar.replace(/\D/g, '');
+      if (cleanedAadhaar.length !== 12) {
+        alert('Aadhaar Number must be exactly 12 numeric digits.');
+        return;
+      }
+    }
+
+    // 2. Validate PAN Card Number (if provided and unmasked)
+    let cleanedPan = adminEditProfileForm.panNumber ? adminEditProfileForm.panNumber.trim().toUpperCase() : '';
+    if (cleanedPan && !cleanedPan.includes('X') && !cleanedPan.includes('*')) {
+      const panRegex = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
+      if (!panRegex.test(cleanedPan)) {
+        alert('PAN Card Number must be a valid 10-character PAN (e.g. ABCDE1234F - 5 letters, 4 digits, 1 letter).');
+        return;
+      }
+    }
+
+    // 3. Validate Personal Email (if provided)
+    let cleanedEmail = adminEditProfileForm.personalEmail ? adminEditProfileForm.personalEmail.trim().toLowerCase() : '';
+    if (cleanedEmail) {
+      if (!cleanedEmail.includes('@')) {
+        cleanedEmail = `${cleanedEmail}@gmail.com`;
+      }
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(cleanedEmail)) {
+        alert('Personal Email must be a valid email address (e.g. name@gmail.com).');
+        return;
+      }
+    }
+
+    const payload = {
+      ...adminEditProfileForm,
+      aadhaarNumber: cleanedAadhaar || adminEditProfileForm.aadhaarNumber,
+      panNumber: cleanedPan || adminEditProfileForm.panNumber,
+      personalEmail: cleanedEmail
+    };
+
     try {
       setAdminProfileSaving(true);
       const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/admin/employees/${userId}/profile`, {
         method: 'PATCH',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(adminEditProfileForm)
+        body: JSON.stringify(payload)
       });
       const data = await res.json();
       if (data.success && data.data) {
@@ -904,7 +964,7 @@ export default function AdminEmployees() {
       )}
 
       {/* Employees Table */}
-      <div className="card p-0 overflow-hidden">
+      <div className="card p-0 border shadow-sm" style={{ overflow: 'visible' }}>
         {loading && records.length === 0 ? (
           <div className="text-center py-5">
             <Spinner animation="border" variant="primary" />
@@ -912,7 +972,7 @@ export default function AdminEmployees() {
           </div>
         ) : (
           <>
-            <div className="table-responsive" style={{ border: 'none', borderRadius: 0 }}>
+            <div className="table-responsive-wrapper" style={{ border: 'none', borderRadius: 0, overflow: 'visible' }}>
               <table className="table table-hover align-middle table-sticky-actions mb-0">
                 <thead>
                   <tr>
@@ -928,7 +988,7 @@ export default function AdminEmployees() {
                 </thead>
                 <tbody>
                   {records.length > 0 ? (
-                    records.map((r) => (
+                    records.map((r, index) => (
                       <tr key={r.id}>
                         <td>
                           <div className="d-flex align-items-center gap-3">
@@ -1033,7 +1093,7 @@ export default function AdminEmployees() {
                               <span>Edit</span>
                             </button>
 
-                            <Dropdown align="end" className="d-inline-block">
+                            <Dropdown align="end" drop={index >= records.length - 3 ? 'up' : 'down'} className="d-inline-block position-relative">
                               <Dropdown.Toggle
                                 variant="light"
                                 size="sm"
@@ -1043,8 +1103,10 @@ export default function AdminEmployees() {
                               >
                                 <MoreVertical size={15} className="text-secondary" />
                               </Dropdown.Toggle>
-
-                              <Dropdown.Menu style={{ fontSize: '13px', minWidth: '190px' }} className="shadow border py-1">
+                              <Dropdown.Menu
+                                style={{ fontSize: '13px', minWidth: '190px', zIndex: 1060 }}
+                                className="shadow border py-1"
+                              >
                                 {r.jobStatus === 'Provisional' && (
                                   <>
                                     <Dropdown.Item
@@ -1345,12 +1407,22 @@ export default function AdminEmployees() {
                 <Col md={12}>
                   <Form.Group>
                     <Form.Label>Initial Password (Optional)</Form.Label>
-                    <Form.Control
-                      type="password"
-                      value={formData.password}
-                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      placeholder="Leave blank to auto-generate a secure temporary password"
-                    />
+                    <InputGroup>
+                      <Form.Control
+                        type={showAdminPassword ? 'text' : 'password'}
+                        value={formData.password}
+                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                        placeholder="Leave blank to auto-generate a secure temporary password"
+                      />
+                      <Button
+                        variant="outline-secondary"
+                        onClick={() => setShowAdminPassword((prev) => !prev)}
+                        type="button"
+                        title={showAdminPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showAdminPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </Button>
+                    </InputGroup>
                   </Form.Group>
                 </Col>
               )}
@@ -1465,6 +1537,43 @@ export default function AdminEmployees() {
                       className="user-select-none mb-0"
                     />
                   </div>
+                </Form.Group>
+              </Col>
+
+              <Col md={6}>
+                <Form.Group>
+                  <Form.Label>Mother Name</Form.Label>
+                  <Form.Control
+                    value={formData.motherName}
+                    onChange={(e) => setFormData({ ...formData, motherName: e.target.value })}
+                    placeholder="Enter mother's name"
+                  />
+                </Form.Group>
+              </Col>
+              <Col md={6}>
+                <Form.Group>
+                  <Form.Label>Father Name</Form.Label>
+                  <Form.Control
+                    value={formData.fatherName}
+                    onChange={(e) => setFormData({ ...formData, fatherName: e.target.value })}
+                    placeholder="Enter father's name"
+                  />
+                </Form.Group>
+              </Col>
+              <Col md={12}>
+                <Form.Group>
+                  <Form.Label>Reporting Manager</Form.Label>
+                  <Form.Select
+                    value={formData.reportingManager}
+                    onChange={(e) => setFormData({ ...formData, reportingManager: e.target.value })}
+                  >
+                    <option value="">Select Reporting Manager</option>
+                    {REPORTING_MANAGERS.map((mgr) => (
+                      <option key={mgr} value={mgr}>
+                        {mgr}
+                      </option>
+                    ))}
+                  </Form.Select>
                 </Form.Group>
               </Col>
 
@@ -1977,7 +2086,22 @@ export default function AdminEmployees() {
                         <Col sm={4}>
                           <label className="text-muted small fw-semibold">Aadhaar Number</label>
                           {detailEditing ? (
-                            <Form.Control size="sm" value={adminEditProfileForm.aadhaarNumber} onChange={(e) => setAdminEditProfileForm({ ...adminEditProfileForm, aadhaarNumber: e.target.value })} placeholder="12-digit Aadhaar" />
+                            <div>
+                              <Form.Control
+                                size="sm"
+                                type="text"
+                                inputMode="numeric"
+                                maxLength={12}
+                                value={adminEditProfileForm.aadhaarNumber}
+                                onChange={(e) => setAdminEditProfileForm({ ...adminEditProfileForm, aadhaarNumber: e.target.value.replace(/\D/g, '').slice(0, 12) })}
+                                placeholder="12-digit Aadhaar"
+                              />
+                              {adminEditProfileForm.aadhaarNumber && !adminEditProfileForm.aadhaarNumber.includes('X') && adminEditProfileForm.aadhaarNumber.length < 12 && (
+                                <div className="text-danger small mt-1" style={{ fontSize: '11px' }}>
+                                  12 digits required ({adminEditProfileForm.aadhaarNumber.length}/12)
+                                </div>
+                              )}
+                            </div>
                           ) : (
                             <div className="p-2 rounded bg-white border font-monospace fw-bold small text-primary">{detailProfile?.aadhaarNumber || 'Not set'}</div>
                           )}
@@ -1986,9 +2110,39 @@ export default function AdminEmployees() {
                         <Col sm={4}>
                           <label className="text-muted small fw-semibold">PAN Card Number</label>
                           {detailEditing ? (
-                            <Form.Control size="sm" value={adminEditProfileForm.panNumber} onChange={(e) => setAdminEditProfileForm({ ...adminEditProfileForm, panNumber: e.target.value.toUpperCase() })} placeholder="10-character PAN" />
+                            <div>
+                              <Form.Control
+                                size="sm"
+                                type="text"
+                                maxLength={10}
+                                value={adminEditProfileForm.panNumber}
+                                onChange={(e) => setAdminEditProfileForm({ ...adminEditProfileForm, panNumber: e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 10) })}
+                                placeholder="10-character PAN (e.g. ABCDE1234F)"
+                              />
+                              {adminEditProfileForm.panNumber && !adminEditProfileForm.panNumber.includes('X') && !/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(adminEditProfileForm.panNumber) && (
+                                <div className="text-danger small mt-1" style={{ fontSize: '11px' }}>
+                                  Format: 5 letters, 4 numbers, 1 letter ({adminEditProfileForm.panNumber.length}/10)
+                                </div>
+                              )}
+                            </div>
                           ) : (
                             <div className="p-2 rounded bg-white border font-monospace fw-bold small text-primary">{detailProfile?.panNumber || 'Not set'}</div>
+                          )}
+                        </Col>
+                        <Col sm={6}>
+                          <label className="text-muted small fw-semibold">Mother Name</label>
+                          {detailEditing ? (
+                            <Form.Control size="sm" value={adminEditProfileForm.motherName} onChange={(e) => setAdminEditProfileForm({ ...adminEditProfileForm, motherName: e.target.value })} placeholder="Mother's name" />
+                          ) : (
+                            <div className="p-2 rounded bg-white border fw-medium small">{detailProfile?.motherName || '-'}</div>
+                          )}
+                        </Col>
+                        <Col sm={6}>
+                          <label className="text-muted small fw-semibold">Father Name</label>
+                          {detailEditing ? (
+                            <Form.Control size="sm" value={adminEditProfileForm.fatherName} onChange={(e) => setAdminEditProfileForm({ ...adminEditProfileForm, fatherName: e.target.value })} placeholder="Father's name" />
+                          ) : (
+                            <div className="p-2 rounded bg-white border fw-medium small">{detailProfile?.fatherName || '-'}</div>
                           )}
                         </Col>
                       </Row>
@@ -2022,9 +2176,42 @@ export default function AdminEmployees() {
                           )}
                         </Col>
                         <Col sm={6}>
-                          <label className="text-muted small fw-semibold">Personal Email</label>
+                          <div className="d-flex justify-content-between align-items-center">
+                            <label className="text-muted small fw-semibold mb-0">Personal Email</label>
+                            {detailEditing && (
+                              <button
+                                type="button"
+                                className="btn btn-link p-0 text-decoration-none text-primary fw-semibold"
+                                style={{ fontSize: '11px' }}
+                                onClick={() => {
+                                  const current = (adminEditProfileForm.personalEmail || '').trim();
+                                  if (!current.includes('@')) {
+                                    setAdminEditProfileForm({
+                                      ...adminEditProfileForm,
+                                      personalEmail: current ? `${current}@gmail.com` : '@gmail.com'
+                                    });
+                                  }
+                                }}
+                              >
+                                + @gmail.com
+                              </button>
+                            )}
+                          </div>
                           {detailEditing ? (
-                            <Form.Control size="sm" type="email" value={adminEditProfileForm.personalEmail} onChange={(e) => setAdminEditProfileForm({ ...adminEditProfileForm, personalEmail: e.target.value })} />
+                            <div>
+                              <Form.Control
+                                size="sm"
+                                type="email"
+                                placeholder="name@gmail.com"
+                                value={adminEditProfileForm.personalEmail}
+                                onChange={(e) => setAdminEditProfileForm({ ...adminEditProfileForm, personalEmail: e.target.value.toLowerCase().trim() })}
+                              />
+                              {adminEditProfileForm.personalEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adminEditProfileForm.personalEmail) && (
+                                <div className="text-danger small mt-1" style={{ fontSize: '11px' }}>
+                                  Please enter a valid email address (e.g. name@gmail.com)
+                                </div>
+                              )}
+                            </div>
                           ) : (
                             <div className="p-2 rounded bg-white border small fw-medium">{detailProfile?.personalEmail || 'Not set'}</div>
                           )}
@@ -2199,6 +2386,21 @@ export default function AdminEmployees() {
                         <span>Professional & Organizational Details</span>
                       </h6>
                       <Row className="g-3">
+                        <Col sm={6}>
+                          <label className="text-muted small fw-semibold">Reporting Manager</label>
+                          {detailEditing ? (
+                            <Form.Select size="sm" value={adminEditProfileForm.reportingManager} onChange={(e) => setAdminEditProfileForm({ ...adminEditProfileForm, reportingManager: e.target.value })}>
+                              <option value="">Select Reporting Manager</option>
+                              {REPORTING_MANAGERS.map((mgr) => (
+                                <option key={mgr} value={mgr}>
+                                  {mgr}
+                                </option>
+                              ))}
+                            </Form.Select>
+                          ) : (
+                            <div className="p-2 rounded bg-white border small fw-medium">{detailProfile?.reportingManager || detailProfile?.reportingManagerName || 'Not assigned'}</div>
+                          )}
+                        </Col>
                         <Col sm={6}>
                           <label className="text-muted small fw-semibold">Employment Type</label>
                           {detailEditing ? (

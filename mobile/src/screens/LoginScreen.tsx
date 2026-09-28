@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   Image,
   KeyboardAvoidingView,
   ScrollView,
+  Keyboard,
 } from 'react-native';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
@@ -26,7 +27,24 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [isKeyboardVisible, setKeyboardVisible] = useState(false);
+  const scrollViewRef = useRef<ScrollView>(null);
   const { login } = useAuth();
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      () => setKeyboardVisible(true)
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setKeyboardVisible(false)
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   const handleLogin = async () => {
     if (!identifier.trim() || !password) {
@@ -62,18 +80,38 @@ export default function LoginScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
       >
-        <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          ref={scrollViewRef}
+          contentContainerStyle={[
+            styles.scrollContainer,
+            isKeyboardVisible && styles.scrollContainerKeyboard,
+          ]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           {/* Brand Header */}
-          <View style={styles.brandContainer}>
-            <View style={styles.logoWrap}>
-              <Image source={require('../../assets/logo.png')} style={styles.logo} resizeMode="contain" />
+          {!isKeyboardVisible ? (
+            <View style={styles.brandContainer}>
+              <View style={styles.logoWrap}>
+                <Image source={require('../../assets/logo.png')} style={styles.logo} resizeMode="contain" />
+              </View>
+              <Text style={styles.appTitle}>FALCON</Text>
+              <Text style={styles.appSubtitle}>Smart Attendance & Payroll Portal</Text>
             </View>
-            <Text style={styles.appTitle}>FALCON</Text>
-            <Text style={styles.appSubtitle}>Smart Attendance & Payroll Portal</Text>
-          </View>
+          ) : (
+            <View style={styles.brandContainerCompact}>
+              <View style={styles.logoWrapSmall}>
+                <Image source={require('../../assets/logo.png')} style={styles.logoSmall} resizeMode="contain" />
+              </View>
+              <View style={{ marginLeft: 10 }}>
+                <Text style={styles.appTitleSmall}>FALCON</Text>
+                <Text style={styles.appSubtitleSmall}>Smart Attendance & Payroll</Text>
+              </View>
+            </View>
+          )}
 
           {/* Login Card */}
-          <View style={styles.card}>
+          <View style={[styles.card, isKeyboardVisible && styles.cardCompact]}>
             <Text style={styles.cardHeading}>Sign In</Text>
             <Text style={styles.cardSubheading}>Enter your credentials to access your workplace</Text>
 
@@ -89,6 +127,11 @@ export default function LoginScreen() {
                 onChangeText={setIdentifier}
                 autoCapitalize="none"
                 autoCorrect={false}
+                onFocus={() => {
+                  setTimeout(() => {
+                    scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+                  }, 100);
+                }}
               />
             </View>
 
@@ -103,11 +146,18 @@ export default function LoginScreen() {
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry={!showPassword}
+                autoCapitalize="none"
+                onFocus={() => {
+                  setTimeout(() => {
+                    scrollViewRef.current?.scrollToEnd({ animated: true });
+                  }, 120);
+                }}
               />
               <TouchableOpacity
                 style={styles.eyeBtn}
                 onPress={() => setShowPassword(!showPassword)}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                activeOpacity={0.7}
               >
                 <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color="#64748B" />
               </TouchableOpacity>
@@ -152,9 +202,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 22,
     paddingVertical: 24,
   },
+  scrollContainerKeyboard: {
+    justifyContent: 'flex-start',
+    paddingTop: 10,
+    paddingBottom: 24,
+  },
   brandContainer: {
     alignItems: 'center',
     marginBottom: 24,
+  },
+  brandContainerCompact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+    marginTop: 4,
   },
   logoWrap: {
     width: 90,
@@ -172,9 +234,23 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 4,
   },
+  logoWrapSmall: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
   logo: {
     width: 68,
     height: 68,
+  },
+  logoSmall: {
+    width: 32,
+    height: 32,
   },
   appTitle: {
     fontSize: 24,
@@ -182,10 +258,21 @@ const styles = StyleSheet.create({
     color: '#0F172A',
     letterSpacing: 2,
   },
+  appTitleSmall: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#0F172A',
+    letterSpacing: 1,
+  },
   appSubtitle: {
     fontSize: 13,
     color: '#64748B',
     marginTop: 4,
+    fontWeight: '500',
+  },
+  appSubtitleSmall: {
+    fontSize: 11,
+    color: '#64748B',
     fontWeight: '500',
   },
   card: {
@@ -199,6 +286,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.06,
     shadowRadius: 14,
     elevation: 4,
+  },
+  cardCompact: {
+    padding: 18,
+    borderRadius: 20,
   },
   cardHeading: {
     fontSize: 20,
@@ -239,7 +330,7 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   eyeBtn: {
-    padding: 4,
+    padding: 6,
   },
   loginBtn: {
     flexDirection: 'row',
@@ -277,4 +368,3 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
-

@@ -24,16 +24,23 @@ import {
   applyLeave,
   cancelLeaveRequest,
   validateLeave,
+  getAdminLeaves,
+  approveLeaveRequest,
+  rejectLeaveRequest,
   LeaveBalance,
   LeaveRequest,
   LeaveValidationData,
 } from '../api/leaveApi';
 
 export default function LeaveScreen() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
+  const isAdmin = user?.role === 'admin' || user?.roles?.includes('admin');
 
   const [balance, setBalance] = useState<LeaveBalance | null>(null);
   const [history, setHistory] = useState<LeaveRequest[]>([]);
+  const [adminLeaves, setAdminLeaves] = useState<LeaveRequest[]>([]);
+  const [activeTab, setActiveTab] = useState<'ALL_REQUESTS' | 'MY_REQUESTS'>(isAdmin ? 'ALL_REQUESTS' : 'MY_REQUESTS');
+  const [actionLoading, setActionLoading] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -56,19 +63,31 @@ export default function LeaveScreen() {
     else setLoading(true);
 
     try {
-      const [balRes, histRes] = await Promise.all([
+      const promises: Promise<any>[] = [
         getLeaveBalances(token),
         getLeaveHistory(token, 1),
-      ]);
-      if (balRes.success) setBalance(balRes.data);
-      if (histRes.success && histRes.data?.items) setHistory(histRes.data.items);
+      ];
+      if (isAdmin) {
+        promises.push(getAdminLeaves(token));
+      }
+
+      const results = await Promise.all(promises);
+      const balRes = results[0];
+      const histRes = results[1];
+      const adminRes = isAdmin ? results[2] : null;
+
+      if (balRes?.success) setBalance(balRes.data);
+      if (histRes?.success && histRes.data?.items) setHistory(histRes.data.items);
+      if (adminRes?.success && adminRes.data?.items) {
+        setAdminLeaves(adminRes.data.items);
+      }
     } catch (e) {
       console.error('fetchData error:', e);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [token]);
+  }, [token, isAdmin]);
 
   useEffect(() => {
     fetchData();
@@ -220,7 +239,71 @@ export default function LeaveScreen() {
     ]);
   };
 
-  const filteredHistory = history.filter((item) => {
+  const handleApproveLeave = (id: number, name?: string) => {
+    Alert.alert(
+      'Approve Leave',
+      `Are you sure you want to approve leave for ${name || 'this employee'}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Approve',
+          style: 'default',
+          onPress: async () => {
+            if (!token) return;
+            setActionLoading(id);
+            try {
+              const res = await approveLeaveRequest(token, id);
+              if (res.success) {
+                Alert.alert('Approved', 'Leave request approved successfully.');
+                fetchData(true);
+              } else {
+                Alert.alert('Error', res.error?.message || 'Failed to approve leave.');
+              }
+            } catch (err: any) {
+              Alert.alert('Error', err.message || 'Error approving leave.');
+            } finally {
+              setActionLoading(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleRejectLeave = (id: number, name?: string) => {
+    Alert.alert(
+      'Reject Leave',
+      `Are you sure you want to reject leave for ${name || 'this employee'}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reject',
+          style: 'destructive',
+          onPress: async () => {
+            if (!token) return;
+            setActionLoading(id);
+            try {
+              const res = await rejectLeaveRequest(token, id);
+              if (res.success) {
+                Alert.alert('Rejected', 'Leave request rejected.');
+                fetchData(true);
+              } else {
+                Alert.alert('Error', res.error?.message || 'Failed to reject leave.');
+              }
+            } catch (err: any) {
+              Alert.alert('Error', err.message || 'Error rejecting leave.');
+            } finally {
+              setActionLoading(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const currentList = (isAdmin && activeTab === 'ALL_REQUESTS') ? adminLeaves : history;
+
+  const filteredHistory = currentList.filter((item) => {
     if (statusFilter === 'ALL') return true;
     return item.status?.toUpperCase() === statusFilter;
   });
@@ -242,9 +325,28 @@ export default function LeaveScreen() {
     const badge = getStatusBadgeStyle(item.status);
     const startStr = item.startDate ? new Date(item.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
     const endStr = item.endDate ? new Date(item.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+    const applicantName = item.employeeName || (activeTab === 'MY_REQUESTS' ? `${user?.name} (You)` : 'Employee');
+    const applicantCode = item.employeeId || (activeTab === 'MY_REQUESTS' ? (user?.employee_id || user?.employeeId) : '');
+    const firstLetter = (applicantName || 'E').replace(/[^a-zA-Z]/g, '').charAt(0).toUpperCase() || 'E';
 
     return (
       <View style={styles.historyCard}>
+        {/* Applicant Header: Name, Employee ID, Status Badge */}
+        <View style={styles.applicantRow}>
+          <View style={styles.applicantAvatarWrap}>
+            <Text style={styles.applicantAvatarText}>{firstLetter}</Text>
+          </View>
+          <View style={styles.applicantInfo}>
+            <Text style={styles.applicantName} numberOfLines={1}>{applicantName}</Text>
+            {!!applicantCode && <Text style={styles.applicantId}>{applicantCode}</Text>}
+          </View>
+          <View style={[styles.statusBadge, { backgroundColor: badge.bg }]}>
+            <Ionicons name={badge.icon} size={12} color={badge.text} style={{ marginRight: 4 }} />
+            <Text style={[styles.statusBadgeText, { color: badge.text }]}>{badge.label}</Text>
+          </View>
+        </View>
+
+        {/* Leave Type Tag & Duration */}
         <View style={styles.cardHeaderRow}>
           <View style={styles.leaveTypeTag}>
             <Ionicons
@@ -255,17 +357,6 @@ export default function LeaveScreen() {
             <Text style={styles.leaveTypeTagText}>{item.leaveType || 'Leave'}</Text>
           </View>
 
-          <View style={[styles.statusBadge, { backgroundColor: badge.bg }]}>
-            <Ionicons name={badge.icon} size={12} color={badge.text} style={{ marginRight: 4 }} />
-            <Text style={[styles.statusBadgeText, { color: badge.text }]}>{badge.label}</Text>
-          </View>
-        </View>
-
-        <View style={styles.cardDatesRow}>
-          <Ionicons name="calendar-outline" size={15} color="#475569" style={{ marginRight: 6 }} />
-          <Text style={styles.cardDatesText}>
-            {startStr} {startStr !== endStr && `— ${endStr}`}
-          </Text>
           <View style={styles.daysPill}>
             <Text style={styles.daysPillText}>
               {item.totalDays} {item.totalDays === 1 ? 'day' : 'days'}
@@ -273,25 +364,65 @@ export default function LeaveScreen() {
           </View>
         </View>
 
+        {/* Date Range */}
+        <View style={styles.cardDatesRow}>
+          <Ionicons name="calendar-outline" size={15} color="#475569" style={{ marginRight: 6 }} />
+          <Text style={styles.cardDatesText}>
+            {startStr} {startStr !== endStr && `— ${endStr}`}
+          </Text>
+        </View>
+
+        {/* Reason Box */}
         {!!item.reason && (
           <View style={styles.reasonBox}>
-            <Text style={styles.reasonText} numberOfLines={2}>
+            <Text style={styles.reasonText} numberOfLines={3}>
               "{item.reason}"
             </Text>
           </View>
         )}
 
-        {item.status === 'PENDING' && (
-          <View style={styles.cardFooterRow}>
+        {/* Action row: Approve / Reject for Admin on pending, or Cancel for Employee on pending */}
+        {isAdmin && activeTab === 'ALL_REQUESTS' && item.status?.toUpperCase() === 'PENDING' ? (
+          <View style={styles.adminActionRow}>
             <TouchableOpacity
-              style={styles.cancelButton}
-              onPress={() => handleCancel(item.id)}
-              activeOpacity={0.7}
+              style={styles.approveButton}
+              onPress={() => handleApproveLeave(item.id, item.employeeName)}
+              disabled={actionLoading === item.id}
+              activeOpacity={0.8}
             >
-              <Ionicons name="trash-outline" size={14} color="#EF4444" style={{ marginRight: 4 }} />
-              <Text style={styles.cancelButtonText}>Withdraw Request</Text>
+              {actionLoading === item.id ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <Ionicons name="checkmark-circle" size={16} color="#FFFFFF" style={{ marginRight: 4 }} />
+                  <Text style={styles.approveButtonText}>Approve</Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.rejectButton}
+              onPress={() => handleRejectLeave(item.id, item.employeeName)}
+              disabled={actionLoading === item.id}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="close-circle" size={16} color="#FFFFFF" style={{ marginRight: 4 }} />
+              <Text style={styles.rejectButtonText}>Reject</Text>
             </TouchableOpacity>
           </View>
+        ) : (
+          item.status?.toUpperCase() === 'PENDING' && (
+            <View style={styles.cardFooterRow}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => handleCancel(item.id)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="trash-outline" size={14} color="#EF4444" style={{ marginRight: 4 }} />
+                <Text style={styles.cancelButtonText}>Withdraw Request</Text>
+              </TouchableOpacity>
+            </View>
+          )
         )}
       </View>
     );
@@ -327,56 +458,114 @@ export default function LeaveScreen() {
           }
           ListHeaderComponent={
             <>
-              {/* Balances Overview Card */}
-              <View style={styles.balanceSummaryCard}>
-                <View style={styles.balanceMainRow}>
-                  <View>
-                    <Text style={styles.balanceCardLabel}>AVAILABLE PAID BALANCE</Text>
-                    <View style={styles.balanceNumberRow}>
-                      <Text style={styles.balanceBigNumber}>
-                        {balance?.currentBalance ?? 0}
-                      </Text>
-                      <Text style={styles.balanceUnit}>Days</Text>
+              {/* Admin Segmented Control: All Requests vs My Applications */}
+              {isAdmin && (
+                <View style={styles.segmentedContainer}>
+                  <TouchableOpacity
+                    style={[styles.segmentedBtn, activeTab === 'ALL_REQUESTS' && styles.segmentedBtnActive]}
+                    onPress={() => setActiveTab('ALL_REQUESTS')}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons
+                      name="people"
+                      size={16}
+                      color={activeTab === 'ALL_REQUESTS' ? '#FFFFFF' : '#64748B'}
+                      style={{ marginRight: 6 }}
+                    />
+                    <Text
+                      style={[
+                        styles.segmentedText,
+                        activeTab === 'ALL_REQUESTS' && styles.segmentedTextActive,
+                      ]}
+                    >
+                      All Requests
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.segmentedBtn, activeTab === 'MY_REQUESTS' && styles.segmentedBtnActive]}
+                    onPress={() => setActiveTab('MY_REQUESTS')}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons
+                      name="person"
+                      size={16}
+                      color={activeTab === 'MY_REQUESTS' ? '#FFFFFF' : '#64748B'}
+                      style={{ marginRight: 6 }}
+                    />
+                    <Text
+                      style={[
+                        styles.segmentedText,
+                        activeTab === 'MY_REQUESTS' && styles.segmentedTextActive,
+                      ]}
+                    >
+                      My Applications
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* Balances Overview Card (Shown for employees, or admin under My Applications) */}
+              {(!isAdmin || activeTab === 'MY_REQUESTS') && (
+                <View style={styles.balanceSummaryCard}>
+                  <View style={styles.balanceMainRow}>
+                    <View>
+                      <Text style={styles.balanceCardLabel}>AVAILABLE PAID BALANCE</Text>
+                      <View style={styles.balanceNumberRow}>
+                        <Text style={styles.balanceBigNumber}>
+                          {balance?.currentBalance ?? 0}
+                        </Text>
+                        <Text style={styles.balanceUnit}>Days</Text>
+                      </View>
+                    </View>
+                    <View style={styles.balanceIconWrap}>
+                      <Ionicons name="calendar" size={26} color="#2563EB" />
                     </View>
                   </View>
-                  <View style={styles.balanceIconWrap}>
-                    <Ionicons name="calendar" size={26} color="#2563EB" />
-                  </View>
-                </View>
 
-                <View style={styles.balanceGrid}>
-                  <View style={styles.balanceGridItem}>
-                    <Text style={styles.gridLabel}>Accrued</Text>
-                    <Text style={styles.gridValue}>{balance?.accruedLeave ?? 0}d</Text>
-                  </View>
-                  <View style={styles.balanceGridDivider} />
-                  <View style={styles.balanceGridItem}>
-                    <Text style={styles.gridLabel}>Used Paid</Text>
-                    <Text style={styles.gridValue}>{balance?.usedPaidLeave ?? 0}d</Text>
-                  </View>
-                  <View style={styles.balanceGridDivider} />
-                  <View style={styles.balanceGridItem}>
-                    <Text style={styles.gridLabel}>Without Pay</Text>
-                    <Text style={[styles.gridValue, { color: '#DC2626' }]}>
-                      {balance?.leaveWithoutPay ?? 0}d
-                    </Text>
+                  <View style={styles.balanceGrid}>
+                    <View style={styles.balanceGridItem}>
+                      <Text style={styles.gridLabel}>Accrued</Text>
+                      <Text style={styles.gridValue}>{balance?.accruedLeave ?? 0}d</Text>
+                    </View>
+                    <View style={styles.balanceGridDivider} />
+                    <View style={styles.balanceGridItem}>
+                      <Text style={styles.gridLabel}>Used Paid</Text>
+                      <Text style={styles.gridValue}>{balance?.usedPaidLeave ?? 0}d</Text>
+                    </View>
+                    <View style={styles.balanceGridDivider} />
+                    <View style={styles.balanceGridItem}>
+                      <Text style={styles.gridLabel}>Without Pay</Text>
+                      <Text style={[styles.gridValue, { color: '#DC2626' }]}>
+                        {balance?.leaveWithoutPay ?? 0}d
+                      </Text>
+                    </View>
                   </View>
                 </View>
-              </View>
+              )}
 
               {/* Primary Action Button */}
-              <TouchableOpacity
-                style={styles.applyButton}
-                onPress={() => setShowApplyModal(true)}
-                activeOpacity={0.85}
-              >
-                <Ionicons name="add-circle" size={20} color="#FFFFFF" style={{ marginRight: 6 }} />
-                <Text style={styles.applyButtonText}>Apply for Leave</Text>
-              </TouchableOpacity>
+              {(!isAdmin || activeTab === 'MY_REQUESTS') && (
+                <TouchableOpacity
+                  style={styles.applyButton}
+                  onPress={() => setShowApplyModal(true)}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="add-circle" size={20} color="#FFFFFF" style={{ marginRight: 6 }} />
+                  <Text style={styles.applyButtonText}>Apply for Leave</Text>
+                </TouchableOpacity>
+              )}
 
-              {/* Filter Tabs */}
+              {/* Filter Tabs Header */}
               <View style={styles.historySectionHeader}>
-                <Text style={styles.sectionTitle}>Leave History</Text>
+                <Text style={styles.sectionTitle}>
+                  {isAdmin && activeTab === 'ALL_REQUESTS' ? 'All Employee Requests' : 'Leave History'}
+                </Text>
+                {isAdmin && activeTab === 'ALL_REQUESTS' && (
+                  <Text style={styles.sectionSubtitle}>
+                    {adminLeaves.length} total request{adminLeaves.length === 1 ? '' : 's'}
+                  </Text>
+                )}
               </View>
 
               <ScrollView
@@ -413,7 +602,9 @@ export default function LeaveScreen() {
               <Text style={styles.emptyTitle}>No Leave Requests</Text>
               <Text style={styles.emptySubtitle}>
                 {statusFilter === 'ALL'
-                  ? "You haven't submitted any leave requests yet."
+                  ? (isAdmin && activeTab === 'ALL_REQUESTS'
+                      ? 'No employee leave requests found.'
+                      : "You haven't submitted any leave requests yet.")
                   : `No requests with status "${statusFilter}".`}
               </Text>
             </View>
@@ -983,13 +1174,54 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
   },
+  segmentedContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 16,
+    gap: 4,
+  },
+  segmentedBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 9,
+    borderRadius: 9,
+  },
+  segmentedBtnActive: {
+    backgroundColor: '#2563EB',
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  segmentedText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  segmentedTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
   historySectionHeader: {
     marginBottom: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
   },
   sectionTitle: {
     fontSize: 16,
     fontWeight: '700',
     color: '#0F172A',
+  },
+  sectionSubtitle: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '500',
   },
   filtersScroll: {
     marginBottom: 12,
@@ -1113,6 +1345,93 @@ const styles = StyleSheet.create({
     color: '#EF4444',
     fontSize: 12,
     fontWeight: '600',
+  },
+  applicantRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  applicantAvatarWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  applicantAvatarText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#2563EB',
+  },
+  applicantInfo: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  applicantName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  applicantId: {
+    fontSize: 11,
+    color: '#64748B',
+    fontWeight: '500',
+    marginTop: 1,
+  },
+  adminActionRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  approveButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#16A34A',
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    shadowColor: '#16A34A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  approveButtonText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  rejectButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#DC2626',
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    shadowColor: '#DC2626',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  rejectButtonText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
   },
   emptyContainer: {
     alignItems: 'center',

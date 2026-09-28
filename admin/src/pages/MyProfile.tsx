@@ -552,6 +552,16 @@ export default function MyProfile() {
                       <label className="text-muted small fw-semibold">Aadhaar Number (Masked)</label>
                       <div className="p-2.5 rounded-3 bg-light border font-monospace fw-bold">{profile?.aadhaarNumber || 'Not configured'}</div>
                     </div>
+
+                    <div className="col-sm-6">
+                      <label className="text-muted small fw-semibold">Mother Name</label>
+                      <div className="p-2.5 rounded-3 bg-light border fw-medium">{profile?.motherName || 'Not configured'}</div>
+                    </div>
+
+                    <div className="col-sm-6">
+                      <label className="text-muted small fw-semibold">Father Name</label>
+                      <div className="p-2.5 rounded-3 bg-light border fw-medium">{profile?.fatherName || 'Not configured'}</div>
+                    </div>
                   </div>
                 </div>
               )}
@@ -594,14 +604,41 @@ export default function MyProfile() {
                     </div>
 
                     <div className="col-sm-6">
-                      <label className="text-muted small fw-semibold">Personal Email {isEditing && <span className="text-primary">(Self-Editable)</span>}</label>
+                      <div className="d-flex justify-content-between align-items-center">
+                        <label className="text-muted small fw-semibold mb-0">Personal Email {isEditing && <span className="text-primary">(Self-Editable)</span>}</label>
+                        {isEditing && (
+                          <button
+                            type="button"
+                            className="btn btn-link p-0 text-decoration-none text-primary fw-semibold"
+                            style={{ fontSize: '11px' }}
+                            onClick={() => {
+                              const current = (editForm.personalEmail || '').trim();
+                              if (!current.includes('@')) {
+                                setEditForm({
+                                  ...editForm,
+                                  personalEmail: current ? `${current}@gmail.com` : '@gmail.com'
+                                });
+                              }
+                            }}
+                          >
+                            + @gmail.com
+                          </button>
+                        )}
+                      </div>
                       {isEditing ? (
-                        <Form.Control
-                          type="email"
-                          value={editForm.personalEmail}
-                          onChange={(e) => setEditForm({ ...editForm, personalEmail: e.target.value })}
-                          placeholder="e.g. personal@gmail.com"
-                        />
+                        <div>
+                          <Form.Control
+                            type="email"
+                            value={editForm.personalEmail}
+                            onChange={(e) => setEditForm({ ...editForm, personalEmail: e.target.value.toLowerCase().trim() })}
+                            placeholder="name@gmail.com"
+                          />
+                          {editForm.personalEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editForm.personalEmail) && (
+                            <div className="text-danger small mt-1" style={{ fontSize: '11px' }}>
+                              Please enter a valid email address (e.g. name@gmail.com)
+                            </div>
+                          )}
+                        </div>
                       ) : (
                         <div className="p-2.5 rounded-3 bg-light border fw-medium">{profile?.personalEmail || 'Not configured'}</div>
                       )}
@@ -738,8 +775,11 @@ export default function MyProfile() {
                     <div className="col-sm-6">
                       <label className="text-muted small fw-semibold">Reporting Manager</label>
                       <div className="p-2.5 rounded-3 bg-light border fw-medium">
-                        {profile?.reportingManagerName ? (
-                          <span>{profile.reportingManagerName} <small className="text-muted">({profile.reportingManagerEmail})</small></span>
+                        {profile?.reportingManager || profile?.reportingManagerName ? (
+                          <span>
+                            {profile.reportingManager || profile.reportingManagerName}{' '}
+                            {profile?.reportingManagerEmail && <small className="text-muted">({profile.reportingManagerEmail})</small>}
+                          </span>
                         ) : (
                           'Not assigned'
                         )}

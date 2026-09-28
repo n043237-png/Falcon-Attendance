@@ -6,7 +6,6 @@ exports.dispatchWhatsApp = dispatchWhatsApp;
 exports.sendLateAttendanceAlert = sendLateAttendanceAlert;
 exports.checkAndSendLateAttendanceAlerts = checkAndSendLateAttendanceAlerts;
 const db_1 = require("../db");
-const notificationService_1 = require("./notificationService");
 exports.DEFAULT_ALERT_PHONE = process.env.ALERT_WHATSAPP_NUMBER || '+91 7827392589';
 /**
  * Format the exact Late Attendance Alert message requested
@@ -145,20 +144,6 @@ async function sendLateAttendanceAlert(employee, dateStr) {
     }
     catch (err) {
         console.error('[WhatsApp Service] Failed to save log:', err);
-    }
-    // 5. Also log an in-app administrative notification for transparency
-    try {
-        await notificationService_1.NotificationService.notifyAdmins({
-            title: 'Late Attendance Alert Sent',
-            message: `WhatsApp alert sent for ${employee.name} (${employee.employeeId}) to ${phone}.`,
-            type: 'Attendance',
-            priority: 'High',
-            actionUrl: '/attendance',
-            attendanceDate: dateStr,
-        });
-    }
-    catch (err) {
-        // Non-blocking
     }
     return true;
 }

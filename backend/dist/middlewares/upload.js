@@ -45,15 +45,22 @@ exports.uploadProfilePhoto = (0, multer_1.default)({
 const processAndSaveProfilePhoto = async (buffer, prefix = 'profile') => {
     const filename = `${prefix}-${Date.now()}-${crypto_1.default.randomBytes(6).toString('hex')}.webp`;
     const filePath = path_1.default.join(UPLOAD_DIR, filename);
-    await (0, sharp_1.default)(buffer)
+    const webpBuffer = await (0, sharp_1.default)(buffer)
         .rotate()
         .resize(400, 400, {
         fit: 'cover',
         position: 'center',
     })
-        .webp({ quality: 85 })
-        .toFile(filePath);
-    return `/uploads/profiles/${filename}`;
+        .webp({ quality: 80 })
+        .toBuffer();
+    try {
+        await fs_1.default.promises.writeFile(filePath, webpBuffer);
+    }
+    catch (err) {
+        console.warn('Could not write local upload file:', err);
+    }
+    // Returning base64 data URI ensures the photo persists in Supabase DB and renders on localhost, Vercel, and Mobile APK
+    return `data:image/webp;base64,${webpBuffer.toString('base64')}`;
 };
 exports.processAndSaveProfilePhoto = processAndSaveProfilePhoto;
 /**

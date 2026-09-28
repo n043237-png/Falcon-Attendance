@@ -667,3 +667,17 @@ p, span, div, label {
   background-color: #F8FAFC !important;
 }
 
+.table-sticky-actions td:last-child:has(.dropdown.show),
+.table-sticky-actions td:last-child:focus-within {
+  z-index: 1050 !important;
+}
+
+.table-responsive:has(.dropdown.show),
+.table-responsive-wrapper {
+  overflow: visible !important;
+}
+
+.table-sticky-actions .dropdown-menu {
+  z-index: 1060 !important;
+}
+

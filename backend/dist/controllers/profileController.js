@@ -29,7 +29,9 @@ const selfUpdateProfileSchema = zod_1.z.object({
     emergencyContactRelationship: zod_1.z.string().max(50).optional().or(zod_1.z.literal('')).or(zod_1.z.null()),
     emergencyContactPhone: phoneTenDigitSchema,
     emergencyContactAltPhone: phoneTenDigitSchema,
-    profilePhotoUrl: zod_1.z.string().max(1000).nullable().optional().or(zod_1.z.literal(''))
+    motherName: zod_1.z.string().max(100).optional().or(zod_1.z.literal('')).or(zod_1.z.null()),
+    fatherName: zod_1.z.string().max(100).optional().or(zod_1.z.literal('')).or(zod_1.z.null()),
+    profilePhotoUrl: zod_1.z.string().nullable().optional().or(zod_1.z.literal(''))
 });
 const changePasswordSchema = zod_1.z.object({
     currentPassword: zod_1.z.string().min(1),
@@ -70,6 +72,9 @@ const getProfile = async (req, res) => {
             if (host) {
                 fullProfile.profilePhotoUrl = `${req.protocol}://${host}${fullProfile.profilePhotoUrl}`;
             }
+        }
+        if (fullProfile.email) {
+            fullProfile.email = fullProfile.email.toLowerCase().trim();
         }
         res.json({ success: true, data: fullProfile });
     }
@@ -225,6 +230,7 @@ const uploadProfilePhotoHandler = async (req, res) => {
             await (0, upload_1.deleteProfilePhotoFile)(userRes.rows[0].profile_photo_url);
         }
         await (0, db_1.query)(`UPDATE users SET profile_photo_url = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [photoUrl, userId]);
+        await (0, db_1.query)(`UPDATE employee_profiles SET profile_photo_url = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2`, [photoUrl, userId]);
         res.json({
             success: true,
             data: {
@@ -247,6 +253,7 @@ const deleteProfilePhotoHandler = async (req, res) => {
             await (0, upload_1.deleteProfilePhotoFile)(userRes.rows[0].profile_photo_url);
         }
         await (0, db_1.query)(`UPDATE users SET profile_photo_url = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [userId]);
+        await (0, db_1.query)(`UPDATE employee_profiles SET profile_photo_url = NULL, updated_at = CURRENT_TIMESTAMP WHERE user_id = $1`, [userId]);
         res.json({
             success: true,
             message: 'Profile photo removed successfully',

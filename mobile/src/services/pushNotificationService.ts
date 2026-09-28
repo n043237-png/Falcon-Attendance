@@ -16,25 +16,36 @@ Notifications.setNotificationHandler({
 });
 
 /**
+ * Configure notification channel with MAX priority so alerts pop up over other apps
+ */
+export async function setupNotificationChannel() {
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync('falcon-default', {
+      name: 'Falcon Attendance Alerts',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#2563EB',
+      sound: 'default',
+      enableVibrate: true,
+      showBadge: true,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      bypassDnd: false,
+    });
+  }
+}
+
+// Ensure channel is registered immediately on app launch
+setupNotificationChannel().catch((err) => console.warn('[Push] Channel init error:', err));
+
+/**
  * Register device for Expo Push Notifications and save token to backend
  */
 export async function registerForPushNotificationsAsync(authToken: string): Promise<string | null> {
   if (!authToken) return null;
 
   try {
-    // 1. Android Notification Channel configuration
-    if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('falcon-default', {
-        name: 'Falcon Attendance Alerts',
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#2563EB',
-        sound: 'default',
-        enableVibrate: true,
-        showBadge: true,
-        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-      });
-    }
+    // 1. Setup notification channel
+    await setupNotificationChannel();
 
     // 2. Physical device check
     if (!Device.isDevice) {
@@ -73,6 +84,102 @@ export async function registerForPushNotificationsAsync(authToken: string): Prom
   } catch (error) {
     console.error('[Push] Failed to register push token:', error);
     return null;
+  }
+}
+
+/**
+ * Helper to parse "HH:mm" or "HH:mm:ss" string to minutes from midnight
+ */
+function parseTimeToMinutes(timeStr?: string | null): number | null {
+  if (!timeStr) return null;
+  const parts = timeStr.trim().split(':');
+  if (parts.length < 2) return null;
+  const h = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10);
+  if (isNaN(h) || isNaN(m)) return null;
+  return h * 60 + m;
+}
+
+/**
+ * Schedule recurring daily reminders 5 minutes before late mark and 5 minutes before shift end (logout)
+ */
+export async function scheduleLocalShiftReminders(
+  shiftStartTime?: string | null,
+  shiftEndTime?: string | null,
+  graceMinutes: number = 15,
+  lateAfter?: string | null
+) {
+  try {
+    await setupNotificationChannel();
+
+    // Cancel previously scheduled shift reminders first to prevent duplicates
+    try {
+      await Notifications.cancelScheduledNotificationAsync('falcon-late-mark-reminder');
+    } catch {}
+    try {
+      await Notifications.cancelScheduledNotificationAsync('falcon-shift-end-reminder');
+    } catch {}
+
+    // 1. Calculate 5 minutes before late mark threshold
+    let lateMarkMinutes: number | null = parseTimeToMinutes(lateAfter);
+    if (lateMarkMinutes === null && shiftStartTime) {
+      const startMin = parseTimeToMinutes(shiftStartTime);
+      if (startMin !== null) {
+        lateMarkMinutes = startMin + (graceMinutes || 15);
+      }
+    }
+
+    if (lateMarkMinutes !== null) {
+      const reminderMin = (lateMarkMinutes - 5 + 1440) % 1440;
+      const hour = Math.floor(reminderMin / 60);
+      const minute = reminderMin % 60;
+
+      await Notifications.scheduleNotificationAsync({
+        identifier: 'falcon-late-mark-reminder',
+        content: {
+          title: '⏰ 5 Mins Left: Check In Soon!',
+          body: 'Only 5 minutes remaining before late mark! Please check in now to avoid late penalty.',
+          sound: 'default',
+          priority: Notifications.AndroidNotificationPriority.MAX,
+          data: { url: '/attendance' },
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DAILY,
+          hour,
+          minute,
+          channelId: 'falcon-default',
+        },
+      });
+      console.log(`[Push] Scheduled daily pre-late reminder at ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`);
+    }
+
+    // 2. Calculate 5 minutes before shift end (logout reminder)
+    const endMinutes = parseTimeToMinutes(shiftEndTime);
+    if (endMinutes !== null) {
+      const logoutRemMin = (endMinutes - 5 + 1440) % 1440;
+      const hour = Math.floor(logoutRemMin / 60);
+      const minute = logoutRemMin % 60;
+
+      await Notifications.scheduleNotificationAsync({
+        identifier: 'falcon-shift-end-reminder',
+        content: {
+          title: '⏰ 5 Mins Left: Shift Ending Soon',
+          body: 'Your shift ends in 5 minutes! Remember to mark Check-Out before leaving.',
+          sound: 'default',
+          priority: Notifications.AndroidNotificationPriority.MAX,
+          data: { url: '/attendance' },
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DAILY,
+          hour,
+          minute,
+          channelId: 'falcon-default',
+        },
+      });
+      console.log(`[Push] Scheduled daily pre-logout reminder at ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`);
+    }
+  } catch (error) {
+    console.warn('[Push] Error scheduling local shift reminders:', error);
   }
 }
 

@@ -78,6 +78,9 @@ const createEmployeeSchema = zod_1.z.object({
         return v.substring(0, 10);
     }),
     shiftId: zod_1.z.number().int().positive().optional(),
+    motherName: zod_1.z.string().max(100).optional().or(zod_1.z.literal('')).or(zod_1.z.null()),
+    fatherName: zod_1.z.string().max(100).optional().or(zod_1.z.literal('')).or(zod_1.z.null()),
+    reportingManager: zod_1.z.string().max(100).optional().or(zod_1.z.literal('')).or(zod_1.z.null()),
 });
 const editEmployeeSchema = createEmployeeSchema.partial();
 const getNextEmployeeIdHandler = async (req, res) => {
@@ -162,12 +165,24 @@ const getEmployees = async (req, res) => {
              s.end_time as "shiftEndTime",
              lb.current_balance::float as "leaveBalance",
              lb.accrued_leave::float as "accruedLeave",
-             lb.used_paid_leave::float as "usedPaidLeave"
+             lb.used_paid_leave::float as "usedPaidLeave",
+             ep.mother_name as "motherName",
+             ep.father_name as "fatherName",
+             COALESCE(ep.reporting_manager, m.name) as "reportingManager"
       FROM users u
       LEFT JOIN shifts s ON s.id = u.shift_id
       LEFT JOIN leave_balances lb ON lb.employee_id = u.id AND lb.year = EXTRACT(YEAR FROM CURRENT_DATE)
+      LEFT JOIN employee_profiles ep ON ep.user_id = u.id
+      LEFT JOIN users m ON ep.reporting_manager_id = m.id
       ${filterQuery}
-      ORDER BY u.id DESC
+      ORDER BY 
+        CASE 
+          WHEN u.employee_id ILIKE 'FISPL%' THEN 1 
+          WHEN u.employee_id ILIKE 'ADMIN%' THEN 0 
+          ELSE 2 
+        END,
+        NULLIF(regexp_replace(u.employee_id, '\\D', '', 'g'), '')::bigint ASC NULLS LAST,
+        u.employee_id ASC
       LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}
     `, [...queryParams, limit, offset]);
         const items = usersRes.rows.map(rec => {
@@ -216,9 +231,14 @@ const getEmployeeDetail = async (req, res) => {
              s.name as "shiftName",
              s.code as "shiftCode",
              s.start_time as "shiftStartTime",
-             s.end_time as "shiftEndTime"
+             s.end_time as "shiftEndTime",
+             ep.mother_name as "motherName",
+             ep.father_name as "fatherName",
+             COALESCE(ep.reporting_manager, m.name) as "reportingManager"
       FROM users u
       LEFT JOIN shifts s ON s.id = u.shift_id
+      LEFT JOIN employee_profiles ep ON ep.user_id = u.id
+      LEFT JOIN users m ON ep.reporting_manager_id = m.id
       WHERE u.id = $1
     `, [id]);
         if (userRes.rows.length === 0) {
@@ -306,7 +326,7 @@ const createEmployee = async (req, res) => {
             res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: parsed.error.issues[0].message } });
             return;
         }
-        const { name, email, phone, department, designation, joiningDate, role, roles, useCustomEmployeeId, customEmployeeId, customIdReason, password, profilePhotoUrl, jobStatus, provisionalStartDate, provisionalEndDate } = parsed.data;
+        const { name, email, phone, department, designation, joiningDate, role, roles, useCustomEmployeeId, customEmployeeId, customIdReason, password, profilePhotoUrl, jobStatus, provisionalStartDate, provisionalEndDate, motherName, fatherName, reportingManager } = parsed.data;
         // Check email uniqueness
         const emailRes = await client.query(`SELECT id FROM users WHERE LOWER(email) = LOWER($1)`, [email]);
         if (emailRes.rows.length > 0) {
@@ -368,12 +388,26 @@ const createEmployee = async (req, res) => {
                 provisional_end_date as "provisionalEndDate", roles, role, shift_id as "shiftId"
     `;
         const insertParams = [
-            employeeCode, employeeCode, isCustom, name, email, phone || null, department || null, designation || null,
+            employeeCode, employeeCode, isCustom, name, email ? email.trim().toLowerCase() : email, phone || null, department || null, designation || null,
             joiningDate || null, primaryRole, JSON.stringify(userRoles), hashed, profilePhotoUrl || null,
             jobStatus || 'Permanent', provisionalStartDate || null, provisionalEndDate || null, targetShiftId || null
         ];
         const result = await client.query(insertQuery, insertParams);
         const createdUserId = result.rows[0].id;
+        // Create initial employee profile
+        const parts = name.trim().split(/\s+/);
+        const firstName = parts[0] || '';
+        const lastName = parts.slice(1).join(' ') || '';
+        await client.query(`
+      INSERT INTO employee_profiles (
+        user_id, first_name, last_name, mother_name, father_name, reporting_manager
+      ) VALUES ($1, $2, $3, $4, $5, $6)
+      ON CONFLICT (user_id) DO UPDATE SET
+        mother_name = COALESCE(EXCLUDED.mother_name, employee_profiles.mother_name),
+        father_name = COALESCE(EXCLUDED.father_name, employee_profiles.father_name),
+        reporting_manager = COALESCE(EXCLUDED.reporting_manager, employee_profiles.reporting_manager),
+        updated_at = CURRENT_TIMESTAMP
+    `, [createdUserId, firstName, lastName, motherName || null, fatherName || null, reportingManager || null]);
         // Record initial shift assignment
         if (targetShiftId) {
             await client.query(`
@@ -438,7 +472,7 @@ const editEmployee = async (req, res) => {
             res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: parsed.error.issues[0].message } });
             return;
         }
-        const { name, email, phone, department, designation, joiningDate, role, roles, profilePhotoUrl, jobStatus, provisionalStartDate, provisionalEndDate, shiftId } = parsed.data;
+        const { name, email, phone, department, designation, joiningDate, role, roles, profilePhotoUrl, jobStatus, provisionalStartDate, provisionalEndDate, shiftId, motherName, fatherName, reportingManager } = parsed.data;
         // Safety check: Prevent logged-in admin from accidentally removing their own admin role
         if (req.user?.id === id) {
             if (roles !== undefined && !roles.map((r) => r.toLowerCase()).includes('admin')) {
@@ -523,13 +557,43 @@ const editEmployee = async (req, res) => {
                 addField(profilePhotoUrl, 'profile_photo_url');
             }
         }
-        if (params.length === 0) {
+        const hasProfileUpdates = motherName !== undefined || fatherName !== undefined || reportingManager !== undefined;
+        if (params.length === 0 && !hasProfileUpdates) {
             res.status(400).json({ success: false, error: { code: 'NO_UPDATES', message: 'No fields to update' } });
             return;
         }
-        params.push(id);
-        updateQuery += ` WHERE id = $${params.length}`;
-        await (0, db_1.query)(updateQuery, params);
+        if (params.length > 0) {
+            params.push(id);
+            updateQuery += ` WHERE id = $${params.length}`;
+            await (0, db_1.query)(updateQuery, params);
+        }
+        if (hasProfileUpdates) {
+            const epRes = await (0, db_1.query)('SELECT id FROM employee_profiles WHERE user_id = $1', [id]);
+            if (epRes.rows.length === 0) {
+                await (0, db_1.query)(`
+          INSERT INTO employee_profiles (user_id, mother_name, father_name, reporting_manager)
+          VALUES ($1, $2, $3, $4)
+        `, [id, motherName || null, fatherName || null, reportingManager || null]);
+            }
+            else {
+                const epSets = ['updated_at = CURRENT_TIMESTAMP'];
+                const epParams = [];
+                if (motherName !== undefined) {
+                    epParams.push(motherName || null);
+                    epSets.push(`mother_name = $${epParams.length}`);
+                }
+                if (fatherName !== undefined) {
+                    epParams.push(fatherName || null);
+                    epSets.push(`father_name = $${epParams.length}`);
+                }
+                if (reportingManager !== undefined) {
+                    epParams.push(reportingManager || null);
+                    epSets.push(`reporting_manager = $${epParams.length}`);
+                }
+                epParams.push(id);
+                await (0, db_1.query)(`UPDATE employee_profiles SET ${epSets.join(', ')} WHERE user_id = $${epParams.length}`, epParams);
+            }
+        }
         // Notify employee that their profile was updated
         try {
             await notificationService_1.NotificationService.notifyUser(id, {
@@ -788,7 +852,14 @@ const exportEmployees = async (req, res) => {
              joining_date as "joiningDate", created_at as "createdAt"
       FROM users
       ${filterQuery}
-      ORDER BY id ASC
+      ORDER BY 
+        CASE 
+          WHEN employee_id ILIKE 'FISPL%' THEN 1 
+          WHEN employee_id ILIKE 'ADMIN%' THEN 0 
+          ELSE 2 
+        END,
+        NULLIF(regexp_replace(employee_id, '\\D', '', 'g'), '')::bigint ASC NULLS LAST,
+        employee_id ASC
     `, queryParams);
         const format = req.query.format === 'excel' ? 'excel' : 'csv';
         if (format === 'excel') {

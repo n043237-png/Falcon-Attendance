@@ -20,6 +20,10 @@ export interface LeaveRequest {
   totalDays: number;
   reason: string;
   status: string;
+  employeeName?: string;
+  employeeId?: string;
+  profilePhotoUrl?: string | null;
+  userId?: number;
 }
 
 export const getLeaveBalances = async (token: string) => {
@@ -129,4 +133,44 @@ export const validateLeave = async (token: string, params: { startDate: string; 
     return error.response?.data || { success: false, error: { message: 'Network error validating leave' } };
   }
 };
+
+export const getAdminLeaves = async (token: string, status?: string) => {
+  try {
+    let url = `${API_URL}/api/admin/leave?limit=100`;
+    if (status && status !== 'ALL' && status !== 'All') url += `&status=${status}`;
+    const res = await axios.get(url, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    return res.data;
+  } catch (error: any) {
+    return error.response?.data || { success: false, error: { message: 'Failed to fetch admin leaves' } };
+  }
+};
+
+export const approveLeaveRequest = async (token: string, id: number, comments?: string) => {
+  try {
+    const res = await axios.patch(
+      `${API_URL}/api/admin/leave/${id}/approve`,
+      { comments },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    return res.data;
+  } catch (error: any) {
+    return error.response?.data || { success: false, error: { message: 'Failed to approve leave request' } };
+  }
+};
+
+export const rejectLeaveRequest = async (token: string, id: number, comments?: string) => {
+  try {
+    const res = await axios.patch(
+      `${API_URL}/api/admin/leave/${id}/reject`,
+      { comments },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    return res.data;
+  } catch (error: any) {
+    return error.response?.data || { success: false, error: { message: 'Failed to reject leave request' } };
+  }
+};
+
 

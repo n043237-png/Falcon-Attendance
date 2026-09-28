@@ -17,8 +17,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
-import { getProfile, updateProfile, changePassword, resolvePhotoUrl } from '../api/profileApi';
+import { getProfile, updateProfile, changePassword, resolvePhotoUrl, uploadProfilePhoto, deleteProfilePhoto } from '../api/profileApi';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 
 export default function ProfileScreen() {
   const { token, logout, updateUser } = useAuth();
@@ -37,10 +38,25 @@ export default function ProfileScreen() {
   const [phone, setPhone] = useState('');
   const [photoUrl, setPhotoUrl] = useState('');
   const [saving, setSaving] = useState(false);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [showUrlInput, setShowUrlInput] = useState(false);
+  const [modalImageError, setModalImageError] = useState(false);
 
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  const resetPasswordForm = () => {
+    setCurrentPassword('');
+    setNewPassword('');
+    setConfirmPassword('');
+    setShowCurrentPassword(false);
+    setShowNewPassword(false);
+    setShowConfirmPassword(false);
+  };
 
   const loadProfile = async (isRefresh = false) => {
     if (!token) return;
@@ -86,6 +102,122 @@ export default function ProfileScreen() {
     }
   };
 
+  const handleUploadPhotoUri = async (uri: string) => {
+    if (!token) return;
+    setPhotoUploading(true);
+    try {
+      const res = await uploadProfilePhoto(token, uri);
+      if (res.success && res.data?.profilePhotoUrl) {
+        const newUrl = res.data.profilePhotoUrl;
+        setPhotoUrl(newUrl);
+        setImageError(false);
+        setModalImageError(false);
+        setProfile((prev: any) => prev ? { ...prev, profilePhotoUrl: newUrl } : prev);
+        updateUser({ profilePhotoUrl: newUrl });
+        Alert.alert('Success', 'Profile photo updated successfully!');
+      } else {
+        Alert.alert('Upload Failed', res.error?.message || 'Could not upload photo.');
+      }
+    } catch (err: any) {
+      Alert.alert('Upload Failed', err.message || 'Network error uploading photo.');
+    } finally {
+      setPhotoUploading(false);
+    }
+  };
+
+  const pickFromGallery = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Denied', 'Please allow gallery access to upload a profile photo.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.85,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        await handleUploadPhotoUri(result.assets[0].uri);
+      }
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to select image from gallery.');
+    }
+  };
+
+  const takePhotoWithCamera = async () => {
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Denied', 'Please allow camera access to take a profile photo.');
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.85,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        await handleUploadPhotoUri(result.assets[0].uri);
+      }
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to capture photo.');
+    }
+  };
+
+  const handleRemovePhoto = async () => {
+    if (!token) return;
+    Alert.alert(
+      'Remove Photo',
+      'Are you sure you want to remove your profile photo?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            setPhotoUploading(true);
+            try {
+              const res = await deleteProfilePhoto(token);
+              if (res.success) {
+                setPhotoUrl('');
+                setImageError(false);
+                setModalImageError(false);
+                setProfile((prev: any) => prev ? { ...prev, profilePhotoUrl: null } : prev);
+                updateUser({ profilePhotoUrl: undefined });
+                Alert.alert('Success', 'Profile photo removed.');
+              } else {
+                Alert.alert('Error', res.error?.message || 'Could not remove photo.');
+              }
+            } catch (err: any) {
+              Alert.alert('Error', err.message || 'Network error.');
+            } finally {
+              setPhotoUploading(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleAvatarPress = () => {
+    const options: { text: string; onPress?: () => void; style?: 'default' | 'cancel' | 'destructive' }[] = [
+      { text: 'Choose from Gallery', onPress: pickFromGallery },
+      { text: 'Take Photo', onPress: takePhotoWithCamera },
+    ];
+    if (profile?.profilePhotoUrl || photoUrl) {
+      options.push({ text: 'Remove Photo', onPress: handleRemovePhoto, style: 'destructive' });
+    }
+    options.push({ text: 'Cancel', style: 'cancel' });
+
+    Alert.alert('Profile Photo', 'Select an option to update your photo:', options);
+  };
+
   const handleChangePassword = async () => {
     if (!token) return;
     if (newPassword.length < 6) return Alert.alert('Error', 'New password must be at least 6 characters.');
@@ -96,10 +228,8 @@ export default function ProfileScreen() {
     setSaving(false);
     if (res.success) {
       Alert.alert('Success', 'Password changed successfully.');
+      resetPasswordForm();
       setShowPassword(false);
-      setCurrentPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
     } else {
       Alert.alert('Error', res.error?.message || 'Failed to change password.');
     }
@@ -134,37 +264,50 @@ export default function ProfileScreen() {
 
         {profile && (
           <View style={styles.card}>
-            {(() => {
-              const photoUri = resolvePhotoUrl(profile.profilePhotoUrl);
-              if (photoUri && !imageError) {
+            <TouchableOpacity
+              style={styles.avatarWrapper}
+              onPress={handleAvatarPress}
+              activeOpacity={0.8}
+            >
+              {(() => {
+                const photoUri = resolvePhotoUrl(profile.profilePhotoUrl);
+                if (photoUri && !imageError) {
+                  return (
+                    <View style={styles.photoContainer}>
+                      <Image
+                        key={photoUri}
+                        source={{ uri: photoUri }}
+                        style={styles.photo}
+                        onLoadStart={() => setImageLoading(true)}
+                        onLoadEnd={() => setImageLoading(false)}
+                        onError={(e) => {
+                          console.warn('Profile photo load error from:', photoUri, e.nativeEvent?.error);
+                          setImageError(true);
+                        }}
+                        resizeMode="cover"
+                      />
+                      {(imageLoading || photoUploading) && (
+                        <View style={[styles.photo, styles.photoLoadingOverlay]}>
+                          <ActivityIndicator size="small" color="#2563EB" />
+                        </View>
+                      )}
+                    </View>
+                  );
+                }
                 return (
-                  <View style={styles.photoContainer}>
-                    <Image
-                      key={photoUri}
-                      source={{ uri: photoUri }}
-                      style={styles.photo}
-                      onLoadStart={() => setImageLoading(true)}
-                      onLoadEnd={() => setImageLoading(false)}
-                      onError={(e) => {
-                        console.warn('Profile photo load error from:', photoUri, e.nativeEvent?.error);
-                        setImageError(true);
-                      }}
-                      resizeMode="cover"
-                    />
-                    {imageLoading && (
-                      <View style={[styles.photo, styles.photoLoadingOverlay]}>
-                        <ActivityIndicator size="small" color="#2563EB" />
-                      </View>
+                  <View style={styles.photoPlaceholder}>
+                    {photoUploading ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.photoText}>{profile.name?.[0]?.toUpperCase() || 'U'}</Text>
                     )}
                   </View>
                 );
-              }
-              return (
-                <View style={styles.photoPlaceholder}>
-                  <Text style={styles.photoText}>{profile.name?.[0]?.toUpperCase() || 'U'}</Text>
-                </View>
-              );
-            })()}
+              })()}
+              <View style={styles.cameraIconBadge}>
+                <Ionicons name="camera" size={13} color="#FFFFFF" />
+              </View>
+            </TouchableOpacity>
 
             <Text style={styles.name}>{profile.name}</Text>
             <Text style={styles.designation}>
@@ -214,7 +357,7 @@ export default function ProfileScreen() {
                   <Ionicons name="mail-outline" size={16} color="#64748B" />
                   <Text style={styles.label}>Email</Text>
                 </View>
-                <Text style={styles.value}>{profile.email}</Text>
+                <Text style={styles.value}>{profile.email ? profile.email.toLowerCase() : ''}</Text>
               </View>
 
               <View style={styles.infoRow}>
@@ -232,6 +375,34 @@ export default function ProfileScreen() {
                 </View>
                 <Text style={styles.value}>{profile.joiningDate || 'N/A'}</Text>
               </View>
+
+              <View style={styles.infoRow}>
+                <View style={styles.iconLabel}>
+                  <Ionicons name="people-outline" size={16} color="#64748B" />
+                  <Text style={styles.label}>Reporting Manager</Text>
+                </View>
+                <Text style={styles.value}>{profile.reportingManager || profile.reportingManagerName || 'Not assigned'}</Text>
+              </View>
+
+              {profile.fatherName ? (
+                <View style={styles.infoRow}>
+                  <View style={styles.iconLabel}>
+                    <Ionicons name="person-outline" size={16} color="#64748B" />
+                    <Text style={styles.label}>Father's Name</Text>
+                  </View>
+                  <Text style={styles.value}>{profile.fatherName}</Text>
+                </View>
+              ) : null}
+
+              {profile.motherName ? (
+                <View style={styles.infoRow}>
+                  <View style={styles.iconLabel}>
+                    <Ionicons name="person-outline" size={16} color="#64748B" />
+                    <Text style={styles.label}>Mother's Name</Text>
+                  </View>
+                  <Text style={styles.value}>{profile.motherName}</Text>
+                </View>
+              ) : null}
             </View>
           </View>
         )}
@@ -308,21 +479,104 @@ export default function ProfileScreen() {
               placeholderTextColor="#94A3B8"
             />
 
-            <Text style={styles.inputLabel}>Profile Photo URL</Text>
-            <TextInput
-              style={styles.input}
-              value={photoUrl}
-              onChangeText={setPhotoUrl}
-              autoCapitalize="none"
-              placeholder="https://..."
-              placeholderTextColor="#94A3B8"
-            />
+            <Text style={styles.inputLabel}>Profile Photo</Text>
+            <View style={styles.modalPhotoRow}>
+              <View style={styles.modalPhotoThumbContainer}>
+                {(() => {
+                  const currentPhotoUri = resolvePhotoUrl(photoUrl);
+                  if (currentPhotoUri && !modalImageError) {
+                    return (
+                      <Image
+                        source={{ uri: currentPhotoUri }}
+                        style={styles.modalPhotoThumb}
+                        onError={() => setModalImageError(true)}
+                      />
+                    );
+                  }
+                  return (
+                    <View style={styles.modalPhotoThumbPlaceholder}>
+                      <Text style={styles.modalPhotoThumbText}>
+                        {profile?.name?.[0]?.toUpperCase() || 'U'}
+                      </Text>
+                    </View>
+                  );
+                })()}
+                {photoUploading && (
+                  <View style={styles.modalPhotoLoadingOverlay}>
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.modalPhotoButtons}>
+                <TouchableOpacity
+                  style={styles.galleryBtn}
+                  onPress={pickFromGallery}
+                  disabled={photoUploading}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="images" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                  <Text style={styles.galleryBtnText}>Choose from Gallery</Text>
+                </TouchableOpacity>
+
+                <View style={styles.modalPhotoSubButtons}>
+                  <TouchableOpacity
+                    style={styles.cameraBtn}
+                    onPress={takePhotoWithCamera}
+                    disabled={photoUploading}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="camera-outline" size={14} color="#334155" style={{ marginRight: 4 }} />
+                    <Text style={styles.cameraBtnText}>Camera</Text>
+                  </TouchableOpacity>
+
+                  {Boolean(photoUrl) && (
+                    <TouchableOpacity
+                      style={styles.removePhotoBtn}
+                      onPress={handleRemovePhoto}
+                      disabled={photoUploading}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="trash-outline" size={14} color="#DC2626" style={{ marginRight: 4 }} />
+                      <Text style={styles.removePhotoBtnText}>Remove</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+            </View>
+
+            {photoUploading && (
+              <Text style={styles.uploadingNotice}>Uploading photo to server...</Text>
+            )}
+
+            <TouchableOpacity
+              style={styles.toggleUrlBtn}
+              onPress={() => setShowUrlInput(!showUrlInput)}
+            >
+              <Text style={styles.toggleUrlText}>
+                {showUrlInput ? 'Hide URL input' : 'Or paste photo URL manually'}
+              </Text>
+            </TouchableOpacity>
+
+            {showUrlInput && (
+              <TextInput
+                style={[styles.input, { marginTop: 4 }]}
+                value={photoUrl}
+                onChangeText={(t) => {
+                  setPhotoUrl(t);
+                  setModalImageError(false);
+                }}
+                autoCapitalize="none"
+                placeholder="https://..."
+                placeholderTextColor="#94A3B8"
+              />
+            )}
 
             <View style={styles.modalActions}>
               <TouchableOpacity onPress={() => setShowEdit(false)} style={styles.closeBtn}>
                 <Text style={styles.closeText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={handleSaveProfile} style={styles.saveBtn} disabled={saving}>
+              <TouchableOpacity onPress={handleSaveProfile} style={styles.saveBtn} disabled={saving || photoUploading}>
                 {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.saveText}>Save Changes</Text>}
               </TouchableOpacity>
             </View>
@@ -331,48 +585,93 @@ export default function ProfileScreen() {
       </Modal>
 
       {/* Change Password Modal */}
-      <Modal visible={showPassword} animationType="slide" transparent onRequestClose={() => setShowPassword(false)}>
+      <Modal visible={showPassword} animationType="slide" transparent onRequestClose={() => { resetPasswordForm(); setShowPassword(false); }}>
         <View style={styles.modalBg}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeaderRow}>
               <Text style={styles.modalTitle}>Change Password</Text>
-              <TouchableOpacity onPress={() => setShowPassword(false)}>
+              <TouchableOpacity onPress={() => { resetPasswordForm(); setShowPassword(false); }}>
                 <Ionicons name="close" size={22} color="#64748B" />
               </TouchableOpacity>
             </View>
 
             <Text style={styles.inputLabel}>Current Password</Text>
-            <TextInput
-              style={styles.input}
-              value={currentPassword}
-              onChangeText={setCurrentPassword}
-              secureTextEntry
-              placeholder="Enter current password"
-              placeholderTextColor="#94A3B8"
-            />
+            <View style={styles.passwordInputWrapper}>
+              <TextInput
+                style={styles.passwordInput}
+                value={currentPassword}
+                onChangeText={setCurrentPassword}
+                secureTextEntry={!showCurrentPassword}
+                placeholder="Enter current password"
+                placeholderTextColor="#94A3B8"
+                autoCapitalize="none"
+              />
+              <TouchableOpacity
+                onPress={() => setShowCurrentPassword((prev) => !prev)}
+                style={styles.passwordEyeBtn}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name={showCurrentPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={20}
+                  color="#64748B"
+                />
+              </TouchableOpacity>
+            </View>
 
             <Text style={styles.inputLabel}>New Password (min 6 chars)</Text>
-            <TextInput
-              style={styles.input}
-              value={newPassword}
-              onChangeText={setNewPassword}
-              secureTextEntry
-              placeholder="Enter new password"
-              placeholderTextColor="#94A3B8"
-            />
+            <View style={styles.passwordInputWrapper}>
+              <TextInput
+                style={styles.passwordInput}
+                value={newPassword}
+                onChangeText={setNewPassword}
+                secureTextEntry={!showNewPassword}
+                placeholder="Enter new password"
+                placeholderTextColor="#94A3B8"
+                autoCapitalize="none"
+              />
+              <TouchableOpacity
+                onPress={() => setShowNewPassword((prev) => !prev)}
+                style={styles.passwordEyeBtn}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name={showNewPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={20}
+                  color="#64748B"
+                />
+              </TouchableOpacity>
+            </View>
 
             <Text style={styles.inputLabel}>Confirm New Password</Text>
-            <TextInput
-              style={styles.input}
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              secureTextEntry
-              placeholder="Confirm new password"
-              placeholderTextColor="#94A3B8"
-            />
+            <View style={styles.passwordInputWrapper}>
+              <TextInput
+                style={styles.passwordInput}
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                secureTextEntry={!showConfirmPassword}
+                placeholder="Confirm new password"
+                placeholderTextColor="#94A3B8"
+                autoCapitalize="none"
+              />
+              <TouchableOpacity
+                onPress={() => setShowConfirmPassword((prev) => !prev)}
+                style={styles.passwordEyeBtn}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={20}
+                  color="#64748B"
+                />
+              </TouchableOpacity>
+            </View>
 
             <View style={styles.modalActions}>
-              <TouchableOpacity onPress={() => setShowPassword(false)} style={styles.closeBtn}>
+              <TouchableOpacity onPress={() => { resetPasswordForm(); setShowPassword(false); }} style={styles.closeBtn}>
                 <Text style={styles.closeText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={handleChangePassword} style={styles.saveBtn} disabled={saving}>
@@ -735,6 +1034,28 @@ const styles = StyleSheet.create({
     color: '#0F172A',
     backgroundColor: '#FFFFFF',
   },
+  passwordInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 10,
+    marginBottom: 16,
+    backgroundColor: '#FFFFFF',
+  },
+  passwordInput: {
+    flex: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: '#0F172A',
+  },
+  passwordEyeBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   modalActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
@@ -763,6 +1084,149 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 14,
+  },
+  avatarWrapper: {
+    position: 'relative',
+    marginBottom: 14,
+  },
+  cameraIconBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: '#2563EB',
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  modalPhotoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+    backgroundColor: '#F8FAFC',
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  modalPhotoThumbContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    position: 'relative',
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: '#BFDBFE',
+    backgroundColor: '#EFF6FF',
+    marginRight: 12,
+  },
+  modalPhotoThumb: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  modalPhotoThumbPlaceholder: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#2563EB',
+  },
+  modalPhotoThumbText: {
+    color: '#FFFFFF',
+    fontSize: 24,
+    fontWeight: '800',
+  },
+  modalPhotoLoadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(37, 99, 235, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalPhotoButtons: {
+    flex: 1,
+  },
+  galleryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2563EB',
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    marginBottom: 6,
+  },
+  galleryBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  modalPhotoSubButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  cameraBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    flex: 1,
+  },
+  cameraBtnText: {
+    color: '#334155',
+    fontWeight: '600',
+    fontSize: 12,
+  },
+  removePhotoBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+  },
+  removePhotoBtnText: {
+    color: '#DC2626',
+    fontWeight: '600',
+    fontSize: 12,
+  },
+  uploadingNotice: {
+    color: '#2563EB',
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  toggleUrlBtn: {
+    paddingVertical: 4,
+    marginBottom: 4,
+  },
+  toggleUrlText: {
+    color: '#64748B',
+    fontSize: 12,
+    fontWeight: '500',
+    textDecorationLine: 'underline',
   },
 });
 

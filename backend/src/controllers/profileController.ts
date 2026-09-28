@@ -27,7 +27,9 @@ const selfUpdateProfileSchema = z.object({
   emergencyContactRelationship: z.string().max(50).optional().or(z.literal('')).or(z.null()),
   emergencyContactPhone: phoneTenDigitSchema,
   emergencyContactAltPhone: phoneTenDigitSchema,
-  profilePhotoUrl: z.string().max(1000).nullable().optional().or(z.literal(''))
+  motherName: z.string().max(100).optional().or(z.literal('')).or(z.null()),
+  fatherName: z.string().max(100).optional().or(z.literal('')).or(z.null()),
+  profilePhotoUrl: z.string().nullable().optional().or(z.literal(''))
 });
 
 const changePasswordSchema = z.object({
@@ -74,6 +76,10 @@ export const getProfile = async (req: AuthRequest, res: Response): Promise<void>
       if (host) {
         fullProfile.profilePhotoUrl = `${req.protocol}://${host}${fullProfile.profilePhotoUrl}`;
       }
+    }
+
+    if (fullProfile.email) {
+      fullProfile.email = fullProfile.email.toLowerCase().trim();
     }
 
     res.json({ success: true, data: fullProfile });
@@ -242,6 +248,7 @@ export const uploadProfilePhotoHandler = async (req: AuthRequest, res: Response)
     }
 
     await query(`UPDATE users SET profile_photo_url = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [photoUrl, userId]);
+    await query(`UPDATE employee_profiles SET profile_photo_url = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2`, [photoUrl, userId]);
 
     res.json({
       success: true,
@@ -265,6 +272,7 @@ export const deleteProfilePhotoHandler = async (req: AuthRequest, res: Response)
     }
 
     await query(`UPDATE users SET profile_photo_url = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [userId]);
+    await query(`UPDATE employee_profiles SET profile_photo_url = NULL, updated_at = CURRENT_TIMESTAMP WHERE user_id = $1`, [userId]);
 
     res.json({
       success: true,

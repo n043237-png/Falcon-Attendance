@@ -114,6 +114,17 @@ export default function AdminAttendance() {
     return `${h}h ${m}m`;
   };
 
+  const formatLateMinutes = (minutes: number) => {
+    if (!minutes || minutes <= 0) return '';
+    const totalMinutes = Math.round(minutes);
+    const h = Math.floor(totalMinutes / 60);
+    const m = totalMinutes % 60;
+    if (h > 0) {
+      return m > 0 ? `${h}h ${m}m` : `${h}h`;
+    }
+    return `${m}m`;
+  };
+
   const formatTime = (isoString: string | null) => {
     if (!isoString) return '--:--';
     return new Date(isoString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -388,7 +399,7 @@ export default function AdminAttendance() {
                           >
                             {r.status?.toUpperCase() === 'LATE' || r.isLate ? (
                               <>
-                                LATE{r.lateMinutes ? ` (${r.lateMinutes}m)` : ''}
+                                LATE{r.lateMinutes ? ` (${formatLateMinutes(r.lateMinutes)})` : ''}
                               </>
                             ) : (
                               r.status?.toUpperCase()

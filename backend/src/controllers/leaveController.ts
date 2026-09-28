@@ -242,8 +242,10 @@ export const getLeaveHistory = async (req: AuthRequest, res: Response): Promise<
     const total = parseInt(countRes.rows[0].count);
 
     const histRes = await query(`
-      SELECT lr.id, lr.leave_type as "leaveType", lr.from_date, lr.to_date, lr.days as total_days, lr.reason, lr.status
+      SELECT lr.id, lr.leave_type as "leaveType", lr.from_date, lr.to_date, lr.days as total_days, lr.reason, lr.status,
+             u.name as "employeeName", u.employee_id as "employeeCode", u.profile_photo_url as "profilePhotoUrl"
       FROM leave_requests lr
+      JOIN users u ON lr.employee_id = u.id
       ${filterQuery}
       ORDER BY lr.created_at DESC
       LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}
@@ -254,6 +256,9 @@ export const getLeaveHistory = async (req: AuthRequest, res: Response): Promise<
       data: {
         items: histRes.rows.map(rec => ({
           id: rec.id,
+          employeeName: rec.employeeName,
+          employeeId: rec.employeeCode,
+          profilePhotoUrl: rec.profilePhotoUrl,
           leaveType: rec.leaveType,
           startDate: new Date(rec.from_date).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
           endDate: new Date(rec.to_date).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),

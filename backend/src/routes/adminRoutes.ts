@@ -140,6 +140,7 @@ router.delete('/employees/:id/photo', deleteEmployeePhoto);
 router.get('/shifts', getShifts);
 router.get('/shifts/:id', getShift);
 router.post('/shifts', createShift);
+router.put('/shifts/:id', updateShift);
 router.patch('/shifts/:id', updateShift);
 router.delete('/shifts/:id', deleteShift);
 router.get('/shifts/:id/employees', getShiftEmployees);

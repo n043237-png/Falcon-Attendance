@@ -20,6 +20,14 @@ export interface TodayResponse {
   success: boolean;
   data?: {
     attendance: AttendanceRecord | null;
+    shift?: {
+      shiftId: number;
+      name: string;
+      startTime: string;
+      endTime: string;
+      graceMinutes: number;
+      lateAfter: string;
+    } | null;
   };
   error?: {
     code: string;

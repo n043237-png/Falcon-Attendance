@@ -136,7 +136,10 @@ class EmployeeProfileService {
         ep.ifsc_code as "ifscCode",
         ep.branch_name as "branchName",
         ep.upi_id as "upiId",
-        m.name as "reportingManagerName",
+        ep.mother_name as "motherName",
+        ep.father_name as "fatherName",
+        ep.reporting_manager as "reportingManager",
+        COALESCE(ep.reporting_manager, m.name) as "reportingManagerName",
         m.email as "reportingManagerEmail",
         m.employee_id as "reportingManagerEmployeeId",
         o.name as "officeLocationName"
@@ -236,7 +239,9 @@ class EmployeeProfileService {
             'emergencyContactName',
             'emergencyContactRelationship',
             'emergencyContactPhone',
-            'emergencyContactAltPhone'
+            'emergencyContactAltPhone',
+            'motherName',
+            'fatherName'
         ];
         const employeeAllowedUserFields = ['phone', 'profilePhotoUrl'];
         // Map camelCase to DB column names for employee_profiles
@@ -244,6 +249,8 @@ class EmployeeProfileService {
             firstName: 'first_name',
             middleName: 'middle_name',
             lastName: 'last_name',
+            motherName: 'mother_name',
+            fatherName: 'father_name',
             dateOfBirth: 'date_of_birth',
             gender: 'gender',
             bloodGroup: 'blood_group',
@@ -262,6 +269,7 @@ class EmployeeProfileService {
             emergencyContactRelationship: 'emergency_contact_relationship',
             emergencyContactPhone: 'emergency_contact_phone',
             emergencyContactAltPhone: 'emergency_contact_alt_phone',
+            reportingManager: 'reporting_manager',
             reportingManagerId: 'reporting_manager_id',
             employmentType: 'employment_type',
             confirmationDate: 'confirmation_date',
@@ -316,6 +324,57 @@ class EmployeeProfileService {
             const fullName = `${fName || ''} ${lName || ''}`.trim();
             if (fullName) {
                 userUpdates.name = fullName;
+            }
+        }
+        // Aadhaar number normalization & validation
+        if (profileUpdates.aadhaarNumber !== undefined && profileUpdates.aadhaarNumber !== null) {
+            const raw = String(profileUpdates.aadhaarNumber).trim();
+            if (raw === '') {
+                profileUpdates.aadhaarNumber = null;
+            }
+            else if (raw.includes('X') || raw.includes('*')) {
+                delete profileUpdates.aadhaarNumber;
+            }
+            else {
+                const digits = raw.replace(/\D/g, '');
+                if (digits.length !== 12) {
+                    throw new Error('Aadhaar Number must be exactly 12 digits');
+                }
+                profileUpdates.aadhaarNumber = digits;
+            }
+        }
+        // PAN number normalization & validation
+        if (profileUpdates.panNumber !== undefined && profileUpdates.panNumber !== null) {
+            const raw = String(profileUpdates.panNumber).trim().toUpperCase();
+            if (raw === '') {
+                profileUpdates.panNumber = null;
+            }
+            else if (raw.includes('X') || raw.includes('*')) {
+                delete profileUpdates.panNumber;
+            }
+            else {
+                const panRegex = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
+                if (!panRegex.test(raw)) {
+                    throw new Error('PAN Number must be a valid 10-character PAN format (e.g. ABCDE1234F)');
+                }
+                profileUpdates.panNumber = raw;
+            }
+        }
+        // Personal Email normalization & validation
+        if (profileUpdates.personalEmail !== undefined && profileUpdates.personalEmail !== null) {
+            let raw = String(profileUpdates.personalEmail).trim().toLowerCase();
+            if (raw === '') {
+                profileUpdates.personalEmail = null;
+            }
+            else {
+                if (!raw.includes('@')) {
+                    raw = `${raw}@gmail.com`;
+                }
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                if (!emailRegex.test(raw)) {
+                    throw new Error('Personal Email must be a valid email address (e.g. name@gmail.com)');
+                }
+                profileUpdates.personalEmail = raw;
             }
         }
         // Process employee_profiles updates

@@ -1,4 +1,4 @@
-﻿import multer from 'multer';
+import multer from 'multer';
 import sharp from 'sharp';
 import path from 'path';
 import fs from 'fs';
@@ -46,16 +46,23 @@ export const processAndSaveProfilePhoto = async (buffer: Buffer, prefix = 'profi
   const filename = `${prefix}-${Date.now()}-${crypto.randomBytes(6).toString('hex')}.webp`;
   const filePath = path.join(UPLOAD_DIR, filename);
 
-  await sharp(buffer)
+  const webpBuffer = await sharp(buffer)
     .rotate()
     .resize(400, 400, {
       fit: 'cover',
       position: 'center',
     })
-    .webp({ quality: 85 })
-    .toFile(filePath);
+    .webp({ quality: 80 })
+    .toBuffer();
 
-  return `/uploads/profiles/${filename}`;
+  try {
+    await fs.promises.writeFile(filePath, webpBuffer);
+  } catch (err) {
+    console.warn('Could not write local upload file:', err);
+  }
+
+  // Returning base64 data URI ensures the photo persists in Supabase DB and renders on localhost, Vercel, and Mobile APK
+  return `data:image/webp;base64,${webpBuffer.toString('base64')}`;
 };
 
 /**

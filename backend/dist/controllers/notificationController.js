@@ -49,7 +49,7 @@ const getNotifications = async (req, res) => {
         // Role-based recipient restriction:
         // Employees ONLY see notifications directed to them or their role.
         // Admins see notifications directed to them or admin role.
-        let filterQuery = `WHERE deleted_at IS NULL AND (recipient_user_id = $1 OR (role = $2 AND recipient_user_id IS NULL))`;
+        let filterQuery = `WHERE deleted_at IS NULL AND created_at >= (NOW() - INTERVAL '30 days') AND (recipient_user_id = $1 OR (role = $2 AND recipient_user_id IS NULL))`;
         const queryParams = [userId, userRole];
         if (search) {
             queryParams.push(`%${search}%`);
@@ -86,6 +86,7 @@ const getNotifications = async (req, res) => {
        FROM notifications 
        WHERE deleted_at IS NULL 
          AND is_read = FALSE 
+         AND created_at >= (NOW() - INTERVAL '30 days')
          AND (recipient_user_id = $1 OR (role = $2 AND recipient_user_id IS NULL))`, [userId, userRole]);
         const unreadCount = parseInt(unreadCountRes.rows[0].unread_count) || 0;
         // Fetch paginated rows
@@ -129,6 +130,7 @@ const getUnreadNotifications = async (req, res) => {
        FROM notifications 
        WHERE deleted_at IS NULL 
          AND is_read = FALSE 
+         AND created_at >= (NOW() - INTERVAL '30 days')
          AND (recipient_user_id = $1 OR (role = $2 AND recipient_user_id IS NULL))`, [userId, userRole]);
         const count = parseInt(countRes.rows[0].unread_count) || 0;
         // Latest 10 notifications for dropdown
@@ -137,6 +139,7 @@ const getUnreadNotifications = async (req, res) => {
               created_at as "createdAt"
        FROM notifications
        WHERE deleted_at IS NULL 
+         AND created_at >= (NOW() - INTERVAL '30 days')
          AND (recipient_user_id = $1 OR (role = $2 AND recipient_user_id IS NULL))
        ORDER BY created_at DESC
        LIMIT 10`, [userId, userRole]);

@@ -138,6 +138,7 @@ router.delete('/employees/:id/photo', adminEmployeeController_1.deleteEmployeePh
 router.get('/shifts', shiftController_1.getShifts);
 router.get('/shifts/:id', shiftController_1.getShift);
 router.post('/shifts', shiftController_1.createShift);
+router.put('/shifts/:id', shiftController_1.updateShift);
 router.patch('/shifts/:id', shiftController_1.updateShift);
 router.delete('/shifts/:id', shiftController_1.deleteShift);
 router.get('/shifts/:id/employees', shiftController_1.getShiftEmployees);

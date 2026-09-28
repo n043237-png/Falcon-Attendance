@@ -19,6 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { getCurrentLocation } from '../services/locationService';
 import { getTodayAttendance, checkIn, checkOut, AttendanceRecord } from '../api/attendanceApi';
 import { resolvePhotoUrl } from '../api/profileApi';
+import { scheduleLocalShiftReminders } from '../services/pushNotificationService';
 
 export default function HomeScreen() {
   const { user, token, logout, refreshUser } = useAuth();
@@ -43,6 +44,15 @@ export default function HomeScreen() {
         setAttendance(res.data.attendance);
       } else {
         setAttendance(null);
+      }
+
+      if (res.success && res.data?.shift) {
+        scheduleLocalShiftReminders(
+          res.data.shift.startTime,
+          res.data.shift.endTime,
+          res.data.shift.graceMinutes,
+          res.data.shift.lateAfter
+        );
       }
     } catch (e) {
       console.error(e);
