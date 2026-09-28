@@ -6,6 +6,7 @@ const db_1 = require("../db");
 const locationService_1 = require("../services/locationService");
 const notificationService_1 = require("../services/notificationService");
 const attendanceStatusService_1 = require("../services/attendanceStatusService");
+const shiftService_1 = require("../services/shiftService");
 const coordsSchema = zod_1.z.object({
     latitude: zod_1.z.number().min(-90).max(90),
     longitude: zod_1.z.number().min(-180).max(180),
@@ -47,15 +48,30 @@ const checkIn = async (req, res) => {
             });
             return;
         }
-        // 2. Check if already checked in today
-        // We enforce timezone at DB or server level. Using CURRENT_DATE in postgres (depends on DB timezone).
-        // Let's explicitly use server date for check.
-        const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-        const existRes = await (0, db_1.query)(`SELECT id, check_in FROM attendance WHERE employee_id = $1 AND attendance_date = $2`, [employeeId, today]);
+        // 2. Fetch employee's assigned shift
+        const shift = await shiftService_1.ShiftService.getEmployeeShift(employeeId);
+        // Determine shift attendance date (handling night shifts)
+        const now = new Date();
+        const today = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+        let attendanceDate = today;
+        if (shift.isNightShift) {
+            const currentHour = parseInt(now.toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: 'numeric', hour12: false }), 10);
+            if (currentHour < 12) {
+                // Checking in after midnight belongs to the previous calendar day's shift
+                const yesterday = new Date(now);
+                yesterday.setDate(yesterday.getDate() - 1);
+                attendanceDate = yesterday.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+            }
+        }
+        // Check if already checked in for this shift date
+        const existRes = await (0, db_1.query)(`SELECT id, check_in FROM attendance WHERE employee_id = $1 AND attendance_date = $2`, [employeeId, attendanceDate]);
         if (existRes.rows.length > 0 && existRes.rows[0].check_in !== null) {
-            res.status(400).json({ success: false, error: { code: 'ALREADY_CHECKED_IN', message: 'You have already checked in today.' } });
+            res.status(400).json({ success: false, error: { code: 'ALREADY_CHECKED_IN', message: 'You have already checked in for this shift.' } });
             return;
         }
+        // Evaluate shift attendance metrics (late status & late minutes)
+        const evalResult = shiftService_1.ShiftService.evaluateAttendance(shift, now);
+        const checkInStatus = evalResult.isLate ? 'LATE' : 'PRESENT';
         let newRecord;
         if (existRes.rows.length > 0) {
             // Record was auto-created by absence scheduler (check_in is NULL) -> update it!
@@ -64,21 +80,26 @@ const checkIn = async (req, res) => {
         SET office_id = $1, 
             check_in = CURRENT_TIMESTAMP, 
             check_in_location = ST_SetSRID(ST_MakePoint($2, $3), 4326),
-            status = 'PRESENT'
-        WHERE id = $4
-        RETURNING id, attendance_date, check_in, status
-      `, [locResult.officeId, longitude, latitude, existRes.rows[0].id]);
+            status = $4,
+            shift_id = $5,
+            is_late = $6,
+            late_minutes = $7
+        WHERE id = $8
+        RETURNING id, attendance_date, check_in, status, shift_id, is_late, late_minutes
+      `, [locResult.officeId, longitude, latitude, checkInStatus, shift.id, evalResult.isLate, evalResult.lateMinutes, existRes.rows[0].id]);
             newRecord = updateRes.rows[0];
         }
         else {
             // 3. Create attendance
             const insertRes = await (0, db_1.query)(`
         INSERT INTO attendance (
-          employee_id, office_id, attendance_date, check_in, check_out, check_in_location, status
+          employee_id, office_id, attendance_date, check_in, check_out, check_in_location, status,
+          shift_id, is_late, late_minutes
         ) VALUES (
-          $1, $2, $3, CURRENT_TIMESTAMP, NULL, ST_SetSRID(ST_MakePoint($4, $5), 4326), 'PRESENT'
-        ) RETURNING id, attendance_date, check_in, status
-      `, [employeeId, locResult.officeId, today, longitude, latitude]);
+          $1, $2, $3, CURRENT_TIMESTAMP, NULL, ST_SetSRID(ST_MakePoint($4, $5), 4326), $6,
+          $7, $8, $9
+        ) RETURNING id, attendance_date, check_in, status, shift_id, is_late, late_minutes
+      `, [employeeId, locResult.officeId, attendanceDate, longitude, latitude, checkInStatus, shift.id, evalResult.isLate, evalResult.lateMinutes]);
             newRecord = insertRes.rows[0];
         }
         // Audit log for location coordinates
@@ -99,6 +120,11 @@ const checkIn = async (req, res) => {
                     allowedRadiusMeters: locResult.allowedRadiusMeters,
                     officeId: locResult.officeId,
                     officeName: locResult.officeName,
+                    shiftId: shift.id,
+                    shiftName: shift.name,
+                    shiftCode: shift.code,
+                    isLate: evalResult.isLate,
+                    lateMinutes: evalResult.lateMinutes,
                     insideOffice: true,
                     timestamp: new Date().toISOString()
                 })
@@ -109,42 +135,38 @@ const checkIn = async (req, res) => {
         }
         // Trigger Smart Notifications
         try {
-            const settings = await (0, attendanceStatusService_1.getAttendanceSettings)();
-            const now = new Date();
-            const timeStr24 = now.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata' });
             const timeStr12 = now.toLocaleTimeString('en-US', {
                 timeZone: 'Asia/Kolkata',
                 hour: '2-digit',
                 minute: '2-digit',
                 hour12: true,
             });
-            const isLate = settings && settings.late_threshold && timeStr24 > settings.late_threshold;
-            if (isLate) {
+            if (evalResult.isLate) {
                 await notificationService_1.NotificationService.notifyUser(employeeId, {
                     title: '⚠️ Late Check-In',
-                    message: `Your attendance has been marked at ${timeStr12} (Past late threshold of ${settings.late_threshold}).`,
+                    message: `Your attendance has been marked at ${timeStr12} (Past ${shift.name} late threshold of ${shift.lateAfter}).`,
                     type: 'Attendance',
                     priority: 'High',
                     actionUrl: '/my-attendance',
-                    attendanceDate: today,
+                    attendanceDate: attendanceDate,
                 });
                 await notificationService_1.NotificationService.notifyAdmins({
                     title: 'Employee Checked In Late',
-                    message: `${req.user.name || 'An employee'} checked in late today at ${timeStr12}.`,
+                    message: `${req.user.name || 'An employee'} checked in late today for ${shift.name} at ${timeStr12} (${evalResult.lateMinutes} mins late).`,
                     type: 'Attendance',
                     priority: 'Medium',
                     actionUrl: '/attendance',
-                    attendanceDate: today,
+                    attendanceDate: attendanceDate,
                 });
             }
             else {
                 await notificationService_1.NotificationService.notifyUser(employeeId, {
                     title: '✅ Check-In Successful',
-                    message: `Your attendance has been marked successfully at ${timeStr12}.`,
+                    message: `Your attendance has been marked on time for ${shift.name} at ${timeStr12}.`,
                     type: 'Attendance',
                     priority: 'Low',
                     actionUrl: '/my-attendance',
-                    attendanceDate: today,
+                    attendanceDate: attendanceDate,
                 });
             }
         }
@@ -157,7 +179,16 @@ const checkIn = async (req, res) => {
                 attendanceId: newRecord.id,
                 attendanceDate: newRecord.attendance_date,
                 checkIn: newRecord.check_in,
-                status: newRecord.status
+                status: newRecord.status,
+                shift: {
+                    id: shift.id,
+                    name: shift.name,
+                    code: shift.code,
+                    startTime: shift.startTime,
+                    endTime: shift.endTime,
+                },
+                isLate: evalResult.isLate,
+                lateMinutes: evalResult.lateMinutes,
             }
         });
     }
@@ -203,17 +234,45 @@ const checkOut = async (req, res) => {
             });
             return;
         }
-        // 2. Find today's attendance
-        const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-        const existRes = await (0, db_1.query)(`SELECT id, check_in, check_out FROM attendance WHERE employee_id = $1 AND attendance_date = $2`, [employeeId, today]);
-        if (existRes.rows.length === 0 || !existRes.rows[0].check_in) {
-            res.status(400).json({ success: false, error: { code: 'NOT_CHECKED_IN', message: 'You have not checked in today.' } });
+        // 2. Find open attendance record (supporting night shifts across midnight)
+        const openRes = await (0, db_1.query)(`
+      SELECT id, attendance_date, check_in, check_out, shift_id 
+      FROM attendance 
+      WHERE employee_id = $1 AND check_in IS NOT NULL AND check_out IS NULL
+      ORDER BY check_in DESC 
+      LIMIT 1
+    `, [employeeId]);
+        if (openRes.rows.length === 0) {
+            // Check if already checked out today
+            const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+            const completedRes = await (0, db_1.query)(`SELECT id FROM attendance WHERE employee_id = $1 AND attendance_date = $2 AND check_out IS NOT NULL`, [employeeId, today]);
+            if (completedRes.rows.length > 0) {
+                res.status(400).json({ success: false, error: { code: 'ALREADY_CHECKED_OUT', message: 'You have already checked out today.' } });
+                return;
+            }
+            res.status(400).json({ success: false, error: { code: 'NOT_CHECKED_IN', message: 'You do not have an active check-in session.' } });
             return;
         }
-        const attendance = existRes.rows[0];
-        if (attendance.check_out) {
-            res.status(400).json({ success: false, error: { code: 'ALREADY_CHECKED_OUT', message: 'You have already checked out today.' } });
-            return;
+        const attendance = openRes.rows[0];
+        const checkInDate = new Date(attendance.check_in);
+        const now = new Date();
+        // Fetch shift
+        const shift = attendance.shift_id
+            ? (await shiftService_1.ShiftService.getShiftById(attendance.shift_id)) || (await shiftService_1.ShiftService.getEmployeeShift(employeeId))
+            : await shiftService_1.ShiftService.getEmployeeShift(employeeId);
+        // Calculate metrics using ShiftService
+        const metrics = shiftService_1.ShiftService.evaluateAttendance(shift, checkInDate, now);
+        // Determine final status
+        const isLateAttendance = attendance.is_late || metrics.isLate;
+        let finalStatus = isLateAttendance ? 'LATE' : 'PRESENT';
+        if (metrics.workingMinutes >= shift.minimumWorkHours * 60) {
+            finalStatus = isLateAttendance ? 'LATE' : 'PRESENT';
+        }
+        else if (metrics.workingMinutes >= shift.halfDayMinutes) {
+            finalStatus = 'HALF_DAY';
+        }
+        else {
+            finalStatus = 'INSUFFICIENT_HOURS';
         }
         // 3. Update checkout
         const updateRes = await (0, db_1.query)(`
@@ -221,10 +280,27 @@ const checkOut = async (req, res) => {
       SET 
         check_out = CURRENT_TIMESTAMP, 
         check_out_location = ST_SetSRID(ST_MakePoint($1, $2), 4326),
-        working_minutes = EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - check_in)) / 60
-      WHERE id = $3
-      RETURNING id, attendance_date, check_in, check_out, working_minutes, status
-    `, [longitude, latitude, attendance.id]);
+        working_minutes = $3,
+        overtime_minutes = $4,
+        early_departure_minutes = $5,
+        status = $6,
+        shift_id = COALESCE(shift_id, $7),
+        is_late = $8,
+        late_minutes = $9
+      WHERE id = $10
+      RETURNING id, attendance_date, check_in, check_out, working_minutes, overtime_minutes, early_departure_minutes, status, shift_id, is_late, late_minutes
+    `, [
+            longitude,
+            latitude,
+            metrics.workingMinutes,
+            metrics.overtimeMinutes,
+            metrics.earlyDepartureMinutes,
+            finalStatus,
+            shift.id,
+            isLateAttendance,
+            metrics.lateMinutes,
+            attendance.id
+        ]);
         const updated = updateRes.rows[0];
         // Audit log for location coordinates
         try {
@@ -244,6 +320,13 @@ const checkOut = async (req, res) => {
                     allowedRadiusMeters: locResult.allowedRadiusMeters,
                     officeId: locResult.officeId,
                     officeName: locResult.officeName,
+                    shiftId: shift.id,
+                    shiftName: shift.name,
+                    shiftCode: shift.code,
+                    workingMinutes: metrics.workingMinutes,
+                    overtimeMinutes: metrics.overtimeMinutes,
+                    earlyDepartureMinutes: metrics.earlyDepartureMinutes,
+                    breakDeducted: shift.breakMinutes,
                     insideOffice: true,
                     timestamp: new Date().toISOString()
                 })
@@ -260,10 +343,14 @@ const checkOut = async (req, res) => {
                 return `${h}h ${m}m`;
             };
             const checkOutTime = new Date(updated.check_out).toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
+            let notifMsg = `Checkout completed successfully for ${shift.name}. Duration: ${formatDuration(metrics.workingMinutes)} (Break deducted: ${shift.breakMinutes}m).`;
+            if (metrics.overtimeMinutes > 0) {
+                notifMsg += ` Overtime earned: ${formatDuration(metrics.overtimeMinutes)}.`;
+            }
             await (0, db_1.query)(`
         INSERT INTO notifications (employee_id, type, attendance_date, message)
         VALUES ($1, 'CHECK_OUT', $2, $3)
-      `, [employeeId, today, `Checkout completed successfully. Time: ${checkOutTime}, Duration: ${formatDuration(updated.working_minutes)}`]);
+      `, [employeeId, updated.attendance_date, notifMsg]);
         }
         catch (e) {
             if (e.code !== '23505')
@@ -276,8 +363,15 @@ const checkOut = async (req, res) => {
                 attendanceDate: updated.attendance_date,
                 checkIn: updated.check_in,
                 checkOut: updated.check_out,
-                workingMinutes: Math.round(updated.working_minutes),
-                status: updated.status
+                workingMinutes: Math.round(metrics.workingMinutes),
+                overtimeMinutes: Math.round(metrics.overtimeMinutes),
+                earlyDepartureMinutes: Math.round(metrics.earlyDepartureMinutes),
+                status: updated.status,
+                shift: {
+                    id: shift.id,
+                    name: shift.name,
+                    code: shift.code,
+                }
             }
         });
     }

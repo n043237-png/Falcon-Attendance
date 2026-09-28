@@ -3,6 +3,9 @@ import { authenticateToken, employeeOnly } from '../middlewares/auth';
 import { query } from '../db';
 import { AuthRequest } from '../middlewares/auth';
 import { NotificationService } from '../services/notificationService';
+import { LeaveValidationService } from '../services/leaveValidationService';
+import { ShiftService } from '../services/shiftService';
+import { getMyShift } from '../controllers/shiftController';
 
 const router = express.Router();
 
@@ -13,7 +16,7 @@ router.use(employeeOnly);
 router.get('/dashboard', async (req: AuthRequest, res) => {
   const userId = req.user!.id;
   try {
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 
     // Today's attendance
     const todayRes = await query(
@@ -43,16 +46,77 @@ router.get('/dashboard', async (req: AuthRequest, res) => {
       [userId]
     );
 
+    // Assigned Shift
+    const assignedShift = await ShiftService.getEmployeeShift(userId);
+
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1;
+    const startOfMonth = `${currentYear}-${String(currentMonth).padStart(2, '0')}-01`;
+
+    // Current month attendance stats
+    const monthStatsRes = await query(`
+      SELECT 
+        COUNT(*) FILTER (WHERE status = 'PRESENT') as present_count,
+        COUNT(*) FILTER (WHERE status = 'LATE') as late_count,
+        COUNT(*) FILTER (WHERE status = 'HALF_DAY') as half_day_count,
+        COUNT(*) FILTER (WHERE status = 'ABSENT') as absent_count,
+        COUNT(*) FILTER (WHERE status = 'ON_LEAVE') as leave_count,
+        COALESCE(SUM(working_minutes), 0) as total_working_minutes
+      FROM attendance 
+      WHERE employee_id = $1 
+        AND attendance_date >= $2 
+        AND attendance_date <= $3
+    `, [userId, startOfMonth, today]);
+
+    // User profile info
+    const userRes = await query(`
+      SELECT id, name, employee_id as employee_code, email, phone, designation, department, profile_photo_url, role
+      FROM users WHERE id = $1
+    `, [userId]);
+
+    // Latest payslip
+    const payslipRes = await query(`
+      SELECT month, year, file_url as "fileUrl", generated_date as "generatedDate"
+      FROM salary_slips
+      WHERE employee_id = $1
+      ORDER BY year DESC, month DESC
+      LIMIT 1
+    `, [userId]);
+
+    const mRow = monthStatsRes.rows[0] || {};
+    const presentCount = parseInt(mRow.present_count || '0');
+    const lateCount = parseInt(mRow.late_count || '0');
+    const halfDayCount = parseInt(mRow.half_day_count || '0');
+    const absentCount = parseInt(mRow.absent_count || '0');
+    const leaveCount = parseInt(mRow.leave_count || '0');
+    const totalWorkingMinutes = parseInt(mRow.total_working_minutes || '0');
+
     res.json({
       today_status: todayRes.rows[0] || null,
       leave_balances,
       recent_notifications: notifRes.rows,
+      assigned_shift: assignedShift,
+      profile: userRes.rows[0] || null,
+      month_stats: {
+        present: presentCount,
+        late: lateCount,
+        half_day: halfDayCount,
+        absent: absentCount,
+        leave: leaveCount,
+        total_working_minutes: totalWorkingMinutes,
+        total_days_worked: presentCount + lateCount + halfDayCount
+      },
+      latest_payslip: payslipRes.rows[0] || null
     });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Server error fetching dashboard' });
   }
 });
+
+// Assigned Shift endpoint
+router.get('/shift', getMyShift);
 
 // 2. My Attendance (Full month daily details)
 router.get('/attendance', async (req: AuthRequest, res) => {
@@ -179,21 +243,70 @@ router.get('/leave-requests', async (req: AuthRequest, res) => {
   }
 });
 
+router.get('/validate-leave', async (req: AuthRequest, res) => {
+  const userId = req.user!.id;
+  const startDate = (req.query.startDate as string) || (req.query.start_date as string);
+  const endDate = (req.query.endDate as string) || (req.query.end_date as string);
+
+  if (!startDate || !endDate) {
+    return res.status(400).json({ error: 'startDate and endDate are required' });
+  }
+
+  try {
+    const result = await LeaveValidationService.validateLeaveRequest(userId, startDate, endDate);
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    console.error('validate-leave error:', error);
+    res.status(500).json({ error: error.message || 'Validation failed' });
+  }
+});
+
+router.post('/validate-leave', async (req: AuthRequest, res) => {
+  const userId = req.user!.id;
+  const startDate = req.body?.startDate || req.body?.start_date;
+  const endDate = req.body?.endDate || req.body?.end_date;
+
+  if (!startDate || !endDate) {
+    return res.status(400).json({ error: 'startDate and endDate are required' });
+  }
+
+  try {
+    const result = await LeaveValidationService.validateLeaveRequest(userId, startDate, endDate);
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    console.error('validate-leave error:', error);
+    res.status(500).json({ error: error.message || 'Validation failed' });
+  }
+});
+
 router.post('/leave-requests', async (req: AuthRequest, res) => {
   const userId = req.user!.id;
   const { leave_type_id, start_date, end_date, total_days, reason } = req.body;
   try {
+    // Run Smart Leave Validation Engine before saving
+    const validation = await LeaveValidationService.validateLeaveRequest(userId, start_date, end_date);
+    if (!validation.canSubmit) {
+      return res.status(400).json({
+        error: validation.blockReason || 'Cannot submit leave request',
+        validation
+      });
+    }
+
+    const leaveType = validation.paidLeaveRequired === 0
+      ? (validation.allWeeklyOffs ? 'Weekly Off' : 'Company Holiday')
+      : (leave_type_id || 'Paid Leave');
+
     await query(
       `INSERT INTO leave_requests (employee_id, leave_type, from_date, to_date, days, reason, status)
        VALUES ($1, $2, $3, $4, $5, $6, 'PENDING')`,
-      [userId, leave_type_id, start_date, end_date, total_days, reason]
+      [userId, leaveType, start_date, end_date, validation.totalDays, reason]
     );
 
     // Notify admins and employee
     try {
       await NotificationService.notifyAdmins({
         title: 'New Leave Request',
-        message: `${req.user?.name || 'An employee'} applied for ${leave_type_id || 'leave'} from ${start_date} to ${end_date}.`,
+        message: `${req.user?.name || 'An employee'} applied for ${leaveType} from ${start_date} to ${end_date}.`,
         type: 'Leave',
         priority: 'Medium',
         actionUrl: '/leave',
@@ -209,10 +322,10 @@ router.post('/leave-requests', async (req: AuthRequest, res) => {
       console.warn('Leave apply notification error:', notifErr);
     }
 
-    res.json({ success: true });
-  } catch (error) {
+    res.json({ success: true, validation });
+  } catch (error: any) {
     console.error(error);
-    res.status(500).json({ error: 'Server error applying leave' });
+    res.status(500).json({ error: error.message || 'Server error applying leave' });
   }
 });
 

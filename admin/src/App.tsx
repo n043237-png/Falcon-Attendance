@@ -25,6 +25,7 @@ import AppLayout from './components/layout/AppLayout';
 // Admin Pages
 import AdminAttendance from './pages/AdminAttendance';
 import AdminEmployees from './pages/AdminEmployees';
+import AdminShifts from './pages/AdminShifts';
 import AdminSettings from './pages/AdminSettings';
 import AdminReports from './pages/AdminReports';
 import AdminLeave from './pages/AdminLeave';
@@ -106,6 +107,14 @@ function AdminDashboardView() {
       icon: Briefcase,
       color: '#0284C7',
       badge: 'Payroll'
+    },
+    {
+      title: 'Shift Management',
+      desc: 'Multi-shift schedules, grace periods, overnight rotations, and assignments.',
+      path: '/shifts',
+      icon: Clock,
+      color: '#0D9488',
+      badge: 'Shifts'
     },
     {
       title: 'System Settings',
@@ -406,6 +415,7 @@ function App() {
               {/* Admin Routes */}
               <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
                 <Route path="/employees" element={<AdminEmployees />} />
+                <Route path="/shifts" element={<AdminShifts />} />
                 <Route path="/attendance" element={<AdminAttendance />} />
                 <Route path="/payroll" element={<AdminPayroll />} />
                 <Route path="/reports" element={<AdminReports />} />

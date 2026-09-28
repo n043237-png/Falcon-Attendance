@@ -10,7 +10,7 @@ import { getCompanyLogoBuffer, getCompanyLogoPath } from '../utils/logoHelper';
 
 export const getAttendanceReport = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { from, to, month, year, employeeId, status, search, export: exportType } = req.query;
+    const { from, to, month, year, employeeId, shiftId, status, search, export: exportType } = req.query;
     
     const page = parseInt(req.query.page as string) || 1;
     let limit = parseInt(req.query.limit as string) || 20;
@@ -40,17 +40,27 @@ export const getAttendanceReport = async (req: AuthRequest, res: Response): Prom
     const actualEndStr = endDateStr > todayStr ? todayStr : endDateStr;
 
     // 2. Fetch Employees
-    let empQuery = `SELECT id, name, email, employee_id FROM users WHERE status = 'active'`;
+    let empQuery = `
+      SELECT u.id, u.name, u.email, u.employee_id, u.employee_code, u.department, u.designation,
+             u.shift_id, s.name as shift_name, s.code as shift_code
+      FROM users u
+      LEFT JOIN shifts s ON s.id = u.shift_id
+      WHERE u.status = 'active'
+    `;
     const empParams: any[] = [];
     if (employeeId) {
       empParams.push(employeeId);
-      empQuery += ` AND id = $${empParams.length}`;
+      empQuery += ` AND u.id = $${empParams.length}`;
+    }
+    if (shiftId && shiftId !== 'All') {
+      empParams.push(parseInt(shiftId as string, 10));
+      empQuery += ` AND u.shift_id = $${empParams.length}`;
     }
     if (search) {
       empParams.push(`%${search}%`);
-      empQuery += ` AND (name ILIKE $${empParams.length} OR email ILIKE $${empParams.length})`;
+      empQuery += ` AND (u.name ILIKE $${empParams.length} OR u.employee_id ILIKE $${empParams.length} OR u.employee_code ILIKE $${empParams.length} OR u.email ILIKE $${empParams.length} OR u.department ILIKE $${empParams.length} OR u.designation ILIKE $${empParams.length})`;
     }
-    empQuery += ` ORDER BY name ASC`;
+    empQuery += ` ORDER BY u.name ASC`;
     const empRes = await query(empQuery, empParams);
     const employees = empRes.rows;
 
@@ -181,6 +191,11 @@ export const getAttendanceReport = async (req: AuthRequest, res: Response): Prom
             checkIn: result.checkIn ? result.checkIn.toISOString() : null,
             checkOut: result.checkOut ? result.checkOut.toISOString() : null,
             workingMinutes: Math.round(result.workingMinutes),
+            lateMinutes: rec?.late_minutes || 0,
+            overtimeMinutes: rec?.overtime_minutes || 0,
+            earlyDepartureMinutes: rec?.early_departure_minutes || 0,
+            shiftId: rec?.shift_id || emp.shift_id,
+            shiftName: emp.shift_name,
             leaveType: (result as any).leaveType,
             holidayName: (result as any).holidayName,
             isLate: result.status === 'PRESENT' && result.isLate
@@ -236,7 +251,11 @@ export const getAttendanceReport = async (req: AuthRequest, res: Response): Prom
           id: emp.id,
           name: emp.name,
           email: emp.email,
-          empId: emp.employee_id,
+          empId: emp.employee_code || emp.employee_id,
+          employeeCode: emp.employee_code || emp.employee_id,
+          shiftId: emp.shift_id,
+          shiftName: emp.shift_name,
+          shiftCode: emp.shift_code,
           summary: empSummary,
           daily: dailyRecords
         });
@@ -628,7 +647,7 @@ async function exportPdf(res: Response, summary: any, employeeReports: any[], fr
     doc.rect(36, currentY + rowH - 0.5, tableW, 0.5).fill('#E2E8F0');
 
     const cells = [
-      { val: er.name, align: 'left', font: 'Helvetica-Bold', color: '#0F172A' },
+      { val: `${er.name}${er.empId ? ` (${er.empId})` : ''}`, align: 'left', font: 'Helvetica-Bold', color: '#0F172A' },
       { val: String(er.summary.present), align: 'center', font: 'Helvetica-Bold', color: er.summary.present > 0 ? '#15803D' : '#0F172A' },
       { val: String(er.summary.absent), align: 'center', font: er.summary.absent > 0 ? 'Helvetica-Bold' : 'Helvetica', color: er.summary.absent > 0 ? '#B91C1C' : '#64748B' },
       { val: String(er.summary.insufficientHours || 0), align: 'center', font: er.summary.insufficientHours > 0 ? 'Helvetica-Bold' : 'Helvetica', color: er.summary.insufficientHours > 0 ? '#C2410C' : '#64748B' },

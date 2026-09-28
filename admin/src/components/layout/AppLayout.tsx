@@ -17,7 +17,8 @@ import {
   User,
   ChevronDown,
   Briefcase,
-  ArrowLeft
+  ArrowLeft,
+  Clock
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import Avatar from '../common/Avatar';
@@ -40,6 +41,7 @@ export default function AppLayout() {
   const adminLinks = [
     { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
     { name: 'Employees', path: '/employees', icon: Users },
+    { name: 'Shifts', path: '/shifts', icon: Clock },
     { name: 'Attendance', path: '/attendance', icon: CalendarCheck },
     { name: 'My Attendance', path: '/my-attendance', icon: UserCheck },
     { name: 'Leave Management', path: '/leave', icon: CalendarRange },

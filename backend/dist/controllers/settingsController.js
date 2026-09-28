@@ -1,7 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updateOfficeSettings = exports.getOfficeSettings = exports.deleteHoliday = exports.addHoliday = exports.getHolidays = exports.updateSettings = exports.getSettings = void 0;
+exports.updateLeaveSettings = exports.getLeaveSettings = exports.updateOfficeSettings = exports.getOfficeSettings = exports.deleteHoliday = exports.addHoliday = exports.getHolidays = exports.updateSettings = exports.getSettings = void 0;
 const db_1 = require("../db");
+const leaveValidationService_1 = require("../services/leaveValidationService");
 const zod_1 = require("zod");
 const settingsSchema = zod_1.z.object({
     officeStart: zod_1.z.string().regex(/^\d{2}:\d{2}:\d{2}$/).optional(),
@@ -56,6 +57,35 @@ const updateSettings = async (req, res) => {
         }
         q += ` WHERE id = 1`;
         await (0, db_1.query)(q, params);
+        // Synchronize default Day Shift (DS) with settings
+        if (d.officeStart || d.officeEnd || d.lateThreshold) {
+            await (0, db_1.query)(`
+        UPDATE shifts
+        SET start_time = COALESCE($1, start_time),
+            end_time = COALESCE($2, end_time),
+            late_after = COALESCE($3, late_after),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE code = 'DS'
+      `, [d.officeStart || null, d.officeEnd || null, d.lateThreshold || null]);
+            // Automatically recalculate today's attendance so changes to thresholds apply immediately
+            await (0, db_1.query)(`
+        UPDATE attendance a
+        SET 
+          is_late = ((a.check_in AT TIME ZONE 'Asia/Kolkata')::time > s.late_after),
+          late_minutes = GREATEST(0, ROUND(EXTRACT(EPOCH FROM ((a.check_in AT TIME ZONE 'Asia/Kolkata')::time - s.late_after)) / 60, 2)),
+          status = CASE 
+            WHEN a.check_out IS NOT NULL AND a.working_minutes < s.half_day_minutes THEN 'INSUFFICIENT_HOURS'
+            WHEN a.check_out IS NOT NULL AND a.working_minutes < s.minimum_work_hours * 60 THEN 'HALF_DAY'
+            WHEN (a.check_in AT TIME ZONE 'Asia/Kolkata')::time > s.late_after THEN 'LATE'
+            ELSE 'PRESENT'
+          END
+        FROM users u
+        JOIN shifts s ON s.id = COALESCE(u.shift_id, 1)
+        WHERE a.employee_id = u.id 
+          AND a.attendance_date = CURRENT_DATE 
+          AND a.check_in IS NOT NULL
+      `);
+        }
         res.json({ success: true, message: 'Settings updated' });
     }
     catch (error) {
@@ -227,3 +257,23 @@ const updateOfficeSettings = async (req, res) => {
     }
 };
 exports.updateOfficeSettings = updateOfficeSettings;
+const getLeaveSettings = async (req, res) => {
+    try {
+        const settings = await leaveValidationService_1.LeaveValidationService.getLeaveSettings();
+        res.json({ success: true, data: settings });
+    }
+    catch (error) {
+        res.status(500).json({ success: false, error: { message: 'Server error fetching leave settings' } });
+    }
+};
+exports.getLeaveSettings = getLeaveSettings;
+const updateLeaveSettings = async (req, res) => {
+    try {
+        const updated = await leaveValidationService_1.LeaveValidationService.updateLeaveSettings(req.body);
+        res.json({ success: true, data: updated, message: 'Leave settings updated successfully' });
+    }
+    catch (error) {
+        res.status(500).json({ success: false, error: { message: 'Server error updating leave settings' } });
+    }
+};
+exports.updateLeaveSettings = updateLeaveSettings;

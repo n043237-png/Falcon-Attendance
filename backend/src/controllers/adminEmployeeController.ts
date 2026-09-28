@@ -6,6 +6,9 @@ import { query } from '../db';
 import { AuthRequest } from '../middlewares/auth';
 import { processAndSaveProfilePhoto, deleteProfilePhotoFile } from '../middlewares/upload';
 import { NotificationService } from '../services/notificationService';
+import { EmployeeIdService } from '../services/employeeIdService';
+import { EmployeeProfileService } from '../services/employeeProfileService';
+import { DocumentService } from '../services/documentService';
 
 const createEmployeeSchema = z.object({
   name: z.string().min(2).max(100),
@@ -27,7 +30,9 @@ const createEmployeeSchema = z.object({
     }),
   role: z.enum(['employee', 'admin']).default('employee'),
   roles: z.array(z.enum(['employee', 'admin'])).min(1).optional(),
-  customEmployeeId: z.string().max(50).optional(),
+  useCustomEmployeeId: z.boolean().default(false).optional(),
+  customEmployeeId: z.string().max(20).optional(),
+  customIdReason: z.string().max(255).optional(),
   password: z.string().min(6).max(100).optional(),
   profilePhotoUrl: z.string().nullable().optional(),
   jobStatus: z.enum(['Provisional', 'Permanent']).default('Permanent'),
@@ -55,9 +60,31 @@ const createEmployeeSchema = z.object({
       if (!v || v === '') return null;
       return v.substring(0, 10);
     }),
+  shiftId: z.number().int().positive().optional(),
 });
 
 const editEmployeeSchema = createEmployeeSchema.partial();
+
+export const getNextEmployeeIdHandler = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const nextId = await EmployeeIdService.getNextEmployeeId();
+    res.json({ success: true, data: { nextEmployeeId: nextId } });
+  } catch (err: any) {
+    console.error('getNextEmployeeId error:', err);
+    res.status(500).json({ success: false, error: { message: 'Failed to generate Employee ID' } });
+  }
+};
+
+export const validateEmployeeIdHandler = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const employeeId = (req.query.employeeId as string) || (req.body?.employeeId as string) || '';
+    const result = await EmployeeIdService.validateEmployeeId(employeeId);
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    console.error('validateEmployeeId error:', err);
+    res.status(500).json({ success: false, error: { message: 'Failed to validate Employee ID' } });
+  }
+};
 
 export const getEmployees = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -73,43 +100,61 @@ export const getEmployees = async (req: AuthRequest, res: Response): Promise<voi
     const role = req.query.role as string;
     const jobStatus = req.query.jobStatus as string;
 
+    const shiftId = req.query.shiftId as string;
+
     let filterQuery = 'WHERE 1=1';
     const queryParams: any[] = [];
 
     if (search) {
       queryParams.push(`%${search}%`);
-      filterQuery += ` AND (name ILIKE $${queryParams.length} OR employee_id ILIKE $${queryParams.length} OR email ILIKE $${queryParams.length})`;
+      filterQuery += ` AND (u.name ILIKE $${queryParams.length} OR u.employee_id ILIKE $${queryParams.length} OR u.employee_code ILIKE $${queryParams.length} OR u.email ILIKE $${queryParams.length} OR u.phone ILIKE $${queryParams.length} OR u.department ILIKE $${queryParams.length} OR u.designation ILIKE $${queryParams.length})`;
     }
     if (department) {
       queryParams.push(department);
-      filterQuery += ` AND department = $${queryParams.length}`;
+      filterQuery += ` AND u.department = $${queryParams.length}`;
     }
     if (status && status !== 'All') {
       queryParams.push(status.toLowerCase());
-      filterQuery += ` AND status = $${queryParams.length}`;
+      filterQuery += ` AND u.status = $${queryParams.length}`;
     }
     if (role && role !== 'All') {
       queryParams.push(role.toLowerCase());
-      filterQuery += ` AND (role = $${queryParams.length} OR roles @> jsonb_build_array($${queryParams.length}::text))`;
+      filterQuery += ` AND (u.role = $${queryParams.length} OR u.roles @> jsonb_build_array($${queryParams.length}::text))`;
     }
     if (jobStatus && jobStatus !== 'All') {
       queryParams.push(jobStatus);
-      filterQuery += ` AND job_status = $${queryParams.length}`;
+      filterQuery += ` AND u.job_status = $${queryParams.length}`;
+    }
+    if (shiftId && shiftId !== 'All') {
+      queryParams.push(parseInt(shiftId, 10));
+      filterQuery += ` AND u.shift_id = $${queryParams.length}`;
     }
 
-    const countRes = await query(`SELECT COUNT(*) FROM users ${filterQuery}`, queryParams);
+    const countRes = await query(`SELECT COUNT(*) FROM users u ${filterQuery}`, queryParams);
     const total = parseInt(countRes.rows[0].count);
 
     const usersRes = await query(`
-      SELECT id, employee_id as "employeeId", name, email, phone, department, 
-             designation, joining_date as "joiningDate", status, role, roles,
-             COALESCE(job_status, 'Permanent') as "jobStatus",
-             provisional_start_date as "provisionalStartDate",
-             provisional_end_date as "provisionalEndDate",
-             profile_photo_url as "profilePhotoUrl", created_at as "createdAt"
-      FROM users
+      SELECT u.id, u.employee_id as "employeeId", u.employee_code as "employeeCode",
+             u.is_custom_employee_id as "isCustomEmployeeId",
+             u.name, u.email, u.phone, u.department, 
+             u.designation, u.joining_date as "joiningDate", u.status, u.role, u.roles,
+             COALESCE(u.job_status, 'Permanent') as "jobStatus",
+             u.provisional_start_date as "provisionalStartDate",
+             u.provisional_end_date as "provisionalEndDate",
+             u.profile_photo_url as "profilePhotoUrl", u.created_at as "createdAt",
+             u.shift_id as "shiftId",
+             s.name as "shiftName",
+             s.code as "shiftCode",
+             s.start_time as "shiftStartTime",
+             s.end_time as "shiftEndTime",
+             lb.current_balance::float as "leaveBalance",
+             lb.accrued_leave::float as "accruedLeave",
+             lb.used_paid_leave::float as "usedPaidLeave"
+      FROM users u
+      LEFT JOIN shifts s ON s.id = u.shift_id
+      LEFT JOIN leave_balances lb ON lb.employee_id = u.id AND lb.year = EXTRACT(YEAR FROM CURRENT_DATE)
       ${filterQuery}
-      ORDER BY id DESC
+      ORDER BY u.id DESC
       LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}
     `, [...queryParams, limit, offset]);
 
@@ -124,6 +169,11 @@ export const getEmployees = async (req: AuthRequest, res: Response): Promise<voi
         rec.provisionalEndDate = new Date(rec.provisionalEndDate).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
       }
       rec.roles = Array.isArray(rec.roles) ? rec.roles : [rec.role || 'employee'];
+      rec.leaveBalances = rec.leaveBalance !== null && rec.leaveBalance !== undefined ? {
+        currentBalance: rec.leaveBalance,
+        accruedLeave: rec.accruedLeave || 0,
+        usedPaidLeave: rec.usedPaidLeave || 0
+      } : { currentBalance: 0, accruedLeave: 0, usedPaidLeave: 0 };
       return rec;
     });
 
@@ -144,13 +194,20 @@ export const getEmployeeDetail = async (req: AuthRequest, res: Response): Promis
   try {
     const id = parseInt(req.params.id as string);
     const userRes = await query(`
-      SELECT id, employee_id as "employeeId", name, email, phone, department, 
-             designation, joining_date as "joiningDate", status, role, roles,
-             COALESCE(job_status, 'Permanent') as "jobStatus",
-             provisional_start_date as "provisionalStartDate",
-             provisional_end_date as "provisionalEndDate",
-             profile_photo_url as "profilePhotoUrl"
-      FROM users WHERE id = $1
+      SELECT u.id, u.employee_id as "employeeId", u.name, u.email, u.phone, u.department, 
+             u.designation, u.joining_date as "joiningDate", u.status, u.role, u.roles,
+             COALESCE(u.job_status, 'Permanent') as "jobStatus",
+             u.provisional_start_date as "provisionalStartDate",
+             u.provisional_end_date as "provisionalEndDate",
+             u.profile_photo_url as "profilePhotoUrl",
+             u.shift_id as "shiftId",
+             s.name as "shiftName",
+             s.code as "shiftCode",
+             s.start_time as "shiftStartTime",
+             s.end_time as "shiftEndTime"
+      FROM users u
+      LEFT JOIN shifts s ON s.id = u.shift_id
+      WHERE u.id = $1
     `, [id]);
 
     if (userRes.rows.length === 0) {
@@ -244,31 +301,54 @@ export const createEmployee = async (req: AuthRequest, res: Response): Promise<v
       return;
     }
 
-    const { name, email, phone, department, designation, joiningDate, role, roles, customEmployeeId, password, profilePhotoUrl, jobStatus, provisionalStartDate, provisionalEndDate } = parsed.data;
+    const {
+      name, email, phone, department, designation, joiningDate,
+      role, roles, useCustomEmployeeId, customEmployeeId, customIdReason,
+      password, profilePhotoUrl, jobStatus, provisionalStartDate, provisionalEndDate
+    } = parsed.data;
 
-    // Check email
-    const emailRes = await client.query(`SELECT id FROM users WHERE email = $1`, [email]);
+    // Check email uniqueness
+    const emailRes = await client.query(`SELECT id FROM users WHERE LOWER(email) = LOWER($1)`, [email]);
     if (emailRes.rows.length > 0) {
       res.status(400).json({ success: false, error: { code: 'EMAIL_IN_USE', message: 'Email already exists' } });
       return;
     }
 
-    if (customEmployeeId) {
-      const empIdRes = await client.query(`SELECT id FROM users WHERE employee_id = $1`, [customEmployeeId]);
-      if (empIdRes.rows.length > 0) {
-        res.status(400).json({ success: false, error: { code: 'EMPLOYEE_ID_IN_USE', message: 'Employee ID already exists' } });
+    // Role check for custom Employee ID
+    const userRole = (req.user?.role || '').toLowerCase();
+    const userRolesList = Array.isArray(req.user?.roles) ? req.user.roles.map((r: string) => r.toLowerCase()) : [userRole];
+    const isAdmin = userRole === 'admin' || userRolesList.includes('admin');
+
+    let employeeCode = '';
+    let isCustom = false;
+
+    if (useCustomEmployeeId || (customEmployeeId && customEmployeeId.trim() !== '')) {
+      if (!isAdmin) {
+        res.status(403).json({
+          success: false,
+          error: { code: 'FORBIDDEN', message: 'Only administrators can assign custom Employee IDs.' }
+        });
         return;
       }
+
+      const valRes = await EmployeeIdService.validateEmployeeId(customEmployeeId || '', undefined, client);
+      if (!valRes.valid) {
+        res.status(400).json({
+          success: false,
+          error: { code: 'EMPLOYEE_ID_IN_USE', message: valRes.message || 'Invalid Employee ID.' }
+        });
+        return;
+      }
+
+      employeeCode = (customEmployeeId || '').trim();
+      isCustom = true;
     }
 
     await client.query('BEGIN');
 
-    // Generate or use employee code
-    let employeeCode = customEmployeeId;
-    if (!employeeCode) {
-      const maxRes = await client.query(`SELECT COALESCE(MAX(id), 0) as max_id FROM users`);
-      const nextId = parseInt(maxRes.rows[0].max_id) + 1;
-      employeeCode = `EMP${nextId.toString().padStart(3, '0')}`;
+    // If not custom, generate sequential Employee ID safely within the transaction
+    if (!isCustom) {
+      employeeCode = await EmployeeIdService.getNextEmployeeId(client);
     }
 
     // Generate or use temp password
@@ -278,24 +358,65 @@ export const createEmployee = async (req: AuthRequest, res: Response): Promise<v
     const userRoles = (roles && roles.length > 0) ? Array.from(new Set(roles.map(r => r.toLowerCase()))) : [role ? role.toLowerCase() : 'employee'];
     const primaryRole = userRoles.includes('admin') ? 'admin' : 'employee';
 
+    // Resolve target shift (defaults to Day Shift)
+    let targetShiftId = parsed.data.shiftId;
+    if (!targetShiftId) {
+      const dsRes = await client.query(`SELECT id FROM shifts WHERE code = 'DS' LIMIT 1`);
+      if (dsRes.rows.length > 0) targetShiftId = dsRes.rows[0].id;
+    }
+
     const insertQuery = `
       INSERT INTO users (
-        employee_id, name, email, phone, department, designation, 
+        employee_id, employee_code, is_custom_employee_id, name, email, phone, department, designation, 
         joining_date, role, roles, password_hash, status, profile_photo_url,
-        job_status, provisional_start_date, provisional_end_date
+        job_status, provisional_start_date, provisional_end_date, shift_id
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, 'active', $11, $12, $13, $14)
-      RETURNING id, employee_id as "employeeId", profile_photo_url as "profilePhotoUrl",
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, 'active', $13, $14, $15, $16, $17)
+      RETURNING id, employee_id as "employeeId", employee_code as "employeeCode",
+                is_custom_employee_id as "isCustomEmployeeId", profile_photo_url as "profilePhotoUrl",
                 job_status as "jobStatus", provisional_start_date as "provisionalStartDate",
-                provisional_end_date as "provisionalEndDate", roles, role
+                provisional_end_date as "provisionalEndDate", roles, role, shift_id as "shiftId"
     `;
     const insertParams = [
-      employeeCode, name, email, phone || null, department || null, designation || null,
+      employeeCode, employeeCode, isCustom, name, email, phone || null, department || null, designation || null,
       joiningDate || null, primaryRole, JSON.stringify(userRoles), hashed, profilePhotoUrl || null,
-      jobStatus || 'Permanent', provisionalStartDate || null, provisionalEndDate || null
+      jobStatus || 'Permanent', provisionalStartDate || null, provisionalEndDate || null, targetShiftId || null
     ];
 
     const result = await client.query(insertQuery, insertParams);
+    const createdUserId = result.rows[0].id;
+
+    // Record initial shift assignment
+    if (targetShiftId) {
+      await client.query(`
+        INSERT INTO employee_shift_assignments (
+          employee_id, shift_id, assignment_type, start_date, assigned_by, notes
+        ) VALUES (
+          $1, $2, 'PERMANENT', CURRENT_DATE, $3, 'Assigned upon employee creation'
+        )
+      `, [createdUserId, targetShiftId, req.user?.id || null]);
+    }
+
+    // Record audit log if a custom Employee ID was assigned
+    if (isCustom) {
+      await client.query(`
+        INSERT INTO audit_logs (user_id, action, entity_type, entity_id, metadata)
+        VALUES ($1, $2, $3, $4, $5::jsonb)
+      `, [
+        req.user?.id || null,
+        'CUSTOM_EMPLOYEE_ID_ASSIGNED',
+        'USER',
+        createdUserId,
+        JSON.stringify({
+          employeeName: name,
+          employeeId: employeeCode,
+          createdBy: req.user?.name || `Admin #${req.user?.id || 'Unknown'}`,
+          createdById: req.user?.id || null,
+          createdAt: new Date().toISOString(),
+          reason: customIdReason || 'Custom Employee ID assigned during employee creation'
+        })
+      ]);
+    }
 
     await client.query('COMMIT');
 
@@ -331,7 +452,7 @@ export const editEmployee = async (req: AuthRequest, res: Response): Promise<voi
       return;
     }
 
-    const { name, email, phone, department, designation, joiningDate, role, roles, profilePhotoUrl, jobStatus, provisionalStartDate, provisionalEndDate } = parsed.data;
+    const { name, email, phone, department, designation, joiningDate, role, roles, profilePhotoUrl, jobStatus, provisionalStartDate, provisionalEndDate, shiftId } = parsed.data;
 
     // Safety check: Prevent logged-in admin from accidentally removing their own admin role
     if (req.user?.id === id) {
@@ -341,6 +462,15 @@ export const editEmployee = async (req: AuthRequest, res: Response): Promise<voi
       }
       if (role !== undefined && role.toLowerCase() !== 'admin' && roles === undefined) {
         res.status(400).json({ success: false, error: { code: 'CANNOT_DEMOTE_SELF', message: 'You cannot remove the Administrator role from your own account.' } });
+        return;
+      }
+    }
+
+    if (email) {
+      const emailLower = email.trim().toLowerCase();
+      const existingEmail = await query('SELECT id FROM users WHERE LOWER(email) = $1 AND id != $2', [emailLower, id]);
+      if (existingEmail.rows.length > 0) {
+        res.status(400).json({ success: false, error: { code: 'EMAIL_ALREADY_EXISTS', message: `Email "${email}" is already used by another employee.` } });
         return;
       }
     }
@@ -356,7 +486,7 @@ export const editEmployee = async (req: AuthRequest, res: Response): Promise<voi
     };
 
     addField(name, 'name');
-    addField(email, 'email');
+    addField(email ? email.trim().toLowerCase() : undefined, 'email');
     addField(phone, 'phone');
     addField(department, 'department');
     addField(designation, 'designation');
@@ -379,6 +509,30 @@ export const editEmployee = async (req: AuthRequest, res: Response): Promise<voi
     addField(jobStatus, 'job_status');
     addField(provisionalStartDate, 'provisional_start_date');
     addField(provisionalEndDate, 'provisional_end_date');
+
+    if (shiftId !== undefined) {
+      addField(shiftId, 'shift_id');
+      // If shift has changed, record assignment history & update profile employment info
+      const currUser = await query('SELECT shift_id FROM users WHERE id = $1', [id]);
+      if (currUser.rows.length > 0 && currUser.rows[0].shift_id !== shiftId) {
+        await query(`
+          INSERT INTO employee_shift_assignments (
+            employee_id, shift_id, assignment_type, start_date, assigned_by, notes
+          ) VALUES (
+            $1, $2, 'PERMANENT', CURRENT_DATE, $3, 'Updated via employee edit'
+          )
+        `, [id, shiftId, req.user?.id || null]);
+        
+        const shiftRes = await query('SELECT name FROM shifts WHERE id = $1', [shiftId]);
+        if (shiftRes.rows.length > 0) {
+          await query(`
+            UPDATE employee_profiles
+            SET shift_assignment = $1, updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = $2
+          `, [shiftRes.rows[0].name, id]);
+        }
+      }
+    }
 
     if (profilePhotoUrl !== undefined) {
       if (profilePhotoUrl === null || profilePhotoUrl === '') {
@@ -651,7 +805,7 @@ export const exportEmployees = async (req: AuthRequest, res: Response): Promise<
 
     if (search) {
       queryParams.push(`%${search}%`);
-      filterQuery += ` AND (name ILIKE $${queryParams.length} OR employee_id ILIKE $${queryParams.length} OR email ILIKE $${queryParams.length})`;
+      filterQuery += ` AND (name ILIKE $${queryParams.length} OR employee_id ILIKE $${queryParams.length} OR employee_code ILIKE $${queryParams.length} OR email ILIKE $${queryParams.length} OR department ILIKE $${queryParams.length} OR designation ILIKE $${queryParams.length})`;
     }
     if (department) {
       queryParams.push(department);
@@ -852,4 +1006,127 @@ export const exportEmployees = async (req: AuthRequest, res: Response): Promise<
     res.status(500).json({ success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'Failed to export employees' } });
   }
 };
+
+export const getAdminEmployeeProfile = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const targetUserId = parseInt(req.params.id as string);
+    if (isNaN(targetUserId)) {
+      res.status(400).json({ success: false, error: { message: 'Invalid employee ID' } });
+      return;
+    }
+
+    const unmask = req.query.unmask === 'true';
+    const profile = await EmployeeProfileService.getFullProfile(targetUserId, unmask);
+
+    if (!profile) {
+      res.status(404).json({ success: false, error: { message: 'Employee not found' } });
+      return;
+    }
+
+    res.json({ success: true, data: profile });
+  } catch (error: any) {
+    console.error('getAdminEmployeeProfile error:', error);
+    res.status(500).json({ success: false, error: { message: error.message || 'Failed to fetch employee profile' } });
+  }
+};
+
+export const updateAdminEmployeeProfile = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const targetUserId = parseInt(req.params.id as string);
+    if (isNaN(targetUserId)) {
+      res.status(400).json({ success: false, error: { message: 'Invalid employee ID' } });
+      return;
+    }
+
+    const adminUserId = req.user!.id;
+    const updatedProfile = await EmployeeProfileService.updateProfile(targetUserId, adminUserId, 'admin', req.body);
+
+    res.json({
+      success: true,
+      message: 'Employee profile updated successfully',
+      data: updatedProfile
+    });
+  } catch (error: any) {
+    console.error('updateAdminEmployeeProfile error:', error);
+    res.status(500).json({ success: false, error: { message: error.message || 'Failed to update employee profile' } });
+  }
+};
+
+export const adminUploadEmployeeDocument = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const targetUserId = parseInt(req.params.id as string);
+    if (isNaN(targetUserId)) {
+      res.status(400).json({ success: false, error: { message: 'Invalid employee ID' } });
+      return;
+    }
+
+    if (!req.file) {
+      res.status(400).json({ success: false, error: { message: 'No document file provided' } });
+      return;
+    }
+
+    const documentType = (req.body.documentType || 'OTHER').toUpperCase();
+    const documentTitle = req.body.documentTitle || req.file.originalname;
+
+    const savedDoc = await DocumentService.saveDocumentRecord({
+      userId: targetUserId,
+      documentType,
+      documentTitle,
+      file: req.file,
+      uploadedBy: req.user!.id
+    });
+
+    res.json({
+      success: true,
+      data: savedDoc,
+      message: 'Document uploaded successfully'
+    });
+  } catch (error: any) {
+    console.error('adminUploadEmployeeDocument error:', error);
+    res.status(500).json({ success: false, error: { message: error.message || 'Failed to upload document' } });
+  }
+};
+
+export const adminDeleteEmployeeDocument = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const targetUserId = parseInt(req.params.id as string);
+    const docId = parseInt(req.params.docId as string);
+
+    if (isNaN(targetUserId) || isNaN(docId)) {
+      res.status(400).json({ success: false, error: { message: 'Invalid employee ID or document ID' } });
+      return;
+    }
+
+    await DocumentService.deleteDocument(docId, targetUserId, req.user!.id, true);
+
+    res.json({
+      success: true,
+      message: 'Document deleted successfully'
+    });
+  } catch (error: any) {
+    console.error('adminDeleteEmployeeDocument error:', error);
+    if (error.message === 'DOCUMENT_NOT_FOUND') {
+      res.status(404).json({ success: false, error: { message: 'Document not found' } });
+      return;
+    }
+    res.status(500).json({ success: false, error: { message: error.message || 'Failed to delete document' } });
+  }
+};
+
+export const adminGetEmployeeProfileActivity = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const targetUserId = parseInt(req.params.id as string);
+    if (isNaN(targetUserId)) {
+      res.status(400).json({ success: false, error: { message: 'Invalid employee ID' } });
+      return;
+    }
+
+    const activities = await EmployeeProfileService.getProfileActivityLogs(targetUserId, 100);
+    res.json({ success: true, data: activities });
+  } catch (error: any) {
+    console.error('adminGetEmployeeProfileActivity error:', error);
+    res.status(500).json({ success: false, error: { message: error.message || 'Failed to fetch profile activities' } });
+  }
+};
+
 

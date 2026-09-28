@@ -8,7 +8,7 @@ async function getAttendanceSettings() {
     return res.rows[0];
 }
 // Helper to calculate status in JS to avoid massive SQL duplication
-function calculateStatus(dateStr, record, settings, holiday, leave, currentTime = new Date()) {
+function calculateStatus(dateStr, record, settings, holiday, leave, currentTime = new Date(), shift) {
     const result = {
         status: 'NOT_MARKED',
         isLate: false,
@@ -24,6 +24,9 @@ function calculateStatus(dateStr, record, settings, holiday, leave, currentTime 
         if (record.check_out)
             result.checkOut = new Date(record.check_out);
         result.workingMinutes = record.working_minutes ? parseFloat(record.working_minutes) : 0;
+        if (record.is_late !== undefined && record.is_late !== null) {
+            result.isLate = !!record.is_late;
+        }
     }
     // Parse time configuration
     const parseTime = (timeStr) => {
@@ -33,9 +36,14 @@ function calculateStatus(dateStr, record, settings, holiday, leave, currentTime 
         const s = parts[2] ? parts[2].padStart(2, '0') : '00';
         return new Date(`${dateStr}T${h}:${m}:${s}+05:30`);
     };
-    const lateThreshold = parseTime(settings.late_threshold);
-    const absenceCutoff = parseTime(settings.absence_cutoff);
-    const officeEnd = parseTime(settings.office_end);
+    const effectiveLateThresholdStr = shift?.lateAfter || shift?.late_after || settings?.late_threshold || '10:15:00';
+    const effectiveAbsenceCutoffStr = settings?.absence_cutoff || '11:00:00';
+    const effectiveOfficeEndStr = shift?.endTime || shift?.end_time || settings?.office_end || '18:30:00';
+    const effectiveFullDayMinutes = shift?.minimumWorkHours ? shift.minimumWorkHours * 60 : (shift?.minimum_work_hours ? shift.minimum_work_hours * 60 : (settings?.full_day_minutes || 480));
+    const effectiveHalfDayMinutes = shift?.halfDayMinutes || shift?.half_day_minutes || settings?.half_day_minutes || 240;
+    const lateThreshold = parseTime(effectiveLateThresholdStr);
+    const absenceCutoff = parseTime(effectiveAbsenceCutoffStr);
+    const officeEnd = parseTime(effectiveOfficeEndStr);
     const isWeekend = new Date(`${dateStr}T12:00:00Z`).getUTCDay() === 0; // Sunday only
     const isHoliday = !!holiday;
     // 1. No check-in scenario
@@ -65,8 +73,11 @@ function calculateStatus(dateStr, record, settings, holiday, leave, currentTime 
         hasHalfDayLeave = true;
         result.status = 'HALF_DAY_LEAVE';
     }
-    // 3. Late Check
-    if (result.checkIn > lateThreshold) {
+    // 3. Late Check (if not already set from DB record)
+    if (record && (record.is_late !== undefined && record.is_late !== null)) {
+        result.isLate = !!record.is_late;
+    }
+    else if (result.checkIn > lateThreshold) {
         result.isLate = true;
     }
     // 4. Missing Checkout
@@ -81,10 +92,10 @@ function calculateStatus(dateStr, record, settings, holiday, leave, currentTime 
         return result;
     }
     // 5. Working Hours Calculation
-    if (result.workingMinutes >= settings.full_day_minutes) {
+    if (result.workingMinutes >= effectiveFullDayMinutes) {
         result.status = 'PRESENT';
     }
-    else if (result.workingMinutes >= settings.half_day_minutes) {
+    else if (result.workingMinutes >= effectiveHalfDayMinutes) {
         // If they have HALF_DAY_LEAVE, working half a day implies full compliance.
         result.status = hasHalfDayLeave ? 'PRESENT' : 'HALF_DAY';
     }

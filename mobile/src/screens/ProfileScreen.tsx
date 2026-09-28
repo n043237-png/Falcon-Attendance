@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -12,17 +12,20 @@ import {
   Image,
   Platform,
   StatusBar,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { getProfile, updateProfile, changePassword, resolvePhotoUrl } from '../api/profileApi';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function ProfileScreen() {
-  const { token, logout } = useAuth();
+  const { token, logout, updateUser } = useAuth();
 
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [imageLoading, setImageLoading] = useState(false);
 
@@ -39,22 +42,35 @@ export default function ProfileScreen() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
-  const loadProfile = async () => {
+  const loadProfile = async (isRefresh = false) => {
     if (!token) return;
-    setLoading(true);
+    if (isRefresh) {
+      setRefreshing(true);
+    } else if (!profile) {
+      setLoading(true);
+    }
     const res = await getProfile(token);
-    if (res.success) {
+    if (res.success && res.data) {
       setProfile(res.data);
       setPhone(res.data.phone || '');
       setPhotoUrl(res.data.profilePhotoUrl || '');
       setImageError(false);
+      if (res.data.profilePhotoUrl) {
+        updateUser({
+          profilePhotoUrl: res.data.profilePhotoUrl,
+          profile_photo_url: res.data.profilePhotoUrl,
+        });
+      }
     }
     setLoading(false);
+    setRefreshing(false);
   };
 
-  useEffect(() => {
-    loadProfile();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      loadProfile();
+    }, [token])
+  );
 
   const handleSaveProfile = async () => {
     if (!token) return;
@@ -100,7 +116,17 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => loadProfile(true)}
+            colors={['#2563EB']}
+          />
+        }
+      >
         {/* Header */}
         <View style={styles.headerRow}>
           <Text style={styles.headerTitle}>My Profile</Text>
@@ -114,6 +140,7 @@ export default function ProfileScreen() {
                 return (
                   <View style={styles.photoContainer}>
                     <Image
+                      key={photoUri}
                       source={{ uri: photoUri }}
                       style={styles.photo}
                       onLoadStart={() => setImageLoading(true)}

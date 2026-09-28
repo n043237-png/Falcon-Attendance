@@ -25,6 +25,8 @@ export default function AdminAttendance() {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('All');
+  const [shiftFilter, setShiftFilter] = useState('All');
+  const [availableShifts, setAvailableShifts] = useState<any[]>([]);
 
   const [records, setRecords] = useState<any[]>([]);
   const [summary, setSummary] = useState<any>(null);
@@ -37,6 +39,19 @@ export default function AdminAttendance() {
 
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+
+  useEffect(() => {
+    if (token) {
+      fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/admin/shifts`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+        .then((res) => res.json())
+        .then((d) => {
+          if (d.success) setAvailableShifts(d.data);
+        })
+        .catch((err) => console.error('Failed to load shifts', err));
+    }
+  }, [token]);
 
   const fetchSummary = async () => {
     try {
@@ -60,6 +75,7 @@ export default function AdminAttendance() {
       if (date) url += `&date=${date}`;
       if (search) url += `&search=${encodeURIComponent(search)}`;
       if (status !== 'All') url += `&status=${status}`;
+      if (shiftFilter !== 'All') url += `&shiftId=${shiftFilter}`;
 
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` }
@@ -89,7 +105,7 @@ export default function AdminAttendance() {
       fetchRecords(1);
     }, 400);
     return () => clearTimeout(delayDebounceFn);
-  }, [date, search, status, token]);
+  }, [date, search, status, shiftFilter, token]);
 
   const formatHours = (minutes: number) => {
     if (!minutes && minutes !== 0) return '-';
@@ -152,10 +168,17 @@ export default function AdminAttendance() {
                   <CheckCircle2 size={16} />
                 </div>
               </div>
-              <div style={{ fontSize: '26px', fontWeight: 700, color: '#15803D' }}>
-                {summary.present}
+              <div style={{ fontSize: '26px', fontWeight: 700, color: '#15803D' }} className="d-flex align-items-baseline gap-2">
+                <span>{summary.present}</span>
+                {summary.late > 0 && (
+                  <span className="badge bg-warning text-dark fw-semibold" style={{ fontSize: '12px' }}>
+                    {summary.late} Late
+                  </span>
+                )}
               </div>
-              <div className="caption-text mt-1 text-success">Verified check-ins</div>
+              <div className="caption-text mt-1 text-success">
+                {summary.late > 0 ? `${summary.onTime ?? (summary.present - summary.late)} on time • ${summary.late} late` : 'Verified check-ins'}
+              </div>
             </div>
           </div>
 
@@ -209,7 +232,7 @@ export default function AdminAttendance() {
       {/* Filter Toolbar Card */}
       <div className="card p-4 mb-4">
         <Row className="g-3 align-items-end">
-          <Col md={4}>
+          <Col md={3}>
             <Form.Group>
               <Form.Label className="d-flex align-items-center gap-2">
                 <Calendar size={14} className="text-muted" />
@@ -223,7 +246,7 @@ export default function AdminAttendance() {
             </Form.Group>
           </Col>
 
-          <Col md={5}>
+          <Col md={3}>
             <Form.Group>
               <Form.Label className="d-flex align-items-center gap-2">
                 <Search size={14} className="text-muted" />
@@ -235,6 +258,21 @@ export default function AdminAttendance() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
+            </Form.Group>
+          </Col>
+
+          <Col md={3}>
+            <Form.Group>
+              <Form.Label className="d-flex align-items-center gap-2">
+                <Clock size={14} className="text-muted" />
+                <span>Shift</span>
+              </Form.Label>
+              <Form.Select value={shiftFilter} onChange={(e) => setShiftFilter(e.target.value)}>
+                <option value="All">All Shifts</option>
+                {availableShifts.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
+                ))}
+              </Form.Select>
             </Form.Group>
           </Col>
 
@@ -277,6 +315,7 @@ export default function AdminAttendance() {
                   <tr>
                     <th>Employee</th>
                     <th>Employee ID</th>
+                    <th>Shift</th>
                     <th>Date</th>
                     <th>Check-in</th>
                     <th>Check-out</th>
@@ -315,6 +354,11 @@ export default function AdminAttendance() {
                             {r.employeeId}
                           </span>
                         </td>
+                        <td>
+                          <span className="badge bg-light text-dark border font-monospace" style={{ fontSize: '11.5px' }}>
+                            {r.shiftCode || 'DS'}
+                          </span>
+                        </td>
                         <td style={{ color: '#475569', fontSize: '13.5px' }}>
                           {new Date(r.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
                         </td>
@@ -333,14 +377,22 @@ export default function AdminAttendance() {
                         <td>
                           <span
                             className={`badge ${
-                              r.status?.toUpperCase() === 'PRESENT'
+                              r.status?.toUpperCase() === 'LATE' || r.isLate
+                                ? 'bg-warning text-dark'
+                                : r.status?.toUpperCase() === 'PRESENT'
                                 ? 'bg-success'
                                 : r.status?.toUpperCase() === 'ABSENT'
                                 ? 'bg-danger'
-                                : 'bg-warning'
+                                : 'bg-secondary'
                             }`}
                           >
-                            {r.status?.toUpperCase()}
+                            {r.status?.toUpperCase() === 'LATE' || r.isLate ? (
+                              <>
+                                LATE{r.lateMinutes ? ` (${r.lateMinutes}m)` : ''}
+                              </>
+                            ) : (
+                              r.status?.toUpperCase()
+                            )}
                           </span>
                         </td>
                         <td>

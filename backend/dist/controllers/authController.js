@@ -21,7 +21,7 @@ const login = async (req, res) => {
             return;
         }
         const { identifier, password } = parsed.data;
-        const result = await (0, db_1.query)(`SELECT * FROM users WHERE email = $1 OR employee_id = $1`, [identifier]);
+        const result = await (0, db_1.query)(`SELECT * FROM users WHERE LOWER(email) = LOWER($1) OR LOWER(employee_id) = LOWER($1) OR LOWER(employee_code) = LOWER($1)`, [identifier]);
         if (result.rows.length === 0) {
             res.status(401).json({ error: 'Invalid credentials' });
             return;
@@ -51,6 +51,7 @@ const login = async (req, res) => {
             }
         }
         userWithoutPassword.profilePhotoUrl = photoUrl;
+        userWithoutPassword.profile_photo_url = photoUrl;
         userWithoutPassword.roles = roles;
         res.json({
             message: 'Login successful',
@@ -90,6 +91,7 @@ const getMe = async (req, res) => {
                 dbUser.profilePhotoUrl = `${req.protocol}://${host}${dbUser.profilePhotoUrl}`;
             }
         }
+        dbUser.profile_photo_url = dbUser.profilePhotoUrl;
         res.json({ user: dbUser });
     }
     catch (error) {

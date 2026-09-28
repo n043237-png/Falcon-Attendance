@@ -10,6 +10,7 @@ import {
   StatusBar,
   ScrollView,
   RefreshControl,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -17,14 +18,16 @@ import { useAuth } from '../context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import { getCurrentLocation } from '../services/locationService';
 import { getTodayAttendance, checkIn, checkOut, AttendanceRecord } from '../api/attendanceApi';
+import { resolvePhotoUrl } from '../api/profileApi';
 
 export default function HomeScreen() {
-  const { user, token, logout } = useAuth();
+  const { user, token, logout, refreshUser } = useAuth();
   const navigation = useNavigation<any>();
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [attendance, setAttendance] = useState<AttendanceRecord | null>(null);
+  const [homeImageError, setHomeImageError] = useState(false);
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
@@ -52,6 +55,8 @@ export default function HomeScreen() {
   useFocusEffect(
     useCallback(() => {
       loadAttendance();
+      refreshUser?.();
+      setHomeImageError(false);
     }, [token])
   );
 
@@ -171,11 +176,29 @@ export default function HomeScreen() {
         {/* Top App Bar */}
         <View style={styles.topBar}>
           <View style={styles.userRow}>
-            <View style={styles.avatarRing}>
-              <Text style={styles.avatarLetter}>
-                {user?.name?.charAt(0).toUpperCase() || (isAdmin ? 'A' : 'E')}
-              </Text>
-            </View>
+            {(() => {
+              const photoUri = resolvePhotoUrl(user?.profilePhotoUrl || (user as any)?.profile_photo_url);
+              if (photoUri && !homeImageError) {
+                return (
+                  <View style={styles.avatarRing}>
+                    <Image
+                      key={photoUri}
+                      source={{ uri: photoUri }}
+                      style={styles.avatarPhoto}
+                      onError={() => setHomeImageError(true)}
+                      resizeMode="cover"
+                    />
+                  </View>
+                );
+              }
+              return (
+                <View style={styles.avatarRing}>
+                  <Text style={styles.avatarLetter}>
+                    {user?.name?.charAt(0).toUpperCase() || (isAdmin ? 'A' : 'E')}
+                  </Text>
+                </View>
+              );
+            })()}
             <View>
               <Text style={styles.greetingText}>{greeting},</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -463,6 +486,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 5,
     elevation: 4,
+    overflow: 'hidden',
+  },
+  avatarPhoto: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 23,
   },
   avatarLetter: {
     fontSize: 20,

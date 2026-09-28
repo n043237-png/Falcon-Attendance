@@ -14,7 +14,9 @@ import {
   MapPin,
   Navigation,
   ExternalLink,
-  Compass
+  Compass,
+  Sparkles,
+  CalendarCheck
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -37,9 +39,23 @@ export default function AdminSettings() {
     radiusMeters: 25,
     status: 'active'
   });
+  const [leaveSettings, setLeaveSettings] = useState<{
+    enableHolidayValidation: boolean;
+    enableSundayValidation: boolean;
+    enableWeeklyOffValidation: boolean;
+    showLeaveImpactSummary: boolean;
+    weeklyOffDays: number[];
+  }>({
+    enableHolidayValidation: true,
+    enableSundayValidation: true,
+    enableWeeklyOffValidation: true,
+    showLeaveImpactSummary: true,
+    weeklyOffDays: [0]
+  });
   const [loading, setLoading] = useState(true);
   const [saveLoading, setSaveLoading] = useState(false);
   const [officeSaveLoading, setOfficeSaveLoading] = useState(false);
+  const [leaveSaveLoading, setLeaveSaveLoading] = useState(false);
   const [locating, setLocating] = useState(false);
   const [error, setError] = useState('');
   const [msg, setMsg] = useState('');
@@ -50,10 +66,11 @@ export default function AdminSettings() {
 
   const loadData = async () => {
     try {
-      const [setRes, holRes, offRes] = await Promise.all([
+      const [setRes, holRes, offRes, leaveRes] = await Promise.all([
         fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/admin/settings`, { headers: { Authorization: `Bearer ${token}` } }),
         fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/admin/holidays`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/admin/office`, { headers: { Authorization: `Bearer ${token}` } })
+        fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/admin/office`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/admin/settings/leave`, { headers: { Authorization: `Bearer ${token}` } })
       ]);
       const setJson = await setRes.json();
       const holJson = await holRes.json();
@@ -81,6 +98,12 @@ export default function AdminSettings() {
           status: offJson.data.status
         });
       }
+      if (leaveRes.ok) {
+        const leaveJson = await leaveRes.json();
+        if (leaveJson.success && leaveJson.data) {
+          setLeaveSettings(leaveJson.data);
+        }
+      }
     } catch (e: any) {
       setError('Failed to load settings');
     } finally {
@@ -91,6 +114,33 @@ export default function AdminSettings() {
   useEffect(() => {
     if (token) loadData();
   }, [token]);
+
+  const handleSaveLeaveSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLeaveSaveLoading(true);
+    setError('');
+    setMsg('');
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/admin/settings/leave`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(leaveSettings)
+      });
+      const data = await res.json();
+      if (data.success) {
+        setMsg('Smart Leave Validation rules updated successfully.');
+        if (data.data) {
+          setLeaveSettings(data.data);
+        }
+      } else {
+        setError(data.error?.message || data.error || 'Failed to update leave settings');
+      }
+    } catch (e) {
+      setError('Network error saving leave settings');
+    } finally {
+      setLeaveSaveLoading(false);
+    }
+  };
 
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -405,6 +455,221 @@ export default function AdminSettings() {
                 <>
                   <Save size={16} className="me-2" />
                   <span>Save Office & Geo-Fence Radius</span>
+                </>
+              )}
+            </button>
+          </div>
+        </Form>
+      </div>
+ 
+      {/* Smart Leave Validation & Policy Rules Card */}
+      <div className="card p-4 border-0 mb-4" style={{ boxShadow: '0 4px 20px -2px rgba(15, 23, 42, 0.05), 0 1px 3px rgba(15, 23, 42, 0.03)', borderRadius: '20px' }}>
+        <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between pb-3 mb-4 border-bottom gap-2" style={{ borderColor: '#F1F5F9' }}>
+          <div className="d-flex align-items-center gap-2.5">
+            <div
+              style={{
+                width: '36px',
+                height: '36px',
+                borderRadius: '10px',
+                background: '#EEF2FF',
+                color: '#4F46E5',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: '1px solid #E0E7FF',
+              }}
+            >
+              <Sparkles size={18} />
+            </div>
+            <div>
+              <h3 style={{ fontSize: '16.5px', fontWeight: 600, color: '#0F172A', margin: 0 }}>
+                Smart Leave Validation & Rules Configuration
+              </h3>
+              <p className="text-muted mb-0" style={{ fontSize: '13px' }}>
+                Automate real-time date evaluation, weekend and holiday exclusions, and employee quota impact previews
+              </p>
+            </div>
+          </div>
+
+          <div className="d-flex align-items-center gap-2">
+            <span className="badge px-3 py-2" style={{ backgroundColor: '#EEF2FF', color: '#4F46E5', fontSize: '12px', fontWeight: 600, borderRadius: '8px' }}>
+              ✓ Engine Active & Enforcing
+            </span>
+          </div>
+        </div>
+
+        <Form onSubmit={handleSaveLeaveSettings}>
+          <Row className="g-4 mb-4">
+            <Col md={6}>
+              <div className="p-3.5 rounded-3 h-100" style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+                <div className="d-flex align-items-start justify-content-between gap-3">
+                  <div>
+                    <span className="fw-semibold text-dark d-block mb-1" style={{ fontSize: '14px' }}>
+                      Enable Company Holiday Validation
+                    </span>
+                    <span className="text-muted d-block" style={{ fontSize: '12.5px', lineHeight: 1.45 }}>
+                      Official company holidays falling inside requested leave ranges are categorized as <strong>Company Holiday (Orange)</strong> and automatically exempted from paid leave deduction.
+                    </span>
+                  </div>
+                  <Form.Check
+                    type="switch"
+                    id="switch-holiday-validation"
+                    checked={leaveSettings.enableHolidayValidation}
+                    onChange={(e) => setLeaveSettings({ ...leaveSettings, enableHolidayValidation: e.target.checked })}
+                    style={{ transform: 'scale(1.2)', cursor: 'pointer' }}
+                  />
+                </div>
+              </div>
+            </Col>
+
+            <Col md={6}>
+              <div className="p-3.5 rounded-3 h-100" style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+                <div className="d-flex align-items-start justify-content-between gap-3">
+                  <div>
+                    <span className="fw-semibold text-dark d-block mb-1" style={{ fontSize: '14px' }}>
+                      Enable Sunday Validation
+                    </span>
+                    <span className="text-muted d-block" style={{ fontSize: '12.5px', lineHeight: 1.45 }}>
+                      Sundays falling within requested leave ranges are categorized as <strong>Weekly Off (Green)</strong> and will not consume paid leave balance.
+                    </span>
+                  </div>
+                  <Form.Check
+                    type="switch"
+                    id="switch-sunday-validation"
+                    checked={leaveSettings.enableSundayValidation}
+                    onChange={(e) => setLeaveSettings({ ...leaveSettings, enableSundayValidation: e.target.checked })}
+                    style={{ transform: 'scale(1.2)', cursor: 'pointer' }}
+                  />
+                </div>
+              </div>
+            </Col>
+
+            <Col md={6}>
+              <div className="p-3.5 rounded-3 h-100" style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+                <div className="d-flex align-items-start justify-content-between gap-3">
+                  <div>
+                    <span className="fw-semibold text-dark d-block mb-1" style={{ fontSize: '14px' }}>
+                      Enable Weekly Off Validation
+                    </span>
+                    <span className="text-muted d-block" style={{ fontSize: '12.5px', lineHeight: 1.45 }}>
+                      Days matching the company's designated weekly off schedule are flagged as <strong>Weekly Off (Green)</strong> and exempt from paid deduction.
+                    </span>
+                  </div>
+                  <Form.Check
+                    type="switch"
+                    id="switch-weeklyoff-validation"
+                    checked={leaveSettings.enableWeeklyOffValidation}
+                    onChange={(e) => setLeaveSettings({ ...leaveSettings, enableWeeklyOffValidation: e.target.checked })}
+                    style={{ transform: 'scale(1.2)', cursor: 'pointer' }}
+                  />
+                </div>
+              </div>
+            </Col>
+
+            <Col md={6}>
+              <div className="p-3.5 rounded-3 h-100" style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+                <div className="d-flex align-items-start justify-content-between gap-3">
+                  <div>
+                    <span className="fw-semibold text-dark d-block mb-1" style={{ fontSize: '14px' }}>
+                      Show Leave Impact Summary Card
+                    </span>
+                    <span className="text-muted d-block" style={{ fontSize: '12.5px', lineHeight: 1.45 }}>
+                      Renders the 6-metric summary panel, color-coded day-by-day badges, and impact confirmation modal before leave application submission.
+                    </span>
+                  </div>
+                  <Form.Check
+                    type="switch"
+                    id="switch-impact-summary"
+                    checked={leaveSettings.showLeaveImpactSummary}
+                    onChange={(e) => setLeaveSettings({ ...leaveSettings, showLeaveImpactSummary: e.target.checked })}
+                    style={{ transform: 'scale(1.2)', cursor: 'pointer' }}
+                  />
+                </div>
+              </div>
+            </Col>
+
+            {/* Configured Weekly Off Days */}
+            <Col md={12}>
+              <div className="p-3.5 rounded-3" style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+                <div className="mb-2">
+                  <span className="fw-semibold text-dark d-block" style={{ fontSize: '14px' }}>
+                    Configured Weekly Off Days
+                  </span>
+                  <span className="text-muted" style={{ fontSize: '12.5px' }}>
+                    Select which day(s) of the week are considered company non-working days for leave calculation:
+                  </span>
+                </div>
+                <div className="d-flex flex-wrap gap-2 pt-1">
+                  {[
+                    { label: 'Sunday', idx: 0 },
+                    { label: 'Monday', idx: 1 },
+                    { label: 'Tuesday', idx: 2 },
+                    { label: 'Wednesday', idx: 3 },
+                    { label: 'Thursday', idx: 4 },
+                    { label: 'Friday', idx: 5 },
+                    { label: 'Saturday', idx: 6 }
+                  ].map((day) => {
+                    const isSelected = (leaveSettings.weeklyOffDays || []).includes(day.idx);
+                    return (
+                      <button
+                        key={day.idx}
+                        type="button"
+                        onClick={() => {
+                          const currentDays = [...(leaveSettings.weeklyOffDays || [])];
+                          if (isSelected) {
+                            if (currentDays.length === 1) {
+                              alert('At least one weekly off day must remain selected.');
+                              return;
+                            }
+                            setLeaveSettings({
+                              ...leaveSettings,
+                              weeklyOffDays: currentDays.filter(d => d !== day.idx)
+                            });
+                          } else {
+                            setLeaveSettings({
+                              ...leaveSettings,
+                              weeklyOffDays: [...currentDays, day.idx].sort((a, b) => a - b)
+                            });
+                          }
+                        }}
+                        className="btn btn-sm d-flex align-items-center gap-1.5"
+                        style={{
+                          borderRadius: '8px',
+                          padding: '6px 14px',
+                          fontSize: '13px',
+                          fontWeight: 500,
+                          border: isSelected ? '1px solid #4F46E5' : '1px solid #CBD5E1',
+                          backgroundColor: isSelected ? '#EEF2FF' : '#FFFFFF',
+                          color: isSelected ? '#4338CA' : '#475569',
+                          transition: 'all 0.15s ease-in-out'
+                        }}
+                      >
+                        {isSelected && <span style={{ color: '#4F46E5' }}>✓</span>}
+                        <span>{day.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </Col>
+          </Row>
+
+          <div className="pt-2 d-flex justify-content-end">
+            <button
+              className="btn btn-primary px-4"
+              type="submit"
+              disabled={leaveSaveLoading}
+              style={{ height: '44px', borderRadius: '10px', fontWeight: 600, backgroundColor: '#4F46E5', borderColor: '#4F46E5' }}
+            >
+              {leaveSaveLoading ? (
+                <>
+                  <Spinner size="sm" animation="border" className="me-2" />
+                  <span>Saving Validation Rules...</span>
+                </>
+              ) : (
+                <>
+                  <Save size={16} className="me-2" />
+                  <span>Save Leave Validation Rules</span>
                 </>
               )}
             </button>

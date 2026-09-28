@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.rejectLeave = exports.approveLeave = exports.getAdminLeaves = exports.initializeLeaves = exports.isInitialized = void 0;
+exports.getLeaveAdjustmentHistory = exports.adjustEmployeeLeaveBalance = exports.rejectLeave = exports.approveLeave = exports.getAdminLeaves = exports.initializeLeaves = exports.isInitialized = void 0;
 const db_1 = require("../db");
 const zod_1 = require("zod");
 const notificationService_1 = require("../services/notificationService");
@@ -84,7 +84,7 @@ const getAdminLeaves = async (req, res) => {
         }
         if (search) {
             queryParams.push(`%${search}%`);
-            filterQuery += ` AND (u.name ILIKE $${queryParams.length} OR u.employee_id ILIKE $${queryParams.length})`;
+            filterQuery += ` AND (u.name ILIKE $${queryParams.length} OR u.employee_id ILIKE $${queryParams.length} OR u.employee_code ILIKE $${queryParams.length} OR u.email ILIKE $${queryParams.length} OR u.department ILIKE $${queryParams.length} OR u.designation ILIKE $${queryParams.length})`;
         }
         const countRes = await (0, db_1.query)(`
       SELECT COUNT(*) 
@@ -269,3 +269,164 @@ const rejectLeave = async (req, res) => {
     }
 };
 exports.rejectLeave = rejectLeave;
+const adjustLeaveSchema = zod_1.z.object({
+    employeeId: zod_1.z.number().int().positive(),
+    actionType: zod_1.z.enum(['ADD', 'DEDUCT']),
+    days: zod_1.z.number().positive(),
+    reason: zod_1.z.string().min(3).max(500),
+    year: zod_1.z.union([zod_1.z.string(), zod_1.z.number()]).optional(),
+});
+const adjustEmployeeLeaveBalance = async (req, res) => {
+    const client = await require('pg').Pool.prototype.connect.bind(require('../db').pool)();
+    try {
+        const adminId = req.user.id;
+        const parsed = adjustLeaveSchema.safeParse(req.body);
+        if (!parsed.success) {
+            const issue = parsed.error.issues[0]?.message || 'Invalid adjustment data';
+            res.status(400).json({ success: false, error: { message: issue } });
+            return;
+        }
+        const { employeeId, actionType, days, reason } = parsed.data;
+        const year = String(parsed.data.year || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }).substring(0, 4));
+        await client.query('BEGIN');
+        // Verify employee
+        const empRes = await client.query(`SELECT id, name FROM users WHERE id = $1`, [employeeId]);
+        if (empRes.rows.length === 0) {
+            await client.query('ROLLBACK');
+            res.status(404).json({ success: false, error: { message: 'Employee not found' } });
+            return;
+        }
+        // Get current leave balance
+        let balRes = await client.query(`
+      SELECT id, accrued_leave, used_paid_leave, leave_without_pay, current_balance
+      FROM leave_balances
+      WHERE employee_id = $1 AND year = $2
+      FOR UPDATE
+    `, [employeeId, year]);
+        let previousBalance = 0;
+        let balanceId;
+        let currentAccrued = 0;
+        if (balRes.rows.length === 0) {
+            // Initialize if not present
+            const insertRes = await client.query(`
+        INSERT INTO leave_balances (employee_id, year, accrued_leave, used_paid_leave, leave_without_pay, current_balance, last_credit_date)
+        VALUES ($1, $2, 0, 0, 0, 0, CURRENT_DATE)
+        RETURNING id
+      `, [employeeId, year]);
+            balanceId = insertRes.rows[0].id;
+            previousBalance = 0;
+            currentAccrued = 0;
+        }
+        else {
+            balanceId = balRes.rows[0].id;
+            previousBalance = parseFloat(balRes.rows[0].current_balance || '0');
+            currentAccrued = parseFloat(balRes.rows[0].accrued_leave || '0');
+        }
+        let newBalance = previousBalance;
+        let newAccrued = currentAccrued;
+        if (actionType === 'ADD') {
+            newBalance = Math.round((previousBalance + days) * 100) / 100;
+            newAccrued = Math.round((currentAccrued + days) * 100) / 100;
+        }
+        else {
+            if (previousBalance < days) {
+                await client.query('ROLLBACK');
+                res.status(400).json({
+                    success: false,
+                    error: {
+                        message: `Cannot deduct ${days} day(s). Employee only has ${previousBalance} day(s) available.`
+                    }
+                });
+                return;
+            }
+            newBalance = Math.round((previousBalance - days) * 100) / 100;
+            newAccrued = Math.max(0, Math.round((currentAccrued - days) * 100) / 100);
+        }
+        // Update leave balance
+        await client.query(`
+      UPDATE leave_balances
+      SET current_balance = $1, accrued_leave = $2, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $3
+    `, [newBalance, newAccrued, balanceId]);
+        // Insert audit log
+        await client.query(`
+      INSERT INTO leave_balance_adjustments
+        (employee_id, admin_id, year, action_type, days, previous_balance, new_balance, reason)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `, [employeeId, adminId, year, actionType, days, previousBalance, newBalance, reason]);
+        await client.query('COMMIT');
+        // Notify employee of adjustment
+        try {
+            const sign = actionType === 'ADD' ? '+' : '-';
+            await notificationService_1.NotificationService.notifyUser(employeeId, {
+                title: 'Leave Balance Adjusted',
+                message: `Your leave balance was adjusted by admin: ${sign}${days} day(s). New balance: ${newBalance} days. Reason: ${reason}`,
+                type: 'Leave',
+                priority: 'Medium',
+                actionUrl: '/my-leave',
+            });
+        }
+        catch (notifErr) {
+            console.warn('Adjust leave balance notification error:', notifErr);
+        }
+        res.json({
+            success: true,
+            message: `Leave balance successfully updated (${actionType === 'ADD' ? '+' : '-'}${days} days).`,
+            data: {
+                employeeId,
+                previousBalance,
+                newBalance,
+                days,
+                actionType,
+                reason,
+                year
+            }
+        });
+    }
+    catch (error) {
+        await client.query('ROLLBACK');
+        console.error('adjustEmployeeLeaveBalance error:', error);
+        res.status(500).json({ success: false, error: { message: 'Failed to adjust leave balance' } });
+    }
+    finally {
+        client.release();
+    }
+};
+exports.adjustEmployeeLeaveBalance = adjustEmployeeLeaveBalance;
+const getLeaveAdjustmentHistory = async (req, res) => {
+    try {
+        const employeeId = parseInt(req.params.employeeId);
+        if (!employeeId || isNaN(employeeId)) {
+            res.status(400).json({ success: false, error: { message: 'Valid employee ID required' } });
+            return;
+        }
+        const result = await (0, db_1.query)(`
+      SELECT 
+        lba.id,
+        lba.employee_id as "employeeId",
+        lba.admin_id as "adminId",
+        u_admin.name as "adminName",
+        lba.year,
+        lba.action_type as "actionType",
+        lba.days::float as "days",
+        lba.previous_balance::float as "previousBalance",
+        lba.new_balance::float as "newBalance",
+        lba.reason,
+        lba.created_at as "createdAt"
+      FROM leave_balance_adjustments lba
+      LEFT JOIN users u_admin ON lba.admin_id = u_admin.id
+      WHERE lba.employee_id = $1
+      ORDER BY lba.created_at DESC
+      LIMIT 50
+    `, [employeeId]);
+        res.json({
+            success: true,
+            data: result.rows
+        });
+    }
+    catch (error) {
+        console.error('getLeaveAdjustmentHistory error:', error);
+        res.status(500).json({ success: false, error: { message: 'Failed to fetch adjustment history' } });
+    }
+};
+exports.getLeaveAdjustmentHistory = getLeaveAdjustmentHistory;

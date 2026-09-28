@@ -35,7 +35,9 @@ export default function AdminReports() {
   const [toDate, setToDate] = useState('');
   const [selectedEmployee, setSelectedEmployee] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('');
+  const [selectedShift, setSelectedShift] = useState('All');
   const [search, setSearch] = useState('');
+  const [shiftsList, setShiftsList] = useState<any[]>([]);
 
   // Pagination & Sort
   const [page, setPage] = useState(1);
@@ -47,12 +49,28 @@ export default function AdminReports() {
   const [activeEmpReport, setActiveEmpReport] = useState<any>(null);
 
   useEffect(() => {
-    if (token) fetchEmployees();
+    if (token) {
+      fetchEmployees();
+      fetchShifts();
+    }
   }, [token]);
 
   useEffect(() => {
     if (token) fetchReport();
   }, [page, sortField, sortOrder, token]);
+
+  const fetchShifts = async () => {
+    try {
+      const res = await axios.get(`${API_URL}/api/admin/shifts`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.data.success) {
+        setShiftsList(res.data.data);
+      }
+    } catch (e) {
+      console.error('Failed to fetch shifts', e);
+    }
+  };
 
   const fetchEmployees = async () => {
     try {
@@ -86,6 +104,7 @@ export default function AdminReports() {
 
       if (selectedEmployee) url += `&employeeId=${selectedEmployee}`;
       if (selectedStatus && selectedStatus !== 'All') url += `&status=${selectedStatus}`;
+      if (selectedShift && selectedShift !== 'All') url += `&shiftId=${selectedShift}`;
       if (search) url += `&search=${encodeURIComponent(search)}`;
 
       const res = await axios.get(url, {
@@ -129,6 +148,7 @@ export default function AdminReports() {
       }
       if (selectedEmployee) url += `&employeeId=${selectedEmployee}`;
       if (selectedStatus && selectedStatus !== 'All') url += `&status=${selectedStatus}`;
+      if (selectedShift && selectedShift !== 'All') url += `&shiftId=${selectedShift}`;
       if (search) url += `&search=${encodeURIComponent(search)}`;
 
       window.open(url, '_blank');
@@ -311,12 +331,29 @@ export default function AdminReports() {
             </Form.Group>
           </Col>
 
+          <Col md={2}>
+            <Form.Group>
+              <Form.Label>Shift</Form.Label>
+              <Form.Select
+                value={selectedShift}
+                onChange={(e) => setSelectedShift(e.target.value)}
+              >
+                <option value="All">All Shifts</option>
+                {shiftsList.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} ({s.code})
+                  </option>
+                ))}
+              </Form.Select>
+            </Form.Group>
+          </Col>
+
           <Col md={3}>
             <Form.Group>
               <Form.Label>Search Employee</Form.Label>
               <Form.Control
                 type="text"
-                placeholder="Name or ID..."
+                placeholder="Employee ID, Name, Dept, or Email..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -445,8 +482,18 @@ export default function AdminReports() {
                               {getInitials(emp.name)}
                             </div>
                             <div>
-                              <div className="fw-semibold text-dark" style={{ fontSize: '14px' }}>
-                                {emp.name}
+                              <div className="fw-semibold text-dark d-flex align-items-center gap-1.5" style={{ fontSize: '14px' }}>
+                                <span>{emp.name}</span>
+                                {(emp.employeeCode || emp.empId) && (
+                                  <span className="badge bg-light text-secondary border font-monospace" style={{ fontSize: '11px', fontWeight: 600 }}>
+                                    {emp.employeeCode || emp.empId}
+                                  </span>
+                                )}
+                                {emp.shiftCode && (
+                                  <span className="badge bg-primary text-white font-monospace" style={{ fontSize: '10.5px' }}>
+                                    {emp.shiftCode}
+                                  </span>
+                                )}
                               </div>
                               <div className="text-muted" style={{ fontSize: '12.5px' }}>
                                 {emp.email}

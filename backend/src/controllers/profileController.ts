@@ -5,11 +5,19 @@ import { query } from '../db';
 import { AuthRequest } from '../middlewares/auth';
 import { processAndSaveProfilePhoto, deleteProfilePhotoFile } from '../middlewares/upload';
 import { NotificationService } from '../services/notificationService';
+import { EmployeeProfileService } from '../services/employeeProfileService';
+import { DocumentService } from '../services/documentService';
 
-const updateProfileSchema = z.object({
+const selfUpdateProfileSchema = z.object({
   phone: z.string().max(20).optional(),
-  profilePhotoUrl: z.string().max(1000).nullable().optional().or(z.literal('')),
   name: z.string().min(2).max(100).optional(),
+  personalEmail: z.string().email().optional().or(z.literal('')).or(z.null()),
+  currentAddress: z.string().max(500).optional().or(z.literal('')).or(z.null()),
+  emergencyContactName: z.string().max(100).optional().or(z.literal('')).or(z.null()),
+  emergencyContactRelationship: z.string().max(50).optional().or(z.literal('')).or(z.null()),
+  emergencyContactPhone: z.string().max(20).optional().or(z.literal('')).or(z.null()),
+  emergencyContactAltPhone: z.string().max(20).optional().or(z.literal('')).or(z.null()),
+  profilePhotoUrl: z.string().max(1000).nullable().optional().or(z.literal(''))
 });
 
 const changePasswordSchema = z.object({
@@ -20,47 +28,45 @@ const changePasswordSchema = z.object({
 export const getProfile = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const userId = req.user!.id;
-    const userRes = await query(`
-      SELECT id, employee_id as "employeeId", name, email, phone, department, 
-             designation, joining_date as "joiningDate", status, role,
-             COALESCE(job_status, 'Permanent') as "jobStatus",
-             provisional_start_date as "provisionalStartDate",
-             provisional_end_date as "provisionalEndDate",
-             profile_photo_url as "profilePhotoUrl"
-      FROM users WHERE id = $1
-    `, [userId]);
+    const fullProfile = await EmployeeProfileService.getFullProfile(userId, false);
 
-    if (userRes.rows.length === 0) {
+    if (!fullProfile) {
       res.status(404).json({ success: false, error: { code: 'USER_NOT_FOUND', message: 'User not found' } });
       return;
     }
 
-    const rec = userRes.rows[0];
-    if (rec.joiningDate) {
-      rec.joiningDate = new Date(rec.joiningDate).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    if (fullProfile.joiningDate) {
+      fullProfile.joiningDate = new Date(fullProfile.joiningDate).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
     }
-    if (rec.provisionalStartDate) {
-      rec.provisionalStartDate = new Date(rec.provisionalStartDate).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    if (fullProfile.provisionalStartDate) {
+      fullProfile.provisionalStartDate = new Date(fullProfile.provisionalStartDate).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
     }
-    if (rec.provisionalEndDate) {
-      rec.provisionalEndDate = new Date(rec.provisionalEndDate).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    if (fullProfile.provisionalEndDate) {
+      fullProfile.provisionalEndDate = new Date(fullProfile.provisionalEndDate).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 
       const today = new Date();
-      const end = new Date(rec.provisionalEndDate);
+      const end = new Date(fullProfile.provisionalEndDate);
       const diffTime = end.getTime() - today.getTime();
-      rec.daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      fullProfile.daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     } else {
-      rec.daysRemaining = null;
+      fullProfile.daysRemaining = null;
     }
 
-    if (rec.profilePhotoUrl && typeof rec.profilePhotoUrl === 'string' && rec.profilePhotoUrl.startsWith('/')) {
+    if (fullProfile.dateOfBirth) {
+      fullProfile.dateOfBirth = new Date(fullProfile.dateOfBirth).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    }
+    if (fullProfile.confirmationDate) {
+      fullProfile.confirmationDate = new Date(fullProfile.confirmationDate).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    }
+
+    if (fullProfile.profilePhotoUrl && typeof fullProfile.profilePhotoUrl === 'string' && fullProfile.profilePhotoUrl.startsWith('/')) {
       const host = req.get('host');
       if (host) {
-        rec.profilePhotoUrl = `${req.protocol}://${host}${rec.profilePhotoUrl}`;
+        fullProfile.profilePhotoUrl = `${req.protocol}://${host}${fullProfile.profilePhotoUrl}`;
       }
     }
 
-    res.json({ success: true, data: rec });
+    res.json({ success: true, data: fullProfile });
   } catch (error) {
     console.error('getProfile error:', error);
     res.status(500).json({ success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'Failed to fetch profile' } });
@@ -70,45 +76,96 @@ export const getProfile = async (req: AuthRequest, res: Response): Promise<void>
 export const updateProfile = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const userId = req.user!.id;
-    const parsed = updateProfileSchema.safeParse(req.body);
-    
+    const userRole = (req.user!.role === 'admin' ? 'admin' : 'employee') as 'admin' | 'employee';
+
+    const parsed = selfUpdateProfileSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: parsed.error.issues[0].message } });
       return;
     }
 
-    const { phone, profilePhotoUrl, name } = parsed.data;
+    const updatedProfile = await EmployeeProfileService.updateProfile(userId, userId, userRole, parsed.data);
 
-    let updateQuery = 'UPDATE users SET updated_at = CURRENT_TIMESTAMP';
-    const params: any[] = [];
+    res.json({
+      success: true,
+      message: 'Profile updated successfully',
+      data: updatedProfile
+    });
+  } catch (error: any) {
+    console.error('updateProfile error:', error);
+    res.status(500).json({ success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: error.message || 'Failed to update profile' } });
+  }
+};
 
-    if (phone !== undefined) {
-      params.push(phone);
-      updateQuery += `, phone = $${params.length}`;
-    }
-    if (profilePhotoUrl !== undefined) {
-      params.push(profilePhotoUrl);
-      updateQuery += `, profile_photo_url = $${params.length}`;
-    }
-    if (name !== undefined) {
-      params.push(name);
-      updateQuery += `, name = $${params.length}`;
-    }
-
-    if (params.length === 0) {
-      res.status(400).json({ success: false, error: { code: 'NO_UPDATES', message: 'No valid fields to update' } });
+export const uploadProfileDocumentHandler = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    if (!req.file) {
+      res.status(400).json({ success: false, error: { message: 'No file provided' } });
       return;
     }
 
-    params.push(userId);
-    updateQuery += ` WHERE id = $${params.length}`;
+    const documentType = (req.body.documentType || 'OTHER').toUpperCase();
+    const documentTitle = req.body.documentTitle || req.file.originalname;
 
-    await query(updateQuery, params);
+    // Self-service employee upload check: employees can upload RESUME or general docs
+    const savedDoc = await DocumentService.saveDocumentRecord({
+      userId,
+      documentType,
+      documentTitle,
+      file: req.file,
+      uploadedBy: userId
+    });
 
-    res.json({ success: true, message: 'Profile updated successfully' });
+    res.json({
+      success: true,
+      data: savedDoc,
+      message: 'Document uploaded successfully'
+    });
+  } catch (error: any) {
+    console.error('uploadProfileDocumentHandler error:', error);
+    res.status(500).json({ success: false, error: { message: error.message || 'Failed to upload document' } });
+  }
+};
+
+export const deleteProfileDocumentHandler = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const docId = parseInt(req.params.docId as string);
+
+    if (isNaN(docId)) {
+      res.status(400).json({ success: false, error: { message: 'Invalid document ID' } });
+      return;
+    }
+
+    await DocumentService.deleteDocument(docId, userId, userId, req.user?.role === 'admin');
+
+    res.json({
+      success: true,
+      message: 'Document deleted successfully'
+    });
+  } catch (error: any) {
+    console.error('deleteProfileDocumentHandler error:', error);
+    if (error.message === 'DOCUMENT_NOT_FOUND') {
+      res.status(404).json({ success: false, error: { message: 'Document not found' } });
+      return;
+    }
+    if (error.message === 'FORBIDDEN') {
+      res.status(403).json({ success: false, error: { message: 'You do not have permission to delete this document' } });
+      return;
+    }
+    res.status(500).json({ success: false, error: { message: 'Failed to delete document' } });
+  }
+};
+
+export const getProfileActivityHandler = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const activities = await EmployeeProfileService.getProfileActivityLogs(userId, 50);
+    res.json({ success: true, data: activities });
   } catch (error) {
-    console.error('updateProfile error:', error);
-    res.status(500).json({ success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'Failed to update profile' } });
+    console.error('getProfileActivityHandler error:', error);
+    res.status(500).json({ success: false, error: { message: 'Failed to fetch activity logs' } });
   }
 };
 
@@ -208,4 +265,3 @@ export const deleteProfilePhotoHandler = async (req: AuthRequest, res: Response)
     res.status(500).json({ success: false, error: { message: error.message || 'Failed to remove photo' } });
   }
 };
-

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { getAttendance, getDailySummary } from '../controllers/adminController';
 import { getAttendanceReport } from '../controllers/adminReportController';
-import { getAdminLeaves, approveLeave, rejectLeave } from '../controllers/adminLeaveController';
+import { getAdminLeaves, approveLeave, rejectLeave, adjustEmployeeLeaveBalance, getLeaveAdjustmentHistory, getEmployeeLeaveBalance } from '../controllers/adminLeaveController';
 import { 
   getEmployees, 
   getEmployeeDetail, 
@@ -13,11 +13,29 @@ import {
   uploadEmployeePhoto, 
   deleteEmployeePhoto,
   updateJobStatus,
-  exportEmployees
+  exportEmployees,
+  getNextEmployeeIdHandler,
+  validateEmployeeIdHandler,
+  getAdminEmployeeProfile,
+  updateAdminEmployeeProfile,
+  adminUploadEmployeeDocument,
+  adminDeleteEmployeeDocument,
+  adminGetEmployeeProfileActivity
 } from '../controllers/adminEmployeeController';
-import { getSettings, updateSettings, getHolidays, addHoliday, deleteHoliday, getOfficeSettings, updateOfficeSettings } from '../controllers/settingsController';
+import { getSettings, updateSettings, getHolidays, addHoliday, deleteHoliday, getOfficeSettings, updateOfficeSettings, getLeaveSettings, updateLeaveSettings } from '../controllers/settingsController';
+import { 
+  getShifts, 
+  getShift, 
+  createShift, 
+  updateShift, 
+  deleteShift, 
+  getShiftEmployees, 
+  assignShift, 
+  bulkAssignShift 
+} from '../controllers/shiftController';
 import { authenticateToken, requireRole } from '../middlewares/auth';
 import { uploadProfilePhoto } from '../middlewares/upload';
+import { uploadDocumentMiddleware } from '../services/documentService';
 import { query } from '../db';
 
 const router = Router();
@@ -41,6 +59,8 @@ router.get('/notifications', async (req, res) => {
 
 router.get('/settings', getSettings);
 router.patch('/settings', updateSettings);
+router.get('/settings/leave', getLeaveSettings);
+router.patch('/settings/leave', updateLeaveSettings);
 router.get('/office', getOfficeSettings);
 router.patch('/office', updateOfficeSettings);
 router.get('/holidays', getHolidays);
@@ -92,9 +112,19 @@ router.post('/leave/initialize', (req, res, next) => {
 router.get('/leave', getAdminLeaves);
 router.patch('/leave/:id/approve', approveLeave);
 router.patch('/leave/:id/reject', rejectLeave);
+router.post('/leave/adjust-balance', adjustEmployeeLeaveBalance);
+router.get('/leave/balance/:employeeId', getEmployeeLeaveBalance);
+router.get('/leave/adjust-history/:employeeId', getLeaveAdjustmentHistory);
 
 router.get('/employees', getEmployees);
+router.get('/employees/next-id', getNextEmployeeIdHandler);
+router.get('/employees/validate-id', validateEmployeeIdHandler);
 router.get('/employees/export', exportEmployees);
+router.get('/employees/:id/profile', getAdminEmployeeProfile);
+router.patch('/employees/:id/profile', updateAdminEmployeeProfile);
+router.post('/employees/:id/documents', uploadDocumentMiddleware.single('file'), adminUploadEmployeeDocument);
+router.delete('/employees/:id/documents/:docId', adminDeleteEmployeeDocument);
+router.get('/employees/:id/profile-activity', adminGetEmployeeProfileActivity);
 router.get('/employees/:id', getEmployeeDetail);
 router.post('/employees', createEmployee);
 router.patch('/employees/:id', editEmployee);
@@ -105,5 +135,15 @@ router.delete('/employees/:id', deleteEmployee);
 router.post('/upload-photo', uploadProfilePhoto.single('photo'), uploadEmployeePhoto);
 router.post('/employees/:id/photo', uploadProfilePhoto.single('photo'), uploadEmployeePhoto);
 router.delete('/employees/:id/photo', deleteEmployeePhoto);
+
+// Shift Management Routes
+router.get('/shifts', getShifts);
+router.get('/shifts/:id', getShift);
+router.post('/shifts', createShift);
+router.patch('/shifts/:id', updateShift);
+router.delete('/shifts/:id', deleteShift);
+router.get('/shifts/:id/employees', getShiftEmployees);
+router.post('/shifts/assign', assignShift);
+router.post('/shifts/bulk-assign', bulkAssignShift);
 
 export default router;

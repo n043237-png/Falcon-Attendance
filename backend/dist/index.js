@@ -28,6 +28,9 @@ const corsOptions = {
 app.use((0, cors_1.default)(corsOptions));
 app.use(express_1.default.json());
 app.use('/uploads', express_1.default.static(path_1.default.join(process.cwd(), 'uploads')));
+// Serve admin panel static files
+const adminDistPath = path_1.default.join(process.cwd(), '..', 'admin', 'dist');
+app.use(express_1.default.static(adminDistPath));
 app.use('/api/auth', authRoutes_1.default);
 app.use('/api/attendance/location', locationRoutes_1.default);
 app.use('/api/attendance', attendanceRoutes_1.default);
@@ -40,6 +43,10 @@ app.use('/api/employee', employeeRoutes_1.default);
 (0, schedulerService_1.startScheduler)();
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', message: 'Falcon Office Backend is running' });
+});
+// SPA catch-all — serve index.html for any non-API route
+app.get('/{*path}', (req, res) => {
+    res.sendFile(path_1.default.join(adminDistPath, 'index.html'));
 });
 app.listen(port, '0.0.0.0', () => {
     console.log(`Server is running on port ${port} (0.0.0.0)`);

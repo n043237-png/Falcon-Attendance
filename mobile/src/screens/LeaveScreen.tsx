@@ -23,8 +23,10 @@ import {
   getLeaveHistory,
   applyLeave,
   cancelLeaveRequest,
+  validateLeave,
   LeaveBalance,
   LeaveRequest,
+  LeaveValidationData,
 } from '../api/leaveApi';
 
 export default function LeaveScreen() {
@@ -36,6 +38,9 @@ export default function LeaveScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [applying, setApplying] = useState(false);
   const [showApplyModal, setShowApplyModal] = useState(false);
+  const [showImpactModal, setShowImpactModal] = useState(false);
+  const [validation, setValidation] = useState<LeaveValidationData | null>(null);
+  const [validating, setValidating] = useState(false);
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'>('ALL');
 
   // Form states
@@ -69,20 +74,6 @@ export default function LeaveScreen() {
     fetchData();
   }, [fetchData]);
 
-  // Calculate requested total days
-  const calculateDays = (start: Date, end: Date) => {
-    const s = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-    const e = new Date(end.getFullYear(), end.getMonth(), end.getDate());
-    if (s > e) return 0;
-    const diffTime = Math.abs(e.getTime() - s.getTime());
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-  };
-
-  const requestedDays = calculateDays(startDate, endDate);
-  const availableBalance = balance?.currentBalance ?? 0;
-  const isLwpRequired = requestedDays > availableBalance;
-  const lwpDays = isLwpRequired ? requestedDays - availableBalance : 0;
-
   const formatDateYMD = (d: Date) => {
     const year = d.getFullYear();
     const month = String(d.getMonth() + 1).padStart(2, '0');
@@ -98,6 +89,51 @@ export default function LeaveScreen() {
     });
   };
 
+  // Run Smart Leave Validation
+  const runValidation = useCallback(async (start: Date, end: Date) => {
+    if (!token) return;
+    const sStr = formatDateYMD(start);
+    const eStr = formatDateYMD(end);
+    if (start > end) {
+      setValidation(null);
+      return;
+    }
+    setValidating(true);
+    try {
+      const res = await validateLeave(token, { startDate: sStr, endDate: eStr });
+      if (res.success && res.data) {
+        setValidation(res.data);
+      } else {
+        setValidation(null);
+      }
+    } catch (err) {
+      console.warn('Smart leave validation error:', err);
+      setValidation(null);
+    } finally {
+      setValidating(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (showApplyModal && token) {
+      runValidation(startDate, endDate);
+    }
+  }, [showApplyModal, startDate, endDate, token, runValidation]);
+
+  // Calculate fallback requested days if validation is not available
+  const calculateDays = (start: Date, end: Date) => {
+    const s = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    const e = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+    if (s > e) return 0;
+    const diffTime = Math.abs(e.getTime() - s.getTime());
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+  };
+
+  const requestedDays = validation ? validation.totalDays : calculateDays(startDate, endDate);
+  const availableBalance = balance?.currentBalance ?? 0;
+  const isLwpRequired = validation ? validation.isLwpRequired : requestedDays > availableBalance;
+  const lwpDays = validation ? validation.lwpDays : (isLwpRequired ? requestedDays - availableBalance : 0);
+
   const handleApply = async () => {
     if (!token) return;
 
@@ -111,7 +147,19 @@ export default function LeaveScreen() {
       return;
     }
 
-    if (isLwpRequired) {
+    // Overlap validation check
+    if (validation && (validation.hasApprovedOverlap || !validation.canSubmit)) {
+      Alert.alert(
+        'Submission Blocked',
+        validation.blockReason || 'You already have approved leave on these dates.'
+      );
+      return;
+    }
+
+    // Show Impact Analysis Confirmation Dialog
+    if (validation) {
+      setShowImpactModal(true);
+    } else if (isLwpRequired) {
       Alert.alert(
         'Leave Without Pay Notice',
         `You have ${availableBalance} paid days available. ${lwpDays} day(s) will be submitted as Leave Without Pay. Do you wish to proceed?`,
@@ -424,14 +472,166 @@ export default function LeaveScreen() {
                 </View>
               </View>
 
-              {/* Duration Notice */}
-              <View style={styles.durationNotice}>
-                <Text style={styles.durationNoticeLabel}>Total Requested Days:</Text>
-                <Text style={styles.durationNoticeValue}>
-                  {requestedDays} {requestedDays === 1 ? 'Day' : 'Days'}
-                </Text>
-              </View>
+              {/* Validating indicator */}
+              {validating && (
+                <View style={styles.validatingRow}>
+                  <ActivityIndicator size="small" color="#2563EB" />
+                  <Text style={styles.validatingText}>Analyzing selected dates & leave balance...</Text>
+                </View>
+              )}
 
+              {/* Overlapping Leave Warning */}
+              {validation?.hasApprovedOverlap && (
+                <View style={styles.overlapBlock}>
+                  <Ionicons name="alert-circle" size={18} color="#DC2626" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.overlapTitle}>Leave Conflict Detected</Text>
+                    <Text style={styles.overlapText}>
+                      {validation.blockReason || 'You already have approved leave on these dates. Submission is blocked.'}
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {/* Special Notice Banner */}
+              {validation?.specialNotice && !validation.hasApprovedOverlap && (
+                <View
+                  style={[
+                    styles.specialNoticeBox,
+                    validation.specialNotice.type === 'WARNING'
+                      ? styles.specialNoticeWarning
+                      : styles.specialNoticeInfo,
+                  ]}
+                >
+                  <Ionicons
+                    name={validation.specialNotice.type === 'WARNING' ? 'alert-circle' : 'information-circle'}
+                    size={17}
+                    color={validation.specialNotice.type === 'WARNING' ? '#B45309' : '#1D4ED8'}
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text
+                      style={[
+                        styles.specialNoticeTitle,
+                        { color: validation.specialNotice.type === 'WARNING' ? '#92400E' : '#1E40AF' },
+                      ]}
+                    >
+                      {validation.specialNotice.title}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.specialNoticeMsg,
+                        { color: validation.specialNotice.type === 'WARNING' ? '#B45309' : '#1E40AF' },
+                      ]}
+                    >
+                      {validation.specialNotice.message}
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {/* Smart Leave Summary Card (6 metrics) */}
+              {validation ? (
+                <View style={styles.smartSummaryCard}>
+                  <View style={styles.smartSummaryHeader}>
+                    <Ionicons name="sparkles" size={15} color="#4F46E5" />
+                    <Text style={styles.smartSummaryTitle}>Smart Leave Impact</Text>
+                  </View>
+                  <View style={styles.summaryGrid}>
+                    <View style={styles.summaryGridItem}>
+                      <Text style={styles.summaryGridLabel}>Total Selected</Text>
+                      <Text style={styles.summaryGridValue}>{validation.totalDays} Days</Text>
+                    </View>
+                    <View style={styles.summaryGridItem}>
+                      <Text style={styles.summaryGridLabel}>Working Days</Text>
+                      <Text style={[styles.summaryGridValue, { color: '#2563EB' }]}>
+                        {validation.workingDays} Days
+                      </Text>
+                    </View>
+                    <View style={styles.summaryGridItem}>
+                      <Text style={styles.summaryGridLabel}>Weekly Offs</Text>
+                      <Text style={[styles.summaryGridValue, { color: '#16A34A' }]}>
+                        {validation.weeklyOffDays} Days
+                      </Text>
+                    </View>
+                    <View style={styles.summaryGridItem}>
+                      <Text style={styles.summaryGridLabel}>Company Holidays</Text>
+                      <Text style={[styles.summaryGridValue, { color: '#EA580C' }]}>
+                        {validation.companyHolidays} Days
+                      </Text>
+                    </View>
+                    <View style={styles.summaryGridItem}>
+                      <Text style={styles.summaryGridLabel}>Paid Leave Req.</Text>
+                      <Text style={[styles.summaryGridValue, { color: '#4F46E5' }]}>
+                        {validation.paidLeaveRequired} Days
+                      </Text>
+                    </View>
+                    <View style={styles.summaryGridItem}>
+                      <Text style={styles.summaryGridLabel}>Balance Impact</Text>
+                      <Text style={[styles.summaryGridValue, { color: '#0F172A' }]}>
+                        {validation.balanceBefore} → {validation.balanceAfter}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              ) : (
+                /* Fallback Duration Notice */
+                <View style={styles.durationNotice}>
+                  <Text style={styles.durationNoticeLabel}>Total Requested Days:</Text>
+                  <Text style={styles.durationNoticeValue}>
+                    {requestedDays} {requestedDays === 1 ? 'Day' : 'Days'}
+                  </Text>
+                </View>
+              )}
+
+              {/* Day-by-Day Timeline / Breakdown */}
+              {validation?.daysBreakdown && validation.daysBreakdown.length > 0 && (
+                <View style={styles.breakdownSection}>
+                  <Text style={styles.breakdownSectionTitle}>Day-by-Day Classification</Text>
+                  <View style={styles.breakdownList}>
+                    {validation.daysBreakdown.map((day, idx) => {
+                      let badgeBg = '#EFF6FF';
+                      let badgeBorder = '#BFDBFE';
+                      let badgeText = '#1D4ED8';
+                      let iconName: any = 'briefcase-outline';
+
+                      if (day.category === 'WEEKLY_OFF') {
+                        badgeBg = '#F0FDF4';
+                        badgeBorder = '#BBF7D0';
+                        badgeText = '#15803D';
+                        iconName = 'leaf-outline';
+                      } else if (day.category === 'COMPANY_HOLIDAY') {
+                        badgeBg = '#FFF7ED';
+                        badgeBorder = '#FED7AA';
+                        badgeText = '#C2410C';
+                        iconName = 'gift-outline';
+                      } else if (day.category === 'CONFLICT') {
+                        badgeBg = '#FEF2F2';
+                        badgeBorder = '#FECACA';
+                        badgeText = '#DC2626';
+                        iconName = 'alert-circle-outline';
+                      }
+
+                      return (
+                        <View key={idx} style={[styles.breakdownItem, { borderColor: badgeBorder, backgroundColor: badgeBg }]}>
+                          <View style={styles.breakdownItemLeft}>
+                            <Ionicons name={iconName} size={14} color={badgeText} style={{ marginRight: 6 }} />
+                            <Text style={[styles.breakdownDateText, { color: badgeText }]}>
+                              {day.formattedDate}
+                            </Text>
+                          </View>
+                          <Text style={[styles.breakdownBadgeText, { color: badgeText }]}>
+                            {day.category === 'COMPANY_HOLIDAY' && day.holidayName
+                              ? `${day.holidayName} (Exempt)`
+                              : day.deductionText}
+                          </Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
+
+              {/* LWP Warning Notice */}
               {isLwpRequired && (
                 <View style={styles.lwpNotice}>
                   <Ionicons name="alert-circle" size={16} color="#D97706" style={{ marginRight: 6 }} />
@@ -495,19 +695,152 @@ export default function LeaveScreen() {
                 <Text style={styles.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalSubmitBtn, applying && { opacity: 0.7 }]}
+                style={[
+                  styles.modalSubmitBtn,
+                  (applying || validation?.hasApprovedOverlap || validation?.canSubmit === false) && { opacity: 0.65 },
+                ]}
                 onPress={handleApply}
-                disabled={applying}
+                disabled={applying || validation?.hasApprovedOverlap || validation?.canSubmit === false}
               >
                 {applying ? (
                   <ActivityIndicator color="#FFFFFF" size="small" />
                 ) : (
                   <>
                     <Ionicons name="checkmark-circle" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-                    <Text style={styles.modalSubmitText}>Submit Request</Text>
+                    <Text style={styles.modalSubmitText}>
+                      {validation?.hasApprovedOverlap ? 'Blocked' : 'Review & Submit'}
+                    </Text>
                   </>
                 )}
               </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Leave Impact Analysis Confirmation Modal */}
+      <Modal visible={showImpactModal} animationType="fade" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { maxHeight: '88%' }]}>
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 8,
+                    backgroundColor: '#EEF2FF',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Ionicons name="analytics" size={18} color="#4F46E5" />
+                </View>
+                <View>
+                  <Text style={styles.modalTitle}>
+                    {validation?.confirmationDialog?.title || 'Leave Impact Analysis'}
+                  </Text>
+                  <Text style={styles.modalSubtitle}>Review quota impact before confirmation</Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                onPress={() => setShowImpactModal(false)}
+                style={styles.modalCloseBtn}
+              >
+                <Ionicons name="close" size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalScroll}>
+              <Text style={styles.impactSummaryText}>
+                {validation?.confirmationDialog?.summaryMessage}
+              </Text>
+
+              {/* Bullet Points */}
+              <View style={styles.impactBulletsContainer}>
+                {validation?.confirmationDialog?.breakdownBulletPoints?.map((point, idx) => (
+                  <View key={idx} style={styles.bulletRow}>
+                    <Ionicons name="checkmark-circle" size={16} color="#2563EB" style={{ marginTop: 2 }} />
+                    <Text style={styles.bulletText}>{point}</Text>
+                  </View>
+                ))}
+              </View>
+
+              {/* Quota Impact Box */}
+              <View style={styles.quotaImpactBox}>
+                <View style={styles.quotaImpactRow}>
+                  <Text style={styles.quotaImpactLabel}>Paid Leave Required</Text>
+                  <Text style={styles.quotaImpactValue}>
+                    {validation?.confirmationDialog?.paidLeaveRequiredText}
+                  </Text>
+                </View>
+                <View style={[styles.quotaImpactRow, { borderTopWidth: 1, borderTopColor: '#E2E8F0', paddingTop: 8, marginTop: 8 }]}>
+                  <Text style={styles.quotaImpactLabel}>Remaining Balance After Approval</Text>
+                  <Text style={[styles.quotaImpactValue, { color: '#16A34A', fontWeight: '800' }]}>
+                    {validation?.confirmationDialog?.balanceAfterText}
+                  </Text>
+                </View>
+                {validation?.confirmationDialog?.lwpWarningText && (
+                  <View style={[styles.quotaImpactRow, { borderTopWidth: 1, borderTopColor: '#FED7AA', paddingTop: 8, marginTop: 8 }]}>
+                    <Text style={[styles.quotaImpactLabel, { color: '#B45309' }]}>LWP Notice</Text>
+                    <Text style={[styles.quotaImpactValue, { color: '#B45309' }]}>
+                      {validation.confirmationDialog.lwpWarningText}
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Policy Note */}
+              <View style={styles.policyNoteBox}>
+                <Ionicons name="shield-checkmark" size={16} color="#475569" style={{ marginTop: 2 }} />
+                <Text style={styles.policyNoteText}>
+                  {validation?.confirmationDialog?.policyNote ||
+                    'Official company policy excludes designated weekly offs and official holidays from consuming employee paid leave quota.'}
+                </Text>
+              </View>
+            </ScrollView>
+
+            {/* 3 Confirmation Actions: Continue, Modify Leave, Cancel */}
+            <View style={styles.impactActions}>
+              <TouchableOpacity
+                style={styles.impactContinueBtn}
+                onPress={() => {
+                  setShowImpactModal(false);
+                  submitLeave();
+                }}
+                disabled={applying}
+              >
+                {applying ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="checkmark-done" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                    <Text style={styles.impactContinueText}>Continue & Submit</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <TouchableOpacity
+                  style={styles.impactModifyBtn}
+                  onPress={() => setShowImpactModal(false)}
+                  disabled={applying}
+                >
+                  <Ionicons name="create-outline" size={15} color="#2563EB" style={{ marginRight: 4 }} />
+                  <Text style={styles.impactModifyText}>Modify Leave</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.impactCancelBtn}
+                  onPress={() => {
+                    setShowImpactModal(false);
+                    setShowApplyModal(false);
+                  }}
+                  disabled={applying}
+                >
+                  <Text style={styles.impactCancelText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         </View>
@@ -969,5 +1302,260 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+
+  // Smart Validation & Impact Styles
+  validatingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#EFF6FF',
+    padding: 9,
+    borderRadius: 8,
+    marginTop: 10,
+  },
+  validatingText: {
+    fontSize: 12.5,
+    color: '#1D4ED8',
+    fontWeight: '500',
+  },
+  overlapBlock: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    padding: 10,
+    borderRadius: 8,
+    marginTop: 10,
+  },
+  overlapTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#B91C1C',
+    marginBottom: 2,
+  },
+  overlapText: {
+    fontSize: 12,
+    color: '#DC2626',
+    lineHeight: 16,
+  },
+  specialNoticeBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    padding: 10,
+    borderRadius: 8,
+    marginTop: 10,
+    borderWidth: 1,
+  },
+  specialNoticeInfo: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
+  },
+  specialNoticeWarning: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FDE68A',
+  },
+  specialNoticeTitle: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  specialNoticeMsg: {
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  smartSummaryCard: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 12,
+  },
+  smartSummaryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 10,
+    paddingBottom: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  smartSummaryTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  summaryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    rowGap: 8,
+  },
+  summaryGridItem: {
+    width: '33.33%',
+    paddingRight: 4,
+  },
+  summaryGridLabel: {
+    fontSize: 10.5,
+    color: '#64748B',
+    fontWeight: '500',
+    marginBottom: 2,
+  },
+  summaryGridValue: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  breakdownSection: {
+    marginTop: 12,
+  },
+  breakdownSectionTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#475569',
+    marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  breakdownList: {
+    gap: 6,
+  },
+  breakdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  breakdownItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  breakdownDateText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+  },
+  breakdownBadgeText: {
+    fontSize: 11.5,
+    fontWeight: '600',
+  },
+
+  // Impact Analysis Dialog Modal
+  impactSummaryText: {
+    fontSize: 13.5,
+    color: '#334155',
+    lineHeight: 19,
+    marginBottom: 12,
+  },
+  impactBulletsContainer: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 12,
+    gap: 8,
+    marginBottom: 12,
+  },
+  bulletRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  bulletText: {
+    fontSize: 12.5,
+    color: '#1E293B',
+    lineHeight: 17,
+    flex: 1,
+  },
+  quotaImpactBox: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+  },
+  quotaImpactRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  quotaImpactLabel: {
+    fontSize: 12.5,
+    color: '#475569',
+    fontWeight: '500',
+  },
+  quotaImpactValue: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  policyNoteBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: '#F1F5F9',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  policyNoteText: {
+    fontSize: 11.5,
+    color: '#475569',
+    lineHeight: 16,
+    flex: 1,
+  },
+  impactActions: {
+    gap: 8,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  impactContinueBtn: {
+    backgroundColor: '#2563EB',
+    paddingVertical: 12,
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  impactContinueText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  impactModifyBtn: {
+    flex: 1,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    paddingVertical: 10,
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  impactModifyText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#2563EB',
+  },
+  impactCancelBtn: {
+    flex: 1,
+    backgroundColor: '#F1F5F9',
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  impactCancelText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#475569',
   },
 });

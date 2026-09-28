@@ -65,3 +65,68 @@ export const cancelLeaveRequest = async (token: string, id: number) => {
     return error.response?.data || { success: false, error: { message: 'Network error' } };
   }
 };
+
+export interface DayAnalysisMobile {
+  date: string;
+  formattedDate: string;
+  dayOfWeek: string;
+  dayOfWeekIndex: number;
+  category: 'WORKING_DAY' | 'WEEKLY_OFF' | 'COMPANY_HOLIDAY' | 'CONFLICT';
+  categoryLabel: string;
+  holidayName?: string;
+  consumesPaidLeave: boolean;
+  deductionText: string;
+  badgeColor: 'blue' | 'green' | 'orange' | 'red';
+}
+
+export interface LeaveValidationData {
+  isValid: boolean;
+  canSubmit: boolean;
+  blockReason?: string;
+  startDate: string;
+  endDate: string;
+  totalDays: number;
+  workingDays: number;
+  weeklyOffDays: number;
+  companyHolidays: number;
+  paidLeaveRequired: number;
+  balanceBefore: number;
+  balanceAfter: number;
+  lwpDays: number;
+  isLwpRequired: boolean;
+  allWeeklyOffs: boolean;
+  allCompanyHolidays: boolean;
+  allNonWorkingDays: boolean;
+  hasApprovedOverlap: boolean;
+  hasPendingOverlap: boolean;
+  isPastLeave: boolean;
+  specialNotice?: {
+    title: string;
+    message: string;
+    type: 'INFO' | 'WARNING' | 'ERROR';
+    requiresConfirmation: boolean;
+  };
+  confirmationDialog: {
+    title: string;
+    summaryMessage: string;
+    breakdownBulletPoints: string[];
+    policyNote: string;
+    paidLeaveRequiredText: string;
+    balanceAfterText: string;
+    lwpWarningText?: string;
+  };
+  daysBreakdown: DayAnalysisMobile[];
+}
+
+export const validateLeave = async (token: string, params: { startDate: string; endDate: string }) => {
+  try {
+    const res = await axios.get(`${API_URL}/api/leave/validate`, {
+      params,
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    return res.data;
+  } catch (error: any) {
+    return error.response?.data || { success: false, error: { message: 'Network error validating leave' } };
+  }
+};
+

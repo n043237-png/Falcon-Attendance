@@ -23,7 +23,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     const { identifier, password } = parsed.data;
 
     const result = await query(
-      `SELECT * FROM users WHERE email = $1 OR employee_id = $1`,
+      `SELECT * FROM users WHERE LOWER(email) = LOWER($1) OR LOWER(employee_id) = LOWER($1) OR LOWER(employee_code) = LOWER($1)`,
       [identifier]
     );
 
@@ -66,6 +66,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       }
     }
     (userWithoutPassword as any).profilePhotoUrl = photoUrl;
+    (userWithoutPassword as any).profile_photo_url = photoUrl;
     (userWithoutPassword as any).roles = roles;
 
     res.json({
@@ -112,6 +113,7 @@ export const getMe = async (req: AuthRequest, res: Response): Promise<void> => {
         dbUser.profilePhotoUrl = `${req.protocol}://${host}${dbUser.profilePhotoUrl}`;
       }
     }
+    dbUser.profile_photo_url = dbUser.profilePhotoUrl;
 
     res.json({ user: dbUser });
   } catch (error) {

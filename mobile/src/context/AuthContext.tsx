@@ -8,6 +8,8 @@ interface User {
   name: string;
   email: string;
   role: string;
+  profilePhotoUrl?: string;
+  profile_photo_url?: string;
 }
 
 interface AuthContextType {
@@ -15,6 +17,8 @@ interface AuthContextType {
   token: string | null;
   login: (token: string, user: User) => Promise<void>;
   logout: () => Promise<void>;
+  updateUser: (fields: Partial<User>) => void;
+  refreshUser: () => Promise<void>;
   isLoading: boolean;
 }
 
@@ -78,8 +82,26 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setUser(null);
   };
 
+  const updateUser = (fields: Partial<User>) => {
+    setUser((prev) => (prev ? { ...prev, ...fields } : null));
+  };
+
+  const refreshUser = async () => {
+    if (!token) return;
+    try {
+      const response = await axios.get(`${API_URL}/api/auth/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.data?.user) {
+        setUser(response.data.user);
+      }
+    } catch (e) {
+      console.warn('Failed to refresh user:', e);
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, isLoading }}>
+    <AuthContext.Provider value={{ user, token, login, logout, updateUser, refreshUser, isLoading }}>
       {children}
     </AuthContext.Provider>
   );

@@ -10,11 +10,13 @@ import {
   Filter,
   ChevronLeft,
   ChevronRight,
-  AlertCircle
+  AlertCircle,
+  CalendarPlus
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import Avatar from '../components/common/Avatar';
 import ImagePreviewModal from '../components/common/ImagePreviewModal';
+import AdjustLeaveModal from '../components/common/AdjustLeaveModal';
 
 export default function AdminLeave() {
   const { token } = useAuth();
@@ -30,6 +32,9 @@ export default function AdminLeave() {
 
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [previewEmployee, setPreviewEmployee] = useState<any>(null);
+
+  const [showAdjustLeave, setShowAdjustLeave] = useState(false);
+  const [adjustLeaveEmployee, setAdjustLeaveEmployee] = useState<any>(null);
 
   const navigate = useNavigate();
 
@@ -227,31 +232,46 @@ export default function AdminLeave() {
                           </span>
                         </td>
                         <td className="text-end">
-                          {lr.status === 'PENDING' ? (
-                            <div className="d-inline-flex gap-2">
-                              <button
-                                className="btn btn-success btn-sm"
-                                onClick={() => handleApprove(lr.id)}
-                                title="Approve leave"
-                              >
-                                <CheckCircle2 size={14} />
-                                <span>Approve</span>
-                              </button>
-                              <button
-                                className="btn btn-outline-danger btn-sm"
-                                onClick={() => {
-                                  setSelectedLeave(lr.id);
-                                  setShowRejectModal(true);
-                                }}
-                                title="Reject leave"
-                              >
-                                <XCircle size={14} />
-                                <span>Reject</span>
-                              </button>
-                            </div>
-                          ) : (
-                            <span className="text-muted small">—</span>
-                          )}
+                          <div className="d-inline-flex gap-2">
+                            {lr.status === 'PENDING' && (
+                              <>
+                                <button
+                                  className="btn btn-success btn-sm"
+                                  onClick={() => handleApprove(lr.id)}
+                                  title="Approve leave"
+                                >
+                                  <CheckCircle2 size={14} />
+                                  <span>Approve</span>
+                                </button>
+                                <button
+                                  className="btn btn-outline-danger btn-sm"
+                                  onClick={() => {
+                                    setSelectedLeave(lr.id);
+                                    setShowRejectModal(true);
+                                  }}
+                                  title="Reject leave"
+                                >
+                                  <XCircle size={14} />
+                                  <span>Reject</span>
+                                </button>
+                              </>
+                            )}
+                            <button
+                              className="btn btn-outline-primary btn-sm d-inline-flex align-items-center gap-1"
+                              onClick={() => {
+                                setAdjustLeaveEmployee({
+                                  id: lr.userId,
+                                  name: lr.employeeName,
+                                  employee_code: lr.employeeId
+                                });
+                                setShowAdjustLeave(true);
+                              }}
+                              title="Adjust Employee Leave Balance"
+                            >
+                              <CalendarPlus size={13} />
+                              <span>Adjust</span>
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -330,6 +350,16 @@ export default function AdminLeave() {
         name={previewEmployee?.employeeName}
         employeeId={previewEmployee?.employeeId}
         role="Employee"
+      />
+
+      <AdjustLeaveModal
+        show={showAdjustLeave}
+        onHide={() => setShowAdjustLeave(false)}
+        employee={adjustLeaveEmployee}
+        token={token}
+        onSuccess={() => {
+          fetchLeaves();
+        }}
       />
     </div>
   );

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { query } from '../db';
 import { AuthRequest } from '../middlewares/auth';
 import { NotificationService } from '../services/notificationService';
+import { LeaveValidationService } from '../services/leaveValidationService';
 
 const applyLeaveSchema = z.object({
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format (YYYY-MM-DD)'),
@@ -54,6 +55,25 @@ export const getBalances = async (req: AuthRequest, res: Response): Promise<void
   }
 };
 
+export const validateLeave = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const employeeId = req.user!.id;
+    const startDate = (req.query.startDate as string) || req.body?.startDate;
+    const endDate = (req.query.endDate as string) || req.body?.endDate;
+
+    if (!startDate || !endDate) {
+      res.status(400).json({ success: false, error: { message: 'startDate and endDate (YYYY-MM-DD) are required.' } });
+      return;
+    }
+
+    const result = await LeaveValidationService.validateLeaveRequest(employeeId, startDate, endDate);
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    console.error('validateLeave error:', error);
+    res.status(500).json({ success: false, error: { message: error.message || 'Failed to validate leave' } });
+  }
+};
+
 export const applyLeave = async (req: AuthRequest, res: Response): Promise<void> => {
   const client = await require('pg').Pool.prototype.connect.bind(require('../db').pool)();
   
@@ -68,27 +88,24 @@ export const applyLeave = async (req: AuthRequest, res: Response): Promise<void>
 
     const { startDate, endDate, reason } = parsed.data;
 
+    // Run Smart Leave Validation Engine
+    const validation = await LeaveValidationService.validateLeaveRequest(employeeId, startDate, endDate);
+    if (!validation.canSubmit) {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: validation.hasApprovedOverlap ? 'APPROVED_LEAVE_OVERLAP' : 'LEAVE_OVERLAP',
+          message: validation.blockReason || 'You already have a leave request covering these dates.'
+        },
+        data: validation
+      });
+      return;
+    }
+
     const start = new Date(startDate);
     const end = new Date(endDate);
-    if (start > end) {
-      res.status(400).json({ success: false, error: { code: 'INVALID_DATE_RANGE', message: 'Start date must be before or equal to end date' } });
-      return;
-    }
-
-    const diffTime = Math.abs(end.getTime() - start.getTime());
-    const totalDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-
-    const overlapRes = await client.query(`
-      SELECT id FROM leave_requests
-      WHERE employee_id = $1 
-      AND status IN ('PENDING', 'APPROVED')
-      AND from_date <= $2 AND to_date >= $3
-    `, [employeeId, endDate, startDate]);
-    
-    if (overlapRes.rows.length > 0) {
-      res.status(400).json({ success: false, error: { code: 'LEAVE_OVERLAP', message: 'You already have a leave request covering part of these dates.' } });
-      return;
-    }
+    const totalDays = validation.totalDays;
+    const paidLeaveRequired = validation.paidLeaveRequired;
 
     const year = startDate.substring(0, 4);
     
@@ -100,14 +117,23 @@ export const applyLeave = async (req: AuthRequest, res: Response): Promise<void>
     `, [employeeId, year]);
 
     let availableBalance = 0;
-    if (balanceRes.rows.length > 0) {
+    if (balanceRes.rows.length > 0 && balanceRes.rows[0].current_balance !== null) {
       availableBalance = parseFloat(balanceRes.rows[0].current_balance);
     }
 
     const insertedIds = [];
 
-    if (availableBalance >= totalDays) {
-      // All paid leave
+    if (paidLeaveRequired === 0) {
+      // Non-working days only (Sundays or Holidays)
+      const leaveType = validation.allWeeklyOffs ? 'Weekly Off' : (validation.allCompanyHolidays ? 'Company Holiday' : 'Paid Leave');
+      const insertRes = await client.query(`
+        INSERT INTO leave_requests (employee_id, from_date, to_date, days, reason, leave_type, status)
+        VALUES ($1, $2, $3, $4, $5, $6, 'PENDING')
+        RETURNING id
+      `, [employeeId, startDate, endDate, totalDays, reason, leaveType]);
+      insertedIds.push(insertRes.rows[0].id);
+    } else if (availableBalance >= paidLeaveRequired) {
+      // Entire working duration covered by paid leave
       const insertRes = await client.query(`
         INSERT INTO leave_requests (employee_id, from_date, to_date, days, reason, leave_type, status)
         VALUES ($1, $2, $3, $4, $5, 'Paid Leave', 'PENDING')
@@ -116,7 +142,7 @@ export const applyLeave = async (req: AuthRequest, res: Response): Promise<void>
       insertedIds.push(insertRes.rows[0].id);
     } else {
       // Split into Paid Leave and Leave Without Pay
-      let remainingDays = totalDays;
+      let remainingDays = paidLeaveRequired;
       let currentStartDate = new Date(start);
 
       if (availableBalance > 0) {

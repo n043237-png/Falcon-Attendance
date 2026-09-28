@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { query } from '../db';
 import { AuthRequest } from '../middlewares/auth';
+import { LeaveValidationService } from '../services/leaveValidationService';
 import { z } from 'zod';
 
 const settingsSchema = z.object({
@@ -61,6 +62,38 @@ export const updateSettings = async (req: AuthRequest, res: Response): Promise<v
 
     q += ` WHERE id = 1`;
     await query(q, params);
+
+    // Synchronize default Day Shift (DS) with settings
+    if (d.officeStart || d.officeEnd || d.lateThreshold) {
+      await query(`
+        UPDATE shifts
+        SET start_time = COALESCE($1, start_time),
+            end_time = COALESCE($2, end_time),
+            late_after = COALESCE($3, late_after),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE code = 'DS'
+      `, [d.officeStart || null, d.officeEnd || null, d.lateThreshold || null]);
+
+      // Automatically recalculate today's attendance so changes to thresholds apply immediately
+      await query(`
+        UPDATE attendance a
+        SET 
+          is_late = ((a.check_in AT TIME ZONE 'Asia/Kolkata')::time > s.late_after),
+          late_minutes = GREATEST(0, ROUND(EXTRACT(EPOCH FROM ((a.check_in AT TIME ZONE 'Asia/Kolkata')::time - s.late_after)) / 60, 2)),
+          status = CASE 
+            WHEN a.check_out IS NOT NULL AND a.working_minutes < s.half_day_minutes THEN 'INSUFFICIENT_HOURS'
+            WHEN a.check_out IS NOT NULL AND a.working_minutes < s.minimum_work_hours * 60 THEN 'HALF_DAY'
+            WHEN (a.check_in AT TIME ZONE 'Asia/Kolkata')::time > s.late_after THEN 'LATE'
+            ELSE 'PRESENT'
+          END
+        FROM users u
+        JOIN shifts s ON s.id = COALESCE(u.shift_id, 1)
+        WHERE a.employee_id = u.id 
+          AND a.attendance_date = CURRENT_DATE 
+          AND a.check_in IS NOT NULL
+      `);
+    }
+
     res.json({ success: true, message: 'Settings updated' });
   } catch (error) {
     res.status(500).json({ success: false, error: { message: 'Server error' } });
@@ -229,3 +262,22 @@ export const updateOfficeSettings = async (req: AuthRequest, res: Response): Pro
     res.status(500).json({ success: false, error: { message: 'Server error updating office settings' } });
   }
 };
+
+export const getLeaveSettings = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const settings = await LeaveValidationService.getLeaveSettings();
+    res.json({ success: true, data: settings });
+  } catch (error) {
+    res.status(500).json({ success: false, error: { message: 'Server error fetching leave settings' } });
+  }
+};
+
+export const updateLeaveSettings = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const updated = await LeaveValidationService.updateLeaveSettings(req.body);
+    res.json({ success: true, data: updated, message: 'Leave settings updated successfully' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: { message: 'Server error updating leave settings' } });
+  }
+};
+

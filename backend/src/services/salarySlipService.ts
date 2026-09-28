@@ -78,8 +78,7 @@ export class SalarySlipService {
     ];
     const monthName = monthNames[month - 1];
     const monthShort = monthShortNames[month - 1];
-    const lastDayOfMonth = new Date(year, month, 0).getDate();
-    const payPeriod = `01-${monthShort}-${String(year).slice(-2)} to ${lastDayOfMonth}-${monthShort}-${String(year).slice(-2)}`;
+    const payPeriod = `For the month of ${monthName}, ${year}`;
 
     const logoPath = getCompanyLogoPath();
     const hasLogo = !!(logoPath && fs.existsSync(logoPath));
@@ -111,33 +110,18 @@ export class SalarySlipService {
       }
 
       const textStartX = hasLogo ? leftMargin + 66 : leftMargin;
-      const headerTextWidth = 320;
 
-      doc.fillColor(cPrimaryNavy).fontSize(13).font('Helvetica-Bold')
-        .text('FALCON INFO SOLUTIONS PVT. LTD.', textStartX, y);
+      doc.fillColor(cPrimaryNavy).fontSize(14).font('Helvetica-Bold')
+        .text('FALCON INFO SOLUTIONS PVT. LTD.', textStartX, y + 2);
 
-      doc.fillColor(cCyanAccent).fontSize(6.5).font('Helvetica-Bold')
-        .text('Enterprise Geospatial Engineering, GIS, Drone Survey, LiDAR, BIM, Digital Twin, AI/ML, WebGIS & Software Solutions', textStartX, y + 15, { width: headerTextWidth, lineGap: 1.5 });
+      const addressY = y + 20;
 
-      const addressY = Math.max(doc.y + 3, y + 36);
-
-      doc.fillColor(cTextMuted).fontSize(7).font('Helvetica')
-        .text('E-13, Diya Park, Hanuvatkheda, Ladpura, Kota - 324004, Rajasthan, India', textStartX, addressY)
-        .text('info@falconinfo.net  |  01204108910', textStartX, addressY + 10);
-
-      // Top Right Payslip Period Badge
-      const badgeWidth = 125;
-      const badgeX = leftMargin + contentWidth - badgeWidth;
-      doc.rect(badgeX, y, badgeWidth, 50).fill(cBgLightBlue).stroke(cBorderBlue);
-      doc.fillColor(cPrimaryNavy).fontSize(12).font('Helvetica-Bold')
-        .text('PAYSLIP', badgeX, y + 8, { width: badgeWidth, align: 'center' });
       doc.fillColor(cTextMuted).fontSize(7.5).font('Helvetica')
-        .text('For the month of', badgeX, y + 23, { width: badgeWidth, align: 'center' })
-        .fillColor(cPrimaryNavy).font('Helvetica-Bold')
-        .text(`${monthName}, ${year}`, badgeX, y + 34, { width: badgeWidth, align: 'center' });
+        .text('E-13, Diya Park, Hanuvatkheda, Ladpura, Kota - 324004, Rajasthan, India', textStartX, addressY)
+        .text('info@falconinfo.net  |  01204108910', textStartX, addressY + 11);
 
       // ==================== 2. EMPLOYEE DETAILS TABLE ====================
-      y = 100;
+      y = 90;
 
       doc.rect(leftMargin, y, contentWidth, 18).fill(cPrimaryNavy);
       doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold')
@@ -169,9 +153,9 @@ export class SalarySlipService {
 
       const rowH = 16;
       const c1W = 100;
-      const c2W = 161;
-      const c3W = 100;
-      const c4W = 162;
+      const c2W = 155;
+      const c3W = 85;
+      const c4W = 183;
 
       for (let i = 0; i < empDetailsRows.length; i++) {
         const rY = y + (i * rowH);
@@ -355,19 +339,9 @@ export class SalarySlipService {
       doc.fillColor('#FFFFFF').fontSize(15).font('Helvetica-Bold')
         .text(`INR ${item.net_salary.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, leftMargin + 320, y + 12, { width: 190, align: 'right' });
 
-      y += netSalaryH + 24;
+      y += netSalaryH + 20;
 
-      // ==================== 6. SIGNATURE ====================
-      const sigLineW = 180;
-      // Authorized Signatory
-      const authSigX = leftMargin + contentWidth - sigLineW - 10;
-      doc.moveTo(authSigX, y + 30).lineTo(authSigX + sigLineW, y + 30).stroke(cTextMuted);
-      doc.fillColor(cTextDark).fontSize(8).font('Helvetica-Bold')
-        .text('Authorized Signatory', authSigX, y + 34, { width: sigLineW, align: 'center' });
-
-      y += 58;
-
-      // ==================== 8. CONFIDENTIALITY NOTE ====================
+      // ==================== 7. CONFIDENTIALITY NOTE ====================
       doc.rect(leftMargin, y, contentWidth, 32).fill(cBgLightBlue).stroke(cBorderBlue);
       doc.fillColor(cTextMuted).fontSize(6.5).font('Helvetica')
         .text(
