@@ -165,7 +165,7 @@ export const checkIn = async (req: AuthRequest, res: Response): Promise<void> =>
           message: `${req.user!.name || 'An employee'} checked in late today for ${shift.name} at ${timeStr12} (${evalResult.lateMinutes} mins late).`,
           type: 'Attendance',
           priority: 'Medium',
-          actionUrl: '/attendance',
+          actionUrl: `/attendance?status=Late&date=${attendanceDate}&search=${encodeURIComponent(req.user!.name || '')}`,
           attendanceDate: attendanceDate,
         });
       } else {
@@ -346,7 +346,7 @@ export const checkOut = async (req: AuthRequest, res: Response): Promise<void> =
           workingMinutes: metrics.workingMinutes,
           overtimeMinutes: metrics.overtimeMinutes,
           earlyDepartureMinutes: metrics.earlyDepartureMinutes,
-          breakDeducted: shift.breakMinutes,
+          breakDeducted: metrics.breakDeducted || 0,
           insideOffice: true,
           timestamp: new Date().toISOString()
         })
@@ -363,7 +363,10 @@ export const checkOut = async (req: AuthRequest, res: Response): Promise<void> =
         return `${h}h ${m}m`;
       };
       const checkOutTime = new Date(updated.check_out).toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
-      let notifMsg = `Checkout completed successfully for ${shift.name}. Duration: ${formatDuration(metrics.workingMinutes)} (Break deducted: ${shift.breakMinutes}m).`;
+      let notifMsg = `Checkout completed successfully for ${shift.name}. Duration: ${formatDuration(metrics.workingMinutes)}.`;
+      if (metrics.breakDeducted && metrics.breakDeducted > 0) {
+        notifMsg = `Checkout completed successfully for ${shift.name}. Duration: ${formatDuration(metrics.workingMinutes)} (Break deducted: ${metrics.breakDeducted}m).`;
+      }
       if (metrics.overtimeMinutes > 0) {
         notifMsg += ` Overtime earned: ${formatDuration(metrics.overtimeMinutes)}.`;
       }

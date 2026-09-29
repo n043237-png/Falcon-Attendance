@@ -90,7 +90,7 @@ export default function AdminShifts() {
     startTime: '09:30',
     endTime: '18:30',
     graceMinutes: 15,
-    breakMinutes: 60,
+    breakMinutes: 0,
     minimumWorkHours: 8.0,
     halfDayMinutes: 240,
     overtimeEnabled: true,

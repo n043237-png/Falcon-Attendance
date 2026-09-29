@@ -47,13 +47,7 @@ export async function registerForPushNotificationsAsync(authToken: string): Prom
     // 1. Setup notification channel
     await setupNotificationChannel();
 
-    // 2. Physical device check
-    if (!Device.isDevice) {
-      console.log('[Push] Must use physical device for remote push notifications');
-      return null;
-    }
-
-    // 3. Request permissions
+    // 2. Request permissions
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
     if (existingStatus !== 'granted') {
@@ -65,22 +59,32 @@ export async function registerForPushNotificationsAsync(authToken: string): Prom
       return null;
     }
 
+    // 3. Physical device check
+    if (!Device.isDevice) {
+      console.log('[Push] Running on emulator/simulator; local notifications active');
+      return null;
+    }
+
     // 4. Get Project ID & Expo Push Token
-    const projectId =
-      Constants.expoConfig?.extra?.eas?.projectId ??
-      Constants.easConfig?.projectId ??
-      '8542a6b4-323b-4bac-b3e8-42a5ba83b624';
+    try {
+      const projectId =
+        Constants.expoConfig?.extra?.eas?.projectId ??
+        Constants.easConfig?.projectId ??
+        '8542a6b4-323b-4bac-b3e8-42a5ba83b624';
 
-    const tokenResponse = await Notifications.getExpoPushTokenAsync({ projectId });
-    const pushToken = tokenResponse.data;
+      const tokenResponse = await Notifications.getExpoPushTokenAsync({ projectId });
+      const pushToken = tokenResponse.data;
 
-    console.log('[Push] Registered Expo Push Token:', pushToken);
+      if (pushToken) {
+        console.log('[Push] Registered Expo Push Token:', pushToken);
+        await registerPushToken(pushToken, Platform.OS, authToken);
+        return pushToken;
+      }
+    } catch (e: any) {
+      console.log('[Push] Remote Expo push token unavailable (local notifications active):', e?.message || e);
+    }
 
-    // 5. Send push token to backend
-    const regResult = await registerPushToken(pushToken, Platform.OS, authToken);
-    console.log('[Push] Registered push token on backend result:', regResult);
-
-    return pushToken;
+    return null;
   } catch (error) {
     console.error('[Push] Failed to register push token:', error);
     return null;
@@ -200,3 +204,51 @@ export function handleNotificationUrl(url?: string | null, navigate?: (screen: s
     navigate('Notifications');
   }
 }
+
+/**
+ * Triggers an immediate heads-up notification test to verify device push alerts
+ */
+export async function sendTestNotification(): Promise<{ success: boolean; message: string }> {
+  try {
+    await setupNotificationChannel();
+
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+
+    if (finalStatus !== 'granted') {
+      return {
+        success: false,
+        message: 'Notification permission is disabled. Please enable it in Android Settings > Apps > Falcon Attendance > Notifications.'
+      };
+    }
+
+    // Schedule notification immediately
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'Falcon Attendance',
+        body: '✅ Test Notification: This is how your attendance alerts and announcements pop up on your phone!',
+        sound: 'default',
+        priority: Notifications.AndroidNotificationPriority.MAX,
+        vibrate: [0, 250, 250, 250],
+        data: { url: '/attendance' },
+      },
+      trigger: null,
+    });
+
+    return {
+      success: true,
+      message: 'Test notification sent! Check your status bar & notification tray.'
+    };
+  } catch (error: any) {
+    console.error('[Push] Test notification error:', error);
+    return {
+      success: false,
+      message: error?.message || 'Failed to trigger test notification'
+    };
+  }
+}
+

@@ -21,7 +21,11 @@ const phoneTenDigitSchema = z
 const selfUpdateProfileSchema = z.object({
   phone: phoneTenDigitSchema,
   name: z.string().min(2).max(100).optional(),
-  personalEmail: z.string().email().optional().or(z.literal('')).or(z.null()),
+  personalEmail: z.string().optional().or(z.literal('')).or(z.null()).transform((val) => {
+    if (!val || !val.trim()) return null;
+    const trimmed = val.trim().toLowerCase();
+    return trimmed.includes('@') ? trimmed : `${trimmed}@gmail.com`;
+  }),
   currentAddress: z.string().max(500).optional().or(z.literal('')).or(z.null()),
   emergencyContactName: z.string().max(100).optional().or(z.literal('')).or(z.null()),
   emergencyContactRelationship: z.string().max(50).optional().or(z.literal('')).or(z.null()),

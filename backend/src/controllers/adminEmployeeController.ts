@@ -12,7 +12,10 @@ import { DocumentService } from '../services/documentService';
 
 const createEmployeeSchema = z.object({
   name: z.string().min(2).max(100),
-  email: z.string().email(),
+  email: z.string().transform((val) => {
+    const trimmed = (val || '').trim().toLowerCase();
+    return trimmed.includes('@') ? trimmed : `${trimmed}@falconinfo.net`;
+  }).pipe(z.string().email()),
   phone: z
     .string()
     .transform((val) => val.replace(/\D/g, ''))

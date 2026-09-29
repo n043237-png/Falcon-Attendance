@@ -20,6 +20,7 @@ import { useAuth } from '../context/AuthContext';
 import { getProfile, updateProfile, changePassword, resolvePhotoUrl, uploadProfilePhoto, deleteProfilePhoto } from '../api/profileApi';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import { sendTestNotification } from '../services/pushNotificationService';
 
 export default function ProfileScreen() {
   const { token, logout, updateUser } = useAuth();
@@ -449,6 +450,18 @@ export default function ProfileScreen() {
         <TouchableOpacity style={styles.btnOutline} onPress={() => setShowPassword(true)} activeOpacity={0.8}>
           <Ionicons name="key-outline" size={18} color="#2563EB" style={{ marginRight: 8 }} />
           <Text style={styles.btnTextOutline}>Change Account Password</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.btnNotificationTest}
+          onPress={async () => {
+            const res = await sendTestNotification();
+            Alert.alert(res.success ? 'Notification Sent! 🔔' : 'Notification Alert', res.message);
+          }}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="notifications-outline" size={18} color="#2563EB" style={{ marginRight: 8 }} />
+          <Text style={styles.btnTextNotificationTest}>Test Push Notification</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.btnLogout} onPress={logout} activeOpacity={0.8}>
@@ -975,6 +988,22 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 15,
   },
+  btnNotificationTest: {
+    flexDirection: 'row',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    backgroundColor: '#F0F9FF',
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  btnTextNotificationTest: {
+    color: '#0369A1',
+    fontWeight: '700',
+    fontSize: 15,
+  },
   btnLogout: {
     flexDirection: 'row',
     backgroundColor: '#FEF2F2',
@@ -984,7 +1013,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 10,
+    marginTop: 6,
   },
   btnTextLogout: {
     color: '#DC2626',

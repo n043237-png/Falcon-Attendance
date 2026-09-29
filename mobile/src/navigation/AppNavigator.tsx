@@ -5,6 +5,9 @@ import * as Notifications from 'expo-notifications';
 import { useAuth } from '../context/AuthContext';
 import LoginScreen from '../screens/LoginScreen';
 import TabNavigator from './TabNavigator';
+import { notificationSync } from '../services/notificationSyncService';
+import { handleNotificationUrl } from '../services/pushNotificationService';
+import { navigationRef } from '../../App';
 
 const Stack = createNativeStackNavigator();
 
@@ -12,9 +15,20 @@ export default function AppNavigator() {
   const { token, isLoading } = useAuth();
 
   useEffect(() => {
+    if (token) {
+      notificationSync.start(token);
+    } else {
+      notificationSync.stop();
+    }
+  }, [token]);
+
+  useEffect(() => {
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
       const data = response.notification.request.content.data;
       console.log('[Push Notification Tapped]:', response.notification.request.content.title, data);
+      if (navigationRef.isReady() && data?.url) {
+        handleNotificationUrl(data.url, (screen) => navigationRef.navigate(screen as never));
+      }
     });
 
     return () => sub.remove();

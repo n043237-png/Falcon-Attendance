@@ -95,7 +95,7 @@ class ShiftService {
         }
         const grace = data.graceMinutes !== undefined ? data.graceMinutes : 15;
         const lateAfter = data.lateAfter || computeLateAfter(data.startTime, grace);
-        const breakMins = data.breakMinutes !== undefined ? data.breakMinutes : 60;
+        const breakMins = data.breakMinutes !== undefined ? data.breakMinutes : 0;
         const minHours = data.minimumWorkHours !== undefined ? data.minimumWorkHours : 8.00;
         const halfDay = data.halfDayMinutes !== undefined ? data.halfDayMinutes : 240;
         const overtime = data.overtimeEnabled !== undefined ? data.overtimeEnabled : true;
@@ -375,7 +375,7 @@ class ShiftService {
             code: 'DS',
             startTime: '09:30:00',
             endTime: '18:30:00',
-            breakMinutes: 60,
+            breakMinutes: 0,
             graceMinutes: 15,
             minimumWorkHours: 8.00,
             lateAfter: '09:45:00',
@@ -392,7 +392,7 @@ class ShiftService {
     static evaluateAttendance(shift, checkInDate, checkOutDate) {
         const startTime = shift.startTime || shift.start_time || '09:30:00';
         const endTime = shift.endTime || shift.end_time || '18:30:00';
-        const breakMinutes = shift.breakMinutes !== undefined ? shift.breakMinutes : (shift.break_minutes !== undefined ? shift.break_minutes : 60);
+        const breakMinutes = shift.breakMinutes !== undefined ? shift.breakMinutes : (shift.break_minutes !== undefined ? shift.break_minutes : 0);
         const graceMinutes = shift.graceMinutes !== undefined ? shift.graceMinutes : (shift.grace_minutes !== undefined ? shift.grace_minutes : 15);
         const lateAfter = shift.lateAfter || shift.late_after || computeLateAfter(startTime, graceMinutes);
         const minimumWorkHours = shift.minimumWorkHours !== undefined ? shift.minimumWorkHours : (shift.minimum_work_hours !== undefined ? parseFloat(shift.minimum_work_hours) : 8.0);
@@ -433,6 +433,7 @@ class ShiftService {
         // 3. Working Minutes & Overtime if Check-Out present
         let rawDurationMinutes = 0;
         let workingMinutes = 0;
+        let breakToDeduct = 0;
         let overtimeMinutes = 0;
         let earlyDepartureMinutes = 0;
         let status = 'PRESENT';
@@ -440,8 +441,11 @@ class ShiftService {
             rawDurationMinutes = (checkOutDate.getTime() - checkInDate.getTime()) / (1000 * 60);
             if (rawDurationMinutes < 0)
                 rawDurationMinutes = 0;
-            // Deduct break duration
-            workingMinutes = Math.max(0, rawDurationMinutes - breakMinutes);
+            // Deduct break duration only if explicitly configured (>0) and duration is longer than break
+            if (breakMinutes > 0 && rawDurationMinutes > breakMinutes) {
+                breakToDeduct = breakMinutes;
+            }
+            workingMinutes = Math.max(0, rawDurationMinutes - breakToDeduct);
             // Check Early Departure
             const checkOutTimeStr = checkOutDate.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata' });
             if (!isNightShift) {
@@ -480,6 +484,7 @@ class ShiftService {
             lateMinutes: Math.round(lateMinutes),
             rawDurationMinutes: Math.round(rawDurationMinutes),
             workingMinutes: Math.round(workingMinutes),
+            breakDeducted: Math.round(breakToDeduct),
             overtimeMinutes: Math.round(overtimeMinutes),
             earlyDepartureMinutes: Math.round(earlyDepartureMinutes),
             status

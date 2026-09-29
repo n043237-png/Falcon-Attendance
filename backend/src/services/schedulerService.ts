@@ -260,7 +260,7 @@ export function startScheduler() {
                 message: `${absentCount} employee(s) have not marked attendance today.`,
                 type: 'Attendance',
                 priority: 'High',
-                actionUrl: '/attendance',
+                actionUrl: `/attendance?status=Absent&date=${dateStr}`,
                 attendanceDate: dateStr,
               });
             }

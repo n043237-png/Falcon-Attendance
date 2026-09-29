@@ -10,7 +10,7 @@ const createShiftSchema = zod_1.z.object({
     code: zod_1.z.string().min(1, 'Shift code is required').max(50),
     startTime: zod_1.z.string().regex(timeRegex, 'Start time must be in HH:MM or HH:MM:SS format'),
     endTime: zod_1.z.string().regex(timeRegex, 'End time must be in HH:MM or HH:MM:SS format'),
-    breakMinutes: zod_1.z.number().int().min(0).max(360).default(60),
+    breakMinutes: zod_1.z.number().int().min(0).max(360).default(0),
     graceMinutes: zod_1.z.number().int().min(0).max(120).default(15),
     minimumWorkHours: zod_1.z.number().min(1).max(24).default(8.00),
     lateAfter: zod_1.z.string().regex(timeRegex, 'Late threshold must be in HH:MM or HH:MM:SS format').optional(),

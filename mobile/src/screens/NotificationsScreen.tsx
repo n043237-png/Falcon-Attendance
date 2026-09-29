@@ -8,13 +8,15 @@ import {
   ActivityIndicator,
   RefreshControl,
   Platform,
-  StatusBar
+  StatusBar,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { getNotifications, markAsRead, markAllAsRead, Notification } from '../api/notificationApi';
+import { sendTestNotification } from '../services/pushNotificationService';
 
 export default function NotificationsScreen() {
   const { token } = useAuth();
@@ -198,19 +200,33 @@ export default function NotificationsScreen() {
     <SafeAreaView style={styles.container}>
       {/* Executive Header */}
       <View style={styles.header}>
-        <View>
+        <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>Notifications</Text>
           <Text style={styles.headerSubtitle}>
             {unreadCount > 0 ? `${unreadCount} unread notification${unreadCount > 1 ? 's' : ''}` : 'All caught up!'}
           </Text>
         </View>
 
-        {unreadCount > 0 && (
-          <TouchableOpacity style={styles.markAllBtn} onPress={handleMarkAllAsRead} activeOpacity={0.7}>
-            <Ionicons name="checkmark-done" size={16} color="#2563EB" style={{ marginRight: 4 }} />
-            <Text style={styles.markAllText}>Mark all read</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <TouchableOpacity
+            style={styles.testAlertBtn}
+            onPress={async () => {
+              const res = await sendTestNotification();
+              Alert.alert(res.success ? 'Notification Sent! 🔔' : 'Notification Alert', res.message);
+            }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="notifications-outline" size={15} color="#2563EB" style={{ marginRight: 4 }} />
+            <Text style={styles.testAlertText}>Test Alert</Text>
           </TouchableOpacity>
-        )}
+
+          {unreadCount > 0 && (
+            <TouchableOpacity style={styles.markAllBtn} onPress={handleMarkAllAsRead} activeOpacity={0.7}>
+              <Ionicons name="checkmark-done" size={15} color="#2563EB" style={{ marginRight: 4 }} />
+              <Text style={styles.markAllText}>Mark all</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       {/* Main List / State */}
@@ -277,19 +293,34 @@ const styles = StyleSheet.create({
     marginTop: 2,
     fontWeight: '500',
   },
+  testAlertBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0F9FF',
+    paddingVertical: 7,
+    paddingHorizontal: 11,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+  },
+  testAlertText: {
+    color: '#0284C7',
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
   markAllBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#EFF6FF',
     paddingVertical: 7,
-    paddingHorizontal: 12,
+    paddingHorizontal: 11,
     borderRadius: 20,
     borderWidth: 1,
     borderColor: '#BFDBFE',
   },
   markAllText: {
     color: '#2563EB',
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '600',
   },
   centerContainer: {

@@ -693,12 +693,27 @@ export default function NotificationsPage() {
               return (
                 <div
                   key={item.id}
+                  onClick={() => {
+                    if (targetUrl) {
+                      if (!isRead) {
+                        axios.put(`${API_BASE}/api/notifications/${item.id}/read`, {}, {
+                          headers: { Authorization: `Bearer ${token}` }
+                        }).catch(() => {});
+                        setNotifications((prev) =>
+                          prev.map((n) => (n.id === item.id ? { ...n, isRead: true, is_read: true } : n))
+                        );
+                        setUnreadCount((c) => Math.max(0, c - 1));
+                      }
+                      navigate(targetUrl);
+                    }
+                  }}
                   className="d-flex flex-column flex-md-row align-items-md-center justify-content-between p-3.5 transition-all"
                   style={{
                     backgroundColor: isRead ? '#FFFFFF' : '#F8FAFC',
                     borderBottom: '1px solid #F1F5F9',
                     borderLeft: isRead ? '3px solid transparent' : '3px solid #2563EB',
-                    transition: 'all 0.15s ease'
+                    transition: 'all 0.15s ease',
+                    cursor: targetUrl ? 'pointer' : 'default'
                   }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.backgroundColor = isRead ? '#F8FAFC' : '#F1F5F9';
@@ -782,7 +797,10 @@ export default function NotificationsPage() {
                         {targetUrl && (
                           <button
                             type="button"
-                            onClick={() => navigate(targetUrl)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(targetUrl);
+                            }}
                             className="btn btn-link text-decoration-none p-0 d-inline-flex align-items-center gap-1"
                             style={{ fontSize: '12px', color: '#2563EB', fontWeight: 600 }}
                           >

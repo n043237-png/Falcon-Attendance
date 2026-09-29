@@ -4,7 +4,7 @@ import {
   Calendar, MapPin, Building, CreditCard, FileText, AlertCircle, Upload, Trash2, 
   Download, Edit3, Save, X, History, UserCheck, HeartHandshake, FileCheck, Clock
 } from 'lucide-react';
-import { ProgressBar, Badge, Modal, Form, Button, Alert, Spinner } from 'react-bootstrap';
+import { ProgressBar, Badge, Modal, Form, Button, Alert, Spinner, InputGroup } from 'react-bootstrap';
 import { useAuth } from '../context/AuthContext';
 import Avatar from '../components/common/Avatar';
 import PhotoUploadModal from '../components/common/PhotoUploadModal';
@@ -62,7 +62,7 @@ export default function MyProfile() {
         setProfile(data.data);
         setEditForm({
           phone: data.data.phone || '',
-          personalEmail: data.data.personalEmail || '',
+          personalEmail: data.data.personalEmail ? data.data.personalEmail.replace(/@gmail\.com$/i, '') : '',
           currentAddress: data.data.currentAddress || '',
           emergencyContactName: data.data.emergencyContactName || '',
           emergencyContactRelationship: data.data.emergencyContactRelationship || '',
@@ -134,13 +134,21 @@ export default function MyProfile() {
     try {
       setSaving(true);
       setError(null);
+      let emailToSend = (editForm.personalEmail || '').trim().toLowerCase();
+      if (emailToSend && !emailToSend.includes('@')) {
+        emailToSend = `${emailToSend}@gmail.com`;
+      }
+      const payload = {
+        ...editForm,
+        personalEmail: emailToSend || null
+      };
       const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/profile`, {
         method: 'PATCH',
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(editForm)
+        body: JSON.stringify(payload)
       });
       const data = await res.json();
       if (data.success) {
@@ -253,7 +261,7 @@ export default function MyProfile() {
                   setIsEditing(false);
                   setEditForm({
                     phone: profile?.phone || '',
-                    personalEmail: profile?.personalEmail || '',
+                    personalEmail: profile?.personalEmail ? profile.personalEmail.replace(/@gmail\.com$/i, '') : '',
                     currentAddress: profile?.currentAddress || '',
                     emergencyContactName: profile?.emergencyContactName || '',
                     emergencyContactRelationship: profile?.emergencyContactRelationship || '',
@@ -604,38 +612,36 @@ export default function MyProfile() {
                     </div>
 
                     <div className="col-sm-6">
-                      <div className="d-flex justify-content-between align-items-center">
-                        <label className="text-muted small fw-semibold mb-0">Personal Email {isEditing && <span className="text-primary">(Self-Editable)</span>}</label>
-                        {isEditing && (
-                          <button
-                            type="button"
-                            className="btn btn-link p-0 text-decoration-none text-primary fw-semibold"
-                            style={{ fontSize: '11px' }}
-                            onClick={() => {
-                              const current = (editForm.personalEmail || '').trim();
-                              if (!current.includes('@')) {
-                                setEditForm({
-                                  ...editForm,
-                                  personalEmail: current ? `${current}@gmail.com` : '@gmail.com'
-                                });
-                              }
-                            }}
-                          >
-                            + @gmail.com
-                          </button>
-                        )}
-                      </div>
+                      <label className="text-muted small fw-semibold mb-1 d-block">Personal Email {isEditing && <span className="text-primary">(Self-Editable)</span>}</label>
                       {isEditing ? (
                         <div>
-                          <Form.Control
-                            type="email"
-                            value={editForm.personalEmail}
-                            onChange={(e) => setEditForm({ ...editForm, personalEmail: e.target.value.toLowerCase().trim() })}
-                            placeholder="name@gmail.com"
-                          />
-                          {editForm.personalEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editForm.personalEmail) && (
+                          <InputGroup>
+                            <Form.Control
+                              type="text"
+                              value={editForm.personalEmail}
+                              onChange={(e) => {
+                                let val = e.target.value.toLowerCase().trim();
+                                if (val.endsWith('@gmail.com')) {
+                                  val = val.replace(/@gmail\.com$/i, '');
+                                }
+                                setEditForm({ ...editForm, personalEmail: val });
+                              }}
+                              placeholder="username"
+                            />
+                            {!editForm.personalEmail.includes('@') && (
+                              <InputGroup.Text className="bg-light text-muted fw-semibold" style={{ fontSize: '13px' }}>
+                                @gmail.com
+                              </InputGroup.Text>
+                            )}
+                          </InputGroup>
+                          {editForm.personalEmail && editForm.personalEmail.includes('@') && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editForm.personalEmail) && (
                             <div className="text-danger small mt-1" style={{ fontSize: '11px' }}>
-                              Please enter a valid email address (e.g. name@gmail.com)
+                              Please enter a valid email address
+                            </div>
+                          )}
+                          {editForm.personalEmail && !editForm.personalEmail.includes('@') && !/^[a-zA-Z0-9._-]+$/.test(editForm.personalEmail) && (
+                            <div className="text-danger small mt-1" style={{ fontSize: '11px' }}>
+                              Invalid username (only letters, numbers, dots, hyphens allowed)
                             </div>
                           )}
                         </div>

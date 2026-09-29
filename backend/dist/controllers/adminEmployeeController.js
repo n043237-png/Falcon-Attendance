@@ -15,7 +15,10 @@ const employeeProfileService_1 = require("../services/employeeProfileService");
 const documentService_1 = require("../services/documentService");
 const createEmployeeSchema = zod_1.z.object({
     name: zod_1.z.string().min(2).max(100),
-    email: zod_1.z.string().email(),
+    email: zod_1.z.string().transform((val) => {
+        const trimmed = (val || '').trim().toLowerCase();
+        return trimmed.includes('@') ? trimmed : `${trimmed}@falconinfo.net`;
+    }).pipe(zod_1.z.string().email()),
     phone: zod_1.z
         .string()
         .transform((val) => val.replace(/\D/g, ''))

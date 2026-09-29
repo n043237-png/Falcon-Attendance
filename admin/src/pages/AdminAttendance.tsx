@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Form, Row, Col, Spinner, Alert, Pagination } from 'react-bootstrap';
+import { useSearchParams } from 'react-router-dom';
 import {
   CalendarCheck,
   Search,
@@ -13,7 +14,8 @@ import {
   Filter,
   Calendar,
   MapPin,
-  ExternalLink
+  ExternalLink,
+  X
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import Avatar from '../components/common/Avatar';
@@ -21,10 +23,30 @@ import ImagePreviewModal from '../components/common/ImagePreviewModal';
 
 export default function AdminAttendance() {
   const { token } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('All');
+  const normalizeStatus = (s: string | null) => {
+    if (!s) return 'All';
+    const upper = s.toUpperCase().trim();
+    if (upper === 'ABSENT') return 'Absent';
+    if (upper === 'LATE') return 'Late';
+    if (upper === 'PRESENT') return 'Present';
+    if (upper === 'HALF_DAY' || upper === 'HALF DAY') return 'Half Day';
+    if (upper === 'ON_LEAVE' || upper === 'ON LEAVE') return 'On Leave';
+    if (upper === 'CHECKED_IN' || upper === 'CHECKED IN') return 'Checked In';
+    if (upper === 'CHECKED_OUT' || upper === 'CHECKED OUT') return 'Checked Out';
+    if (upper === 'MISSING_CHECKOUT' || upper === 'MISSING CHECKOUT') return 'Missing Checkout';
+    if (upper === 'INSUFFICIENT_HOURS' || upper === 'INSUFFICIENT HOURS') return 'Insufficient Hours';
+    return s;
+  };
+
+  const initialDate = searchParams.get('date') || new Date().toISOString().split('T')[0];
+  const initialStatus = normalizeStatus(searchParams.get('status'));
+  const initialSearch = searchParams.get('search') || '';
+
+  const [date, setDate] = useState(initialDate);
+  const [search, setSearch] = useState(initialSearch);
+  const [status, setStatus] = useState(initialStatus);
   const [shiftFilter, setShiftFilter] = useState('All');
   const [availableShifts, setAvailableShifts] = useState<any[]>([]);
 
@@ -107,6 +129,34 @@ export default function AdminAttendance() {
     return () => clearTimeout(delayDebounceFn);
   }, [date, search, status, shiftFilter, token]);
 
+  useEffect(() => {
+    const qStatus = searchParams.get('status');
+    const qDate = searchParams.get('date');
+    const qSearch = searchParams.get('search');
+
+    const norm = normalizeStatus(qStatus);
+    if (norm !== status) setStatus(norm);
+
+    if (qDate && qDate !== date) {
+      setDate(qDate);
+    }
+    const currentSearchVal = qSearch !== null ? qSearch : '';
+    if (currentSearchVal !== search) {
+      setSearch(currentSearchVal);
+    }
+  }, [searchParams]);
+
+  const handleCardClick = (newStatus: string) => {
+    setStatus(newStatus);
+    const newParams = new URLSearchParams(searchParams);
+    if (newStatus === 'All') {
+      newParams.delete('status');
+    } else {
+      newParams.set('status', newStatus);
+    }
+    setSearchParams(newParams);
+  };
+
   const formatHours = (minutes: number) => {
     if (!minutes && minutes !== 0) return '-';
     const h = Math.floor(minutes / 60);
@@ -157,7 +207,18 @@ export default function AdminAttendance() {
       {summary && (
         <div className="row g-4 mb-4">
           <div className="col-sm-6 col-lg">
-            <div className="card h-100 p-4">
+            <div
+              className="card h-100 p-4 transition-all"
+              onClick={() => handleCardClick('All')}
+              style={{
+                cursor: 'pointer',
+                border: status === 'All' ? '2px solid #2563EB' : '1px solid #E2E8F0',
+                backgroundColor: status === 'All' ? '#F8FAFC' : '#FFFFFF',
+                boxShadow: status === 'All' ? '0 4px 12px rgba(37, 99, 235, 0.12)' : 'none',
+                transition: 'all 0.15s ease'
+              }}
+              title="Click to view all employees"
+            >
               <div className="d-flex align-items-center justify-content-between mb-2">
                 <span className="text-muted fw-medium" style={{ fontSize: '13px' }}>Total Staff</span>
                 <div className="p-2 rounded-3 bg-light text-primary">
@@ -172,7 +233,18 @@ export default function AdminAttendance() {
           </div>
 
           <div className="col-sm-6 col-lg">
-            <div className="card h-100 p-4">
+            <div
+              className="card h-100 p-4 transition-all"
+              onClick={() => handleCardClick('Present')}
+              style={{
+                cursor: 'pointer',
+                border: status === 'Present' ? '2px solid #16A34A' : '1px solid #E2E8F0',
+                backgroundColor: status === 'Present' ? '#F0FDF4' : '#FFFFFF',
+                boxShadow: status === 'Present' ? '0 4px 12px rgba(22, 163, 74, 0.12)' : 'none',
+                transition: 'all 0.15s ease'
+              }}
+              title="Click to view present employees"
+            >
               <div className="d-flex align-items-center justify-content-between mb-2">
                 <span className="text-muted fw-medium" style={{ fontSize: '13px' }}>Present</span>
                 <div className="p-2 rounded-3" style={{ background: '#DCFCE7', color: '#15803D' }}>
@@ -182,7 +254,19 @@ export default function AdminAttendance() {
               <div style={{ fontSize: '26px', fontWeight: 700, color: '#15803D' }} className="d-flex align-items-baseline gap-2">
                 <span>{summary.present}</span>
                 {summary.late > 0 && (
-                  <span className="badge bg-warning text-dark fw-semibold" style={{ fontSize: '12px' }}>
+                  <span
+                    className="badge bg-warning text-dark fw-semibold"
+                    style={{
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                      border: status === 'Late' ? '2px solid #B45309' : 'none'
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleCardClick('Late');
+                    }}
+                    title="Click to view only late employees"
+                  >
                     {summary.late} Late
                   </span>
                 )}
@@ -194,7 +278,18 @@ export default function AdminAttendance() {
           </div>
 
           <div className="col-sm-6 col-lg">
-            <div className="card h-100 p-4">
+            <div
+              className="card h-100 p-4 transition-all"
+              onClick={() => handleCardClick('Absent')}
+              style={{
+                cursor: 'pointer',
+                border: status === 'Absent' ? '2px solid #DC2626' : '1px solid #E2E8F0',
+                backgroundColor: status === 'Absent' ? '#FEF2F2' : '#FFFFFF',
+                boxShadow: status === 'Absent' ? '0 4px 12px rgba(220, 38, 38, 0.15)' : 'none',
+                transition: 'all 0.15s ease'
+              }}
+              title="Click to view absent employees"
+            >
               <div className="d-flex align-items-center justify-content-between mb-2">
                 <span className="text-muted fw-medium" style={{ fontSize: '13px' }}>Absent</span>
                 <div className="p-2 rounded-3" style={{ background: '#FEE2E2', color: '#B91C1C' }}>
@@ -209,7 +304,18 @@ export default function AdminAttendance() {
           </div>
 
           <div className="col-sm-6 col-lg">
-            <div className="card h-100 p-4">
+            <div
+              className="card h-100 p-4 transition-all"
+              onClick={() => handleCardClick('Checked In')}
+              style={{
+                cursor: 'pointer',
+                border: status === 'Checked In' ? '2px solid #2563EB' : '1px solid #E2E8F0',
+                backgroundColor: status === 'Checked In' ? '#EFF6FF' : '#FFFFFF',
+                boxShadow: status === 'Checked In' ? '0 4px 12px rgba(37, 99, 235, 0.12)' : 'none',
+                transition: 'all 0.15s ease'
+              }}
+              title="Click to view currently checked in employees"
+            >
               <div className="d-flex align-items-center justify-content-between mb-2">
                 <span className="text-muted fw-medium" style={{ fontSize: '13px' }}>Checked In</span>
                 <div className="p-2 rounded-3" style={{ background: '#DBEAFE', color: '#1D4ED8' }}>
@@ -224,7 +330,18 @@ export default function AdminAttendance() {
           </div>
 
           <div className="col-sm-6 col-lg">
-            <div className="card h-100 p-4">
+            <div
+              className="card h-100 p-4 transition-all"
+              onClick={() => handleCardClick('Checked Out')}
+              style={{
+                cursor: 'pointer',
+                border: status === 'Checked Out' ? '2px solid #475569' : '1px solid #E2E8F0',
+                backgroundColor: status === 'Checked Out' ? '#F8FAFC' : '#FFFFFF',
+                boxShadow: status === 'Checked Out' ? '0 4px 12px rgba(71, 85, 105, 0.12)' : 'none',
+                transition: 'all 0.15s ease'
+              }}
+              title="Click to view employees who checked out"
+            >
               <div className="d-flex align-items-center justify-content-between mb-2">
                 <span className="text-muted fw-medium" style={{ fontSize: '13px' }}>Checked Out</span>
                 <div className="p-2 rounded-3 bg-light text-secondary">
@@ -237,6 +354,45 @@ export default function AdminAttendance() {
               <div className="caption-text mt-1">Completed day</div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Active Filter Notification Bar */}
+      {status !== 'All' && (
+        <div className="d-flex align-items-center justify-content-between p-2.5 px-3 mb-3 rounded-3 bg-white border shadow-sm">
+          <div className="d-flex align-items-center gap-2">
+            <span className="small text-muted fw-semibold">Filtered by status:</span>
+            <span
+              className={`badge ${
+                status === 'Absent'
+                  ? 'bg-danger text-white'
+                  : status === 'Late'
+                  ? 'bg-warning text-dark'
+                  : status === 'Present'
+                  ? 'bg-success text-white'
+                  : 'bg-primary text-white'
+              } px-2.5 py-1`}
+              style={{ fontSize: '12px' }}
+            >
+              {status}
+            </span>
+            <span className="small text-muted d-none d-sm-inline">
+              {status === 'Absent'
+                ? 'Showing employees who have not marked attendance today'
+                : status === 'Late'
+                ? 'Showing employees who checked in past grace threshold'
+                : `Showing ${status.toLowerCase()} records`}
+            </span>
+          </div>
+          <button
+            type="button"
+            className="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1 py-1 px-2.5"
+            style={{ fontSize: '12px', borderRadius: '6px' }}
+            onClick={() => handleCardClick('All')}
+          >
+            <X size={13} />
+            <span>Show All</span>
+          </button>
         </div>
       )}
 
@@ -293,11 +449,26 @@ export default function AdminAttendance() {
                 <Filter size={14} className="text-muted" />
                 <span>Status Filter</span>
               </Form.Label>
-              <Form.Select value={status} onChange={(e) => setStatus(e.target.value)}>
+              <Form.Select
+                value={status}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setStatus(val);
+                  const newParams = new URLSearchParams(searchParams);
+                  if (val === 'All') {
+                    newParams.delete('status');
+                  } else {
+                    newParams.set('status', val);
+                  }
+                  setSearchParams(newParams);
+                }}
+              >
                 <option value="All">All Statuses</option>
                 <option value="Present">Present</option>
                 <option value="Absent">Absent</option>
                 <option value="Late">Late</option>
+                <option value="Checked In">Checked In</option>
+                <option value="Checked Out">Checked Out</option>
               </Form.Select>
             </Form.Group>
           </Col>
