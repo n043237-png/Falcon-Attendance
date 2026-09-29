@@ -24,6 +24,10 @@ export interface LeaveRequest {
   employeeId?: string;
   profilePhotoUrl?: string | null;
   userId?: number;
+  reviewerName?: string;
+  reviewerEmail?: string;
+  adminComment?: string;
+  reviewedAt?: string;
 }
 
 export const getLeaveBalances = async (token: string) => {

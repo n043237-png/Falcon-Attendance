@@ -381,6 +381,47 @@ export default function LeaveScreen() {
           </View>
         )}
 
+        {/* Reviewer & Decision Details */}
+        {(!!item.reviewerName || !!item.adminComment) && (
+          <View
+            style={[
+              styles.reviewerBox,
+              item.status?.toUpperCase() === 'REJECTED'
+                ? styles.reviewerBoxRejected
+                : styles.reviewerBoxApproved,
+            ]}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 2 }}>
+              <Ionicons
+                name={
+                  item.status?.toUpperCase() === 'REJECTED'
+                    ? 'close-circle-outline'
+                    : 'checkmark-circle-outline'
+                }
+                size={14}
+                color={item.status?.toUpperCase() === 'REJECTED' ? '#DC2626' : '#16A34A'}
+                style={{ marginRight: 5 }}
+              />
+              <Text
+                style={[
+                  styles.reviewerTitle,
+                  {
+                    color: item.status?.toUpperCase() === 'REJECTED' ? '#DC2626' : '#16A34A',
+                  },
+                ]}
+              >
+                {item.status?.toUpperCase() === 'REJECTED' ? 'Rejected by ' : 'Approved by '}
+                <Text style={{ fontWeight: '700' }}>{item.reviewerName || 'Admin'}</Text>
+              </Text>
+            </View>
+            {!!item.adminComment && (
+              <Text style={styles.reviewerRemarks}>
+                Remarks: "{item.adminComment}"
+              </Text>
+            )}
+          </View>
+        )}
+
         {/* Action row: Approve / Reject for Admin on pending, or Cancel for Employee on pending */}
         {isAdmin && activeTab === 'ALL_REQUESTS' && item.status?.toUpperCase() === 'PENDING' ? (
           <View style={styles.adminActionRow}>
@@ -1432,6 +1473,30 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '700',
+  },
+  reviewerBox: {
+    marginTop: 8,
+    padding: 9,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  reviewerBoxRejected: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+  },
+  reviewerBoxApproved: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#BBF7D0',
+  },
+  reviewerTitle: {
+    fontSize: 12,
+  },
+  reviewerRemarks: {
+    fontSize: 12,
+    color: '#475569',
+    fontStyle: 'italic',
+    marginTop: 2,
+    marginLeft: 19,
   },
   emptyContainer: {
     alignItems: 'center',
