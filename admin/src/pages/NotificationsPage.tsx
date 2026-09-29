@@ -58,7 +58,8 @@ interface PreferencesData {
 }
 
 export default function NotificationsPage() {
-  const { token } = useAuth();
+  const { token, activeView, hasAdminRole } = useAuth();
+  const isAdminConsole = activeView === 'admin' && hasAdminRole;
   const navigate = useNavigate();
 
   // State
@@ -408,22 +409,24 @@ export default function NotificationsPage() {
             </button>
           )}
 
-          <button
-            type="button"
-            onClick={() => setShowBroadcastModal(true)}
-            className="btn btn-dark d-flex align-items-center gap-1.5 text-white"
-            style={{
-              fontSize: '13px',
-              fontWeight: 600,
-              borderRadius: '8px',
-              padding: '7px 14px',
-              backgroundColor: '#0F172A',
-              borderColor: '#0F172A'
-            }}
-          >
-            <Megaphone size={14} />
-            <span>Broadcast</span>
-          </button>
+          {isAdminConsole && (
+            <button
+              type="button"
+              onClick={() => setShowBroadcastModal(true)}
+              className="btn btn-dark d-flex align-items-center gap-1.5 text-white"
+              style={{
+                fontSize: '13px',
+                fontWeight: 600,
+                borderRadius: '8px',
+                padding: '7px 14px',
+                backgroundColor: '#0F172A',
+                borderColor: '#0F172A'
+              }}
+            >
+              <Megaphone size={14} />
+              <span>Broadcast</span>
+            </button>
+          )}
 
           <button
             type="button"
@@ -897,88 +900,90 @@ export default function NotificationsPage() {
       />
 
       {/* Broadcast Announcement Modal */}
-      <Modal show={showBroadcastModal} onHide={() => setShowBroadcastModal(false)} centered>
-        <Modal.Header closeButton style={{ borderBottom: '1px solid #E2E8F0' }}>
-          <Modal.Title style={{ fontSize: '16px', fontWeight: 700, color: '#0F172A' }}>
-            Broadcast Company Announcement
-          </Modal.Title>
-        </Modal.Header>
+      {isAdminConsole && (
+        <Modal show={showBroadcastModal} onHide={() => setShowBroadcastModal(false)} centered>
+          <Modal.Header closeButton style={{ borderBottom: '1px solid #E2E8F0' }}>
+            <Modal.Title style={{ fontSize: '16px', fontWeight: 700, color: '#0F172A' }}>
+              Broadcast Company Announcement
+            </Modal.Title>
+          </Modal.Header>
 
-        <form onSubmit={handleBroadcast}>
-          <Modal.Body className="p-4">
-            <p className="text-muted small mb-3">
-              Send an instant push notification and announcement to all employee mobile devices and web consoles.
-            </p>
+          <form onSubmit={handleBroadcast}>
+            <Modal.Body className="p-4">
+              <p className="text-muted small mb-3">
+                Send an instant push notification and announcement to all employee mobile devices and web consoles.
+              </p>
 
-            <div className="mb-3">
-              <label className="form-label small fw-semibold text-dark">Announcement Title</label>
-              <input
-                type="text"
-                className="form-control"
-                value={broadcastTitle}
-                onChange={(e) => setBroadcastTitle(e.target.value)}
-                placeholder="e.g. 📢 Company Announcement"
-                required
-              />
-            </div>
-
-            <div className="mb-3">
-              <label className="form-label small fw-semibold text-dark">Message</label>
-              <textarea
-                className="form-control"
-                rows={3}
-                value={broadcastMessage}
-                onChange={(e) => setBroadcastMessage(e.target.value)}
-                placeholder="The office will remain closed on 2 October due to Gandhi Jayanti."
-                required
-              />
-            </div>
-
-            <div className="mb-2">
-              <label className="form-label small fw-semibold text-dark">Priority</label>
-              <select
-                className="form-select"
-                value={broadcastPriority}
-                onChange={(e) => setBroadcastPriority(e.target.value as any)}
-              >
-                <option value="Medium">Medium</option>
-                <option value="High">High (Recommended)</option>
-                <option value="Critical">Critical (Bypasses category filters)</option>
-              </select>
-            </div>
-
-            {broadcastSuccess && (
-              <div
-                className="alert alert-success d-flex align-items-center gap-2 mt-3 mb-0 p-2.5"
-                style={{ fontSize: '12.5px' }}
-              >
-                <CheckCircle2 size={16} />
-                <span>Announcement broadcasted and sent to all devices!</span>
+              <div className="mb-3">
+                <label className="form-label small fw-semibold text-dark">Announcement Title</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  value={broadcastTitle}
+                  onChange={(e) => setBroadcastTitle(e.target.value)}
+                  placeholder="e.g. 📢 Company Announcement"
+                  required
+                />
               </div>
-            )}
-          </Modal.Body>
 
-          <Modal.Footer style={{ borderTop: '1px solid #E2E8F0' }}>
-            <button
-              type="button"
-              onClick={() => setShowBroadcastModal(false)}
-              className="btn btn-light"
-              style={{ borderRadius: '8px', fontSize: '13px' }}
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={broadcasting || !broadcastMessage.trim()}
-              className="btn btn-primary d-flex align-items-center gap-1.5"
-              style={{ borderRadius: '8px', fontSize: '13px', fontWeight: 600, backgroundColor: '#2563EB' }}
-            >
-              {broadcasting ? <Spinner animation="border" size="sm" /> : <Send size={14} />}
-              <span>Send Broadcast</span>
-            </button>
-          </Modal.Footer>
-        </form>
-      </Modal>
+              <div className="mb-3">
+                <label className="form-label small fw-semibold text-dark">Message</label>
+                <textarea
+                  className="form-control"
+                  rows={3}
+                  value={broadcastMessage}
+                  onChange={(e) => setBroadcastMessage(e.target.value)}
+                  placeholder="The office will remain closed on 2 October due to Gandhi Jayanti."
+                  required
+                />
+              </div>
+
+              <div className="mb-2">
+                <label className="form-label small fw-semibold text-dark">Priority</label>
+                <select
+                  className="form-select"
+                  value={broadcastPriority}
+                  onChange={(e) => setBroadcastPriority(e.target.value as any)}
+                >
+                  <option value="Medium">Medium</option>
+                  <option value="High">High (Recommended)</option>
+                  <option value="Critical">Critical (Bypasses category filters)</option>
+                </select>
+              </div>
+
+              {broadcastSuccess && (
+                <div
+                  className="alert alert-success d-flex align-items-center gap-2 mt-3 mb-0 p-2.5"
+                  style={{ fontSize: '12.5px' }}
+                >
+                  <CheckCircle2 size={16} />
+                  <span>Announcement broadcasted and sent to all devices!</span>
+                </div>
+              )}
+            </Modal.Body>
+
+            <Modal.Footer style={{ borderTop: '1px solid #E2E8F0' }}>
+              <button
+                type="button"
+                onClick={() => setShowBroadcastModal(false)}
+                className="btn btn-light"
+                style={{ borderRadius: '8px', fontSize: '13px' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={broadcasting || !broadcastMessage.trim()}
+                className="btn btn-primary d-flex align-items-center gap-1.5"
+                style={{ borderRadius: '8px', fontSize: '13px', fontWeight: 600, backgroundColor: '#2563EB' }}
+              >
+                {broadcasting ? <Spinner animation="border" size="sm" /> : <Send size={14} />}
+                <span>Send Broadcast</span>
+              </button>
+            </Modal.Footer>
+          </form>
+        </Modal>
+      )}
     </div>
   );
 }
