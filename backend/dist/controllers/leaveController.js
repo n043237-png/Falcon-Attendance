@@ -221,9 +221,12 @@ const getLeaveHistory = async (req, res) => {
         const total = parseInt(countRes.rows[0].count);
         const histRes = await (0, db_1.query)(`
       SELECT lr.id, lr.leave_type as "leaveType", lr.from_date, lr.to_date, lr.days as total_days, lr.reason, lr.status,
-             u.name as "employeeName", u.employee_id as "employeeCode", u.profile_photo_url as "profilePhotoUrl"
+             lr.remarks as "adminComment", lr.approved_at as "reviewedAt",
+             u.name as "employeeName", u.employee_id as "employeeCode", u.profile_photo_url as "profilePhotoUrl",
+             u_admin.name as "reviewerName", u_admin.email as "reviewerEmail"
       FROM leave_requests lr
       JOIN users u ON lr.employee_id = u.id
+      LEFT JOIN users u_admin ON lr.approved_by = u_admin.id
       ${filterQuery}
       ORDER BY lr.created_at DESC
       LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}
@@ -241,7 +244,10 @@ const getLeaveHistory = async (req, res) => {
                     endDate: new Date(rec.to_date).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
                     totalDays: parseFloat(rec.total_days),
                     reason: rec.reason,
-                    status: rec.status
+                    status: rec.status,
+                    adminComment: rec.adminComment,
+                    reviewerName: rec.reviewerName,
+                    reviewedAt: rec.reviewedAt
                 })),
                 pagination: { page, limit, total, totalPages: Math.ceil(total / limit) }
             }

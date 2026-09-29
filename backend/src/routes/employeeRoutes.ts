@@ -230,10 +230,14 @@ router.get('/leave-requests', async (req: AuthRequest, res) => {
   const userId = req.user!.id;
   try {
     const result = await query(
-      `SELECT id, from_date as start_date, to_date as end_date, days as total_days, reason, status, leave_type as leave_type_name 
-       FROM leave_requests
-       WHERE employee_id = $1
-       ORDER BY created_at DESC`,
+      `SELECT lr.id, lr.from_date as start_date, lr.to_date as end_date, lr.days as total_days, 
+              lr.reason, lr.status, lr.leave_type as leave_type_name,
+              lr.remarks as admin_remarks, lr.approved_at as reviewed_at,
+              u_admin.name as reviewed_by_name, u_admin.email as reviewed_by_email
+       FROM leave_requests lr
+       LEFT JOIN users u_admin ON lr.approved_by = u_admin.id
+       WHERE lr.employee_id = $1
+       ORDER BY lr.created_at DESC`,
       [userId]
     );
     res.json(result.rows);

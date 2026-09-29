@@ -252,12 +252,13 @@ export default function MyLeave() {
                 <th>Total Days</th>
                 <th>Reason</th>
                 <th>Status</th>
+                <th>Actioned By</th>
               </tr>
             </thead>
             <tbody>
               {requests.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="text-center py-5 text-muted">
+                  <td colSpan={6} className="text-center py-5 text-muted">
                     No leave requests on record.
                   </td>
                 </tr>
@@ -273,7 +274,7 @@ export default function MyLeave() {
                     <td>
                       <span className="fw-semibold text-dark">{r.total_days}</span> day(s)
                     </td>
-                    <td style={{ maxWidth: '280px' }}>
+                    <td style={{ maxWidth: '240px' }}>
                       <div className="text-truncate text-muted" title={r.reason}>
                         {r.reason}
                       </div>
@@ -290,6 +291,38 @@ export default function MyLeave() {
                       >
                         {r.status}
                       </span>
+                    </td>
+                    <td style={{ minWidth: '180px' }}>
+                      {r.status === 'REJECTED' ? (
+                        <div>
+                          <div className="fw-semibold text-danger d-flex align-items-center gap-1" style={{ fontSize: '13px' }}>
+                            <span>Rejected by {r.reviewed_by_name || 'Admin'}</span>
+                          </div>
+                          {r.admin_remarks && (
+                            <div className="text-secondary small mt-0.5" style={{ fontSize: '12px' }}>
+                              <span className="fw-semibold">Reason:</span> "{r.admin_remarks}"
+                            </div>
+                          )}
+                          {r.reviewed_at && (
+                            <div className="text-muted" style={{ fontSize: '11px' }}>
+                              {new Date(r.reviewed_at).toLocaleDateString()}
+                            </div>
+                          )}
+                        </div>
+                      ) : r.status === 'APPROVED' ? (
+                        <div>
+                          <div className="fw-semibold text-success d-flex align-items-center gap-1" style={{ fontSize: '13px' }}>
+                            <span>Approved by {r.reviewed_by_name || 'Admin'}</span>
+                          </div>
+                          {r.reviewed_at && (
+                            <div className="text-muted" style={{ fontSize: '11px' }}>
+                              {new Date(r.reviewed_at).toLocaleDateString()}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-muted small fst-italic">Pending Review</span>
+                      )}
                     </td>
                   </tr>
                 ))
