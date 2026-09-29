@@ -2,7 +2,7 @@
   "expo": {
     "name": "Falcon Attendance",
     "slug": "falcon-attendance",
-    "version": "1.0.4",
+    "version": "1.0.5",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -16,7 +16,8 @@
     },
     "android": {
       "package": "com.falconinfo.attendance",
-      "versionCode": 5,
+      "versionCode": 6,
+      "googleServicesFile": "./google-services.json",
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
