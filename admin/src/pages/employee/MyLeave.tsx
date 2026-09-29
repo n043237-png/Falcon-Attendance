@@ -14,7 +14,8 @@ import {
   ArrowRight,
   ShieldAlert,
   CalendarDays,
-  FileCheck
+  FileCheck,
+  UserCheck
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -22,6 +23,7 @@ export default function MyLeave() {
   const { token } = useAuth();
   const [balances, setBalances] = useState<any[]>([]);
   const [requests, setRequests] = useState<any[]>([]);
+  const [admins, setAdmins] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [showApply, setShowApply] = useState(false);
@@ -32,7 +34,8 @@ export default function MyLeave() {
     start_date: '',
     end_date: '',
     total_days: 1,
-    reason: ''
+    reason: '',
+    assigned_to_admin_id: ''
   });
 
   // Smart Leave Validation State
@@ -44,16 +47,22 @@ export default function MyLeave() {
 
   const fetchData = async () => {
     try {
-      const [balRes, reqRes] = await Promise.all([
+      const [balRes, reqRes, admRes] = await Promise.all([
         axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/employee/leave-balances`, {
           headers: { Authorization: `Bearer ${token}` }
         }),
         axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/employee/leave-requests`, {
           headers: { Authorization: `Bearer ${token}` }
-        })
+        }),
+        axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/employee/admins`, {
+          headers: { Authorization: `Bearer ${token}` }
+        }).catch(() => ({ data: { success: false, data: [] } }))
       ]);
       setBalances(balRes.data);
       setRequests(reqRes.data);
+      if (admRes.data?.data) {
+        setAdmins(admRes.data.data);
+      }
     } catch (err) {
       console.error('Failed to load leave data');
     } finally {
@@ -136,7 +145,7 @@ export default function MyLeave() {
       );
       setShowApply(false);
       setAlert({ show: true, message: 'Leave request submitted successfully.', variant: 'success' });
-      setFormData({ leave_type_id: 'Paid Leave', start_date: '', end_date: '', total_days: 1, reason: '' });
+      setFormData({ leave_type_id: 'Paid Leave', start_date: '', end_date: '', total_days: 1, reason: '', assigned_to_admin_id: '' });
       setValidation(null);
       fetchData();
     } catch (err: any) {
@@ -321,7 +330,14 @@ export default function MyLeave() {
                           )}
                         </div>
                       ) : (
-                        <span className="text-muted small fst-italic">Pending Review</span>
+                        <div>
+                          <span className="text-muted small fst-italic">Pending Review</span>
+                          {r.assigned_to_name && (
+                            <div className="text-primary small mt-0.5" style={{ fontSize: '11.5px', fontWeight: 500 }}>
+                              Assigned to: {r.assigned_to_name}
+                            </div>
+                          )}
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -356,6 +372,27 @@ export default function MyLeave() {
                   <option value="Sick Leave">Sick Leave</option>
                   <option value="Leave Without Pay">Leave Without Pay (LWP)</option>
                 </Form.Select>
+              </Form.Group>
+
+              <Form.Group>
+                <Form.Label className="small fw-semibold d-flex align-items-center gap-1.5">
+                  <UserCheck size={14} className="text-primary" />
+                  <span>Approving Admin / Manager</span>
+                </Form.Label>
+                <Form.Select
+                  value={formData.assigned_to_admin_id}
+                  onChange={(e) => setFormData({ ...formData, assigned_to_admin_id: e.target.value })}
+                >
+                  <option value="">All Admins (Default)</option>
+                  {admins.map((adm) => (
+                    <option key={adm.id} value={adm.id}>
+                      {adm.name} ({adm.email})
+                    </option>
+                  ))}
+                </Form.Select>
+                <Form.Text className="text-muted small" style={{ fontSize: '11.5px' }}>
+                  Select the specific admin or manager you are applying to, or leave as "All Admins".
+                </Form.Text>
               </Form.Group>
 
               <Row className="g-3">

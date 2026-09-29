@@ -189,15 +189,33 @@ router.get('/leave-balances', async (req, res) => {
         res.status(500).json({ error: 'Server error fetching leave balances' });
     }
 });
+// Active Admins list for assigning leave requests
+router.get('/admins', async (req, res) => {
+    try {
+        const result = await (0, db_1.query)(`
+      SELECT id, name, email, employee_id
+      FROM users
+      WHERE role = 'admin' AND status = 'active'
+      ORDER BY name ASC
+    `);
+        res.json({ success: true, data: result.rows });
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message || 'Failed to fetch admins' });
+    }
+});
 router.get('/leave-requests', async (req, res) => {
     const userId = req.user.id;
     try {
         const result = await (0, db_1.query)(`SELECT lr.id, lr.from_date as start_date, lr.to_date as end_date, lr.days as total_days, 
               lr.reason, lr.status, lr.leave_type as leave_type_name,
               lr.remarks as admin_remarks, lr.approved_at as reviewed_at,
-              u_admin.name as reviewed_by_name, u_admin.email as reviewed_by_email
+              lr.assigned_to,
+              u_admin.name as reviewed_by_name, u_admin.email as reviewed_by_email,
+              u_assigned.name as assigned_to_name, u_assigned.email as assigned_to_email
        FROM leave_requests lr
        LEFT JOIN users u_admin ON lr.approved_by = u_admin.id
+       LEFT JOIN users u_assigned ON lr.assigned_to = u_assigned.id
        WHERE lr.employee_id = $1
        ORDER BY lr.created_at DESC`, [userId]);
         res.json(result.rows);
@@ -241,7 +259,7 @@ router.post('/validate-leave', async (req, res) => {
 });
 router.post('/leave-requests', async (req, res) => {
     const userId = req.user.id;
-    const { leave_type_id, start_date, end_date, total_days, reason } = req.body;
+    const { leave_type_id, start_date, end_date, total_days, reason, assigned_to_admin_id } = req.body;
     try {
         // Run Smart Leave Validation Engine before saving
         const validation = await leaveValidationService_1.LeaveValidationService.validateLeaveRequest(userId, start_date, end_date);
@@ -254,10 +272,21 @@ router.post('/leave-requests', async (req, res) => {
         const leaveType = validation.paidLeaveRequired === 0
             ? (validation.allWeeklyOffs ? 'Weekly Off' : 'Company Holiday')
             : (leave_type_id || 'Paid Leave');
-        await (0, db_1.query)(`INSERT INTO leave_requests (employee_id, leave_type, from_date, to_date, days, reason, status)
-       VALUES ($1, $2, $3, $4, $5, $6, 'PENDING')`, [userId, leaveType, start_date, end_date, validation.totalDays, reason]);
+        const targetAdminId = assigned_to_admin_id ? parseInt(assigned_to_admin_id, 10) : null;
+        await (0, db_1.query)(`INSERT INTO leave_requests (employee_id, leave_type, from_date, to_date, days, reason, status, assigned_to)
+       VALUES ($1, $2, $3, $4, $5, $6, 'PENDING', $7)`, [userId, leaveType, start_date, end_date, validation.totalDays, reason, targetAdminId]);
         // Notify admins and employee
         try {
+            if (targetAdminId) {
+                // Targeted notification to the chosen admin
+                await notificationService_1.NotificationService.notifyUser(targetAdminId, {
+                    title: 'Leave Request Assigned to You',
+                    message: `${req.user?.name || 'An employee'} applied for ${leaveType} from ${start_date} to ${end_date} and assigned you as approver.`,
+                    type: 'Leave',
+                    priority: 'High',
+                    actionUrl: '/leave',
+                });
+            }
             await notificationService_1.NotificationService.notifyAdmins({
                 title: 'New Leave Request',
                 message: `${req.user?.name || 'An employee'} applied for ${leaveType} from ${start_date} to ${end_date}.`,
