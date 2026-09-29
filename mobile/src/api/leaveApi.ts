@@ -28,6 +28,9 @@ export interface LeaveRequest {
   reviewerEmail?: string;
   adminComment?: string;
   reviewedAt?: string;
+  assignedTo?: number | null;
+  assignedToName?: string | null;
+  assignedToEmail?: string | null;
 }
 
 export const getLeaveBalances = async (token: string) => {
@@ -41,7 +44,10 @@ export const getLeaveBalances = async (token: string) => {
   }
 };
 
-export const applyLeave = async (token: string, data: { startDate: string, endDate: string, reason: string }) => {
+export const applyLeave = async (
+  token: string,
+  data: { startDate: string; endDate: string; reason: string; assignedToAdminId?: number | null }
+) => {
   try {
     const res = await axios.post(`${API_URL}/api/leave`, data, {
       headers: { Authorization: `Bearer ${token}` }

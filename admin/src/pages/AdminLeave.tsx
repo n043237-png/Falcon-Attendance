@@ -11,7 +11,9 @@ import {
   ChevronLeft,
   ChevronRight,
   AlertCircle,
-  CalendarPlus
+  CalendarPlus,
+  UserCheck,
+  Lock
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import Avatar from '../components/common/Avatar';
@@ -19,7 +21,7 @@ import ImagePreviewModal from '../components/common/ImagePreviewModal';
 import AdjustLeaveModal from '../components/common/AdjustLeaveModal';
 
 export default function AdminLeave() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const [leaves, setLeaves] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -164,6 +166,7 @@ export default function AdminLeave() {
                     <th>Dates</th>
                     <th>Days</th>
                     <th>Reason</th>
+                    <th>Approving Manager</th>
                     <th>Status</th>
                     <th className="text-end">Actions</th>
                   </tr>
@@ -171,93 +174,138 @@ export default function AdminLeave() {
                 <tbody>
                   {leaves.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="text-center py-5 text-muted">
+                      <td colSpan={9} className="text-center py-5 text-muted">
                         No leave requests found for the selected filter.
                       </td>
                     </tr>
                   ) : (
-                    leaves.map((lr) => (
-                      <tr key={lr.id}>
-                        <td>
-                          <div className="d-flex align-items-center gap-3">
-                            <Avatar
-                              src={lr.profilePhotoUrl}
-                              name={lr.employeeName}
-                              size={36}
-                              shape="rounded"
-                              showBorder
-                              borderColor="rgba(226, 232, 240, 0.8)"
-                              onClick={() => {
-                                setPreviewEmployee(lr);
-                                setShowPreviewModal(true);
-                              }}
-                            />
-                            <div className="fw-semibold text-dark" style={{ fontSize: '14px' }}>
-                              {lr.employeeName}
+                    leaves.map((lr) => {
+                      const isAssignedToOther = Boolean(
+                        lr.assignedTo && user?.id && Number(lr.assignedTo) !== Number(user.id)
+                      );
+
+                      return (
+                        <tr key={lr.id}>
+                          <td>
+                            <div className="d-flex align-items-center gap-3">
+                              <Avatar
+                                src={lr.profilePhotoUrl}
+                                name={lr.employeeName}
+                                size={36}
+                                shape="rounded"
+                                showBorder
+                                borderColor="rgba(226, 232, 240, 0.8)"
+                                onClick={() => {
+                                  setPreviewEmployee(lr);
+                                  setShowPreviewModal(true);
+                                }}
+                              />
+                              <div className="fw-semibold text-dark" style={{ fontSize: '14px' }}>
+                                {lr.employeeName}
+                              </div>
                             </div>
-                          </div>
-                        </td>
-                        <td>
-                          <span className="badge bg-secondary font-monospace" style={{ fontSize: '12px' }}>
-                            {lr.employeeId}
-                          </span>
-                        </td>
-                        <td>
-                          <span className="badge bg-info">{lr.leaveType}</span>
-                        </td>
-                        <td style={{ color: '#475569', fontSize: '13.5px' }}>
-                          {lr.startDate} to {lr.endDate}
-                        </td>
-                        <td>
-                          <span className="fw-semibold text-dark">{lr.totalDays}</span> day(s)
-                        </td>
-                        <td style={{ maxWidth: '220px' }}>
-                          <div className="text-truncate text-muted" title={lr.reason} style={{ fontSize: '13.5px' }}>
-                            {lr.reason || '-'}
-                          </div>
-                        </td>
-                        <td>
-                          <span
-                            className={`badge ${
-                              lr.status === 'APPROVED'
-                                ? 'bg-success'
-                                : lr.status === 'REJECTED'
-                                ? 'bg-danger'
-                                : lr.status === 'PENDING'
-                                ? 'bg-warning'
-                                : 'bg-secondary'
-                            }`}
-                          >
-                            {lr.status}
-                          </span>
-                        </td>
-                        <td className="text-end">
-                          <div className="d-inline-flex gap-2">
-                            {lr.status === 'PENDING' && (
-                              <>
-                                <button
-                                  className="btn btn-success btn-sm"
-                                  onClick={() => handleApprove(lr.id)}
-                                  title="Approve leave"
-                                >
-                                  <CheckCircle2 size={14} />
-                                  <span>Approve</span>
-                                </button>
-                                <button
-                                  className="btn btn-outline-danger btn-sm"
-                                  onClick={() => {
-                                    setSelectedLeave(lr.id);
-                                    setShowRejectModal(true);
-                                  }}
-                                  title="Reject leave"
-                                >
-                                  <XCircle size={14} />
-                                  <span>Reject</span>
-                                </button>
-                              </>
+                          </td>
+                          <td>
+                            <span className="badge bg-secondary font-monospace" style={{ fontSize: '12px' }}>
+                              {lr.employeeId}
+                            </span>
+                          </td>
+                          <td>
+                            <span className="badge bg-info">{lr.leaveType}</span>
+                          </td>
+                          <td style={{ color: '#475569', fontSize: '13.5px' }}>
+                            {lr.startDate} to {lr.endDate}
+                          </td>
+                          <td>
+                            <span className="fw-semibold text-dark">{lr.totalDays}</span> day(s)
+                          </td>
+                          <td style={{ maxWidth: '220px' }}>
+                            <div className="text-truncate text-muted" title={lr.reason} style={{ fontSize: '13.5px' }}>
+                              {lr.reason || '-'}
+                            </div>
+                          </td>
+                          <td>
+                            {lr.assignedToName ? (
+                              <span
+                                className={`badge d-inline-flex align-items-center gap-1 ${
+                                  user?.id && Number(lr.assignedTo) === Number(user.id)
+                                    ? 'bg-primary-subtle text-primary border border-primary'
+                                    : 'bg-light text-dark border'
+                                }`}
+                                style={{ fontSize: '12px', padding: '5px 8px' }}
+                              >
+                                <UserCheck size={12} />
+                                {lr.assignedToName}
+                                {user?.id && Number(lr.assignedTo) === Number(user.id) && ' (You)'}
+                              </span>
+                            ) : (
+                              <span
+                                className="badge bg-light text-muted border d-inline-flex align-items-center gap-1"
+                                style={{ fontSize: '12px', padding: '5px 8px' }}
+                              >
+                                All Admins
+                              </span>
                             )}
-                            <button
-                              className="btn btn-outline-primary btn-sm d-inline-flex align-items-center gap-1"
+                          </td>
+                          <td>
+                            <div>
+                              <span
+                                className={`badge ${
+                                  lr.status === 'APPROVED'
+                                    ? 'bg-success'
+                                    : lr.status === 'REJECTED'
+                                    ? 'bg-danger'
+                                    : lr.status === 'PENDING'
+                                    ? 'bg-warning'
+                                    : 'bg-secondary'
+                                }`}
+                              >
+                                {lr.status}
+                              </span>
+                              {lr.reviewerName && lr.status !== 'PENDING' && (
+                                <div className="text-muted mt-1" style={{ fontSize: '11px', whiteSpace: 'nowrap' }}>
+                                  by {lr.reviewerName}
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                          <td className="text-end">
+                            <div className="d-inline-flex gap-2 align-items-center">
+                              {lr.status === 'PENDING' && (
+                                isAssignedToOther ? (
+                                  <span
+                                    className="badge bg-light text-secondary border px-2 py-1 d-inline-flex align-items-center gap-1"
+                                    title={`Assigned to ${lr.assignedToName} for review`}
+                                    style={{ fontSize: '11.5px', fontWeight: '500' }}
+                                  >
+                                    <Lock size={12} className="text-muted" /> Assigned to {lr.assignedToName}
+                                  </span>
+                                ) : (
+                                  <>
+                                    <button
+                                      className="btn btn-success btn-sm"
+                                      onClick={() => handleApprove(lr.id)}
+                                      title="Approve leave"
+                                    >
+                                      <CheckCircle2 size={14} />
+                                      <span>Approve</span>
+                                    </button>
+                                    <button
+                                      className="btn btn-outline-danger btn-sm"
+                                      onClick={() => {
+                                        setSelectedLeave(lr.id);
+                                        setShowRejectModal(true);
+                                      }}
+                                      title="Reject leave"
+                                    >
+                                      <XCircle size={14} />
+                                      <span>Reject</span>
+                                    </button>
+                                  </>
+                                )
+                              )}
+                              <button
+                                className="btn btn-outline-primary btn-sm d-inline-flex align-items-center gap-1"
                               onClick={() => {
                                 setAdjustLeaveEmployee({
                                   id: lr.userId,
@@ -274,8 +322,9 @@ export default function AdminLeave() {
                           </div>
                         </td>
                       </tr>
-                    ))
-                  )}
+                    );
+                  })
+                )}
                 </tbody>
               </table>
             </div>

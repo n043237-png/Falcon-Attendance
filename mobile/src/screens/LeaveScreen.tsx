@@ -422,35 +422,64 @@ export default function LeaveScreen() {
           </View>
         )}
 
+        {/* Pending Review Assigned Info for employee */}
+        {item.status?.toUpperCase() === 'PENDING' && !!item.assignedToName && (
+          <View style={styles.assignedPendingBox}>
+            <Ionicons name="person-circle-outline" size={14} color="#2563EB" style={{ marginRight: 5 }} />
+            <Text style={styles.assignedPendingText}>
+              Assigned Approver: <Text style={{ fontWeight: '600', color: '#1E40AF' }}>{item.assignedToName}</Text>
+            </Text>
+          </View>
+        )}
+
         {/* Action row: Approve / Reject for Admin on pending, or Cancel for Employee on pending */}
         {isAdmin && activeTab === 'ALL_REQUESTS' && item.status?.toUpperCase() === 'PENDING' ? (
-          <View style={styles.adminActionRow}>
-            <TouchableOpacity
-              style={styles.approveButton}
-              onPress={() => handleApproveLeave(item.id, item.employeeName)}
-              disabled={actionLoading === item.id}
-              activeOpacity={0.8}
-            >
-              {actionLoading === item.id ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <>
-                  <Ionicons name="checkmark-circle" size={16} color="#FFFFFF" style={{ marginRight: 4 }} />
-                  <Text style={styles.approveButtonText}>Approve</Text>
-                </>
-              )}
-            </TouchableOpacity>
+          (() => {
+            const isAssignedToOther = Boolean(
+              item.assignedTo && user?.id && Number(item.assignedTo) !== Number(user.id)
+            );
 
-            <TouchableOpacity
-              style={styles.rejectButton}
-              onPress={() => handleRejectLeave(item.id, item.employeeName)}
-              disabled={actionLoading === item.id}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="close-circle" size={16} color="#FFFFFF" style={{ marginRight: 4 }} />
-              <Text style={styles.rejectButtonText}>Reject</Text>
-            </TouchableOpacity>
-          </View>
+            if (isAssignedToOther) {
+              return (
+                <View style={styles.assignedNoticeBox}>
+                  <Ionicons name="lock-closed" size={13} color="#64748B" style={{ marginRight: 5 }} />
+                  <Text style={styles.assignedNoticeText}>
+                    Assigned to <Text style={{ fontWeight: '700', color: '#1E293B' }}>{item.assignedToName || 'another manager'}</Text> for approval
+                  </Text>
+                </View>
+              );
+            }
+
+            return (
+              <View style={styles.adminActionRow}>
+                <TouchableOpacity
+                  style={styles.approveButton}
+                  onPress={() => handleApproveLeave(item.id, item.employeeName)}
+                  disabled={actionLoading === item.id}
+                  activeOpacity={0.8}
+                >
+                  {actionLoading === item.id ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <Ionicons name="checkmark-circle" size={16} color="#FFFFFF" style={{ marginRight: 4 }} />
+                      <Text style={styles.approveButtonText}>Approve</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.rejectButton}
+                  onPress={() => handleRejectLeave(item.id, item.employeeName)}
+                  disabled={actionLoading === item.id}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="close-circle" size={16} color="#FFFFFF" style={{ marginRight: 4 }} />
+                  <Text style={styles.rejectButtonText}>Reject</Text>
+                </TouchableOpacity>
+              </View>
+            );
+          })()
         ) : (
           item.status?.toUpperCase() === 'PENDING' && (
             <View style={styles.cardFooterRow}>
@@ -1497,6 +1526,37 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     marginTop: 2,
     marginLeft: 19,
+  },
+  assignedNoticeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderColor: '#E2E8F0',
+    borderWidth: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginTop: 10,
+  },
+  assignedNoticeText: {
+    fontSize: 12,
+    color: '#64748B',
+    flex: 1,
+  },
+  assignedPendingBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
+    borderWidth: 1,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+    marginTop: 8,
+  },
+  assignedPendingText: {
+    fontSize: 12,
+    color: '#1D4ED8',
   },
   emptyContainer: {
     alignItems: 'center',

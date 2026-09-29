@@ -101,9 +101,13 @@ export const getAdminLeaves = async (req: AuthRequest, res: Response): Promise<v
 
     const histRes = await query(`
       SELECT lr.id, lr.employee_id as employee_user_id, u.name as employee_name, u.employee_id as employee_code, lr.leave_type as "leaveType",
-             lr.from_date, lr.to_date, lr.days, lr.reason, lr.status, lr.created_at, u.profile_photo_url as profile_photo_url
+             lr.from_date, lr.to_date, lr.days, lr.reason, lr.status, lr.created_at, u.profile_photo_url as profile_photo_url,
+             lr.assigned_to, u_assigned.name as assigned_to_name, u_assigned.email as assigned_to_email,
+             lr.approved_by, u_admin.name as reviewer_name, u_admin.email as reviewer_email, lr.remarks as admin_comment
       FROM leave_requests lr
       JOIN users u ON lr.employee_id = u.id
+      LEFT JOIN users u_assigned ON lr.assigned_to = u_assigned.id
+      LEFT JOIN users u_admin ON lr.approved_by = u_admin.id
       ${filterQuery}
       ORDER BY lr.created_at DESC
       LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}
@@ -124,7 +128,13 @@ export const getAdminLeaves = async (req: AuthRequest, res: Response): Promise<v
           totalDays: parseFloat(rec.days),
           reason: rec.reason,
           status: rec.status,
-          createdAt: rec.created_at
+          createdAt: rec.created_at,
+          assignedTo: rec.assigned_to,
+          assignedToName: rec.assigned_to_name,
+          assignedToEmail: rec.assigned_to_email,
+          reviewerName: rec.reviewer_name,
+          reviewerEmail: rec.reviewer_email,
+          adminComment: rec.admin_comment
         })),
         pagination: { page, limit, total, totalPages: Math.ceil(total / limit) }
       }
@@ -145,9 +155,11 @@ export const approveLeave = async (req: AuthRequest, res: Response): Promise<voi
     await client.query('BEGIN');
 
     const lrRes = await client.query(`
-      SELECT employee_id, leave_type, from_date, days, status
-      FROM leave_requests 
-      WHERE id = $1 FOR UPDATE
+      SELECT lr.employee_id, lr.leave_type, lr.from_date, lr.days, lr.status, lr.assigned_to,
+             u_assigned.name as assigned_to_name
+      FROM leave_requests lr
+      LEFT JOIN users u_assigned ON lr.assigned_to = u_assigned.id
+      WHERE lr.id = $1 FOR UPDATE OF lr
     `, [leaveId]);
 
     if (lrRes.rows.length === 0) {
@@ -160,6 +172,19 @@ export const approveLeave = async (req: AuthRequest, res: Response): Promise<voi
     if (lr.status !== 'PENDING') {
       await client.query('ROLLBACK');
       res.status(400).json({ success: false, error: { code: 'LEAVE_NOT_PENDING', message: 'Leave is not pending' } });
+      return;
+    }
+
+    // Restriction check: if assigned_to is set and the approving admin is NOT the assigned admin:
+    if (lr.assigned_to && Number(lr.assigned_to) !== Number(adminId)) {
+      await client.query('ROLLBACK');
+      res.status(403).json({
+        success: false,
+        error: {
+          code: 'FORBIDDEN_NOT_ASSIGNED',
+          message: `This leave request is specifically assigned to ${lr.assigned_to_name || 'another manager'} for review. Only the designated manager can approve or reject it.`
+        }
+      });
       return;
     }
 
@@ -254,7 +279,14 @@ export const rejectLeave = async (req: AuthRequest, res: Response): Promise<void
       return;
     }
 
-    const existRes = await query(`SELECT employee_id, leave_type, from_date, days, status FROM leave_requests WHERE id = $1`, [leaveId]);
+    const existRes = await query(`
+      SELECT lr.employee_id, lr.leave_type, lr.from_date, lr.days, lr.status, lr.assigned_to,
+             u_assigned.name as assigned_to_name
+      FROM leave_requests lr
+      LEFT JOIN users u_assigned ON lr.assigned_to = u_assigned.id
+      WHERE lr.id = $1
+    `, [leaveId]);
+
     if (existRes.rows.length === 0) {
       res.status(404).json({ success: false, error: { code: 'LEAVE_NOT_FOUND', message: 'Request not found' } });
       return;
@@ -262,6 +294,18 @@ export const rejectLeave = async (req: AuthRequest, res: Response): Promise<void
     
     if (existRes.rows[0].status !== 'PENDING') {
       res.status(400).json({ success: false, error: { code: 'LEAVE_NOT_PENDING', message: 'Leave is not pending' } });
+      return;
+    }
+
+    // Restriction check: if assigned_to is set and the rejecting admin is NOT the assigned admin:
+    if (existRes.rows[0].assigned_to && Number(existRes.rows[0].assigned_to) !== Number(adminId)) {
+      res.status(403).json({
+        success: false,
+        error: {
+          code: 'FORBIDDEN_NOT_ASSIGNED',
+          message: `This leave request is specifically assigned to ${existRes.rows[0].assigned_to_name || 'another manager'} for review. Only the designated manager can approve or reject it.`
+        }
+      });
       return;
     }
 

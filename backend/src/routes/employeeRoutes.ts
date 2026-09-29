@@ -337,15 +337,16 @@ router.post('/leave-requests', async (req: AuthRequest, res) => {
           priority: 'High',
           actionUrl: '/leave',
         });
+      } else {
+        // Not assigned to a specific admin, notify all admins
+        await NotificationService.notifyAdmins({
+          title: 'New Leave Request',
+          message: `${req.user?.name || 'An employee'} applied for ${leaveType} from ${start_date} to ${end_date}.`,
+          type: 'Leave',
+          priority: 'Medium',
+          actionUrl: '/leave',
+        });
       }
-
-      await NotificationService.notifyAdmins({
-        title: 'New Leave Request',
-        message: `${req.user?.name || 'An employee'} applied for ${leaveType} from ${start_date} to ${end_date}.`,
-        type: 'Leave',
-        priority: 'Medium',
-        actionUrl: '/leave',
-      });
 
       await NotificationService.notifyUser(userId, {
         title: 'Leave Request Submitted',

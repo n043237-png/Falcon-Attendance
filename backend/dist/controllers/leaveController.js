@@ -9,6 +9,7 @@ const applyLeaveSchema = zod_1.z.object({
     startDate: zod_1.z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format (YYYY-MM-DD)'),
     endDate: zod_1.z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format (YYYY-MM-DD)'),
     reason: zod_1.z.string().min(3).max(500),
+    assignedToAdminId: zod_1.z.number().nullable().optional(),
 });
 const getBalances = async (req, res) => {
     try {
@@ -79,7 +80,8 @@ const applyLeave = async (req, res) => {
             res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: parsed.error.issues[0].message } });
             return;
         }
-        const { startDate, endDate, reason } = parsed.data;
+        const { startDate, endDate, reason, assignedToAdminId } = parsed.data;
+        const targetAdminId = assignedToAdminId || null;
         // Run Smart Leave Validation Engine
         const validation = await leaveValidationService_1.LeaveValidationService.validateLeaveRequest(employeeId, startDate, endDate);
         if (!validation.canSubmit) {
@@ -112,19 +114,19 @@ const applyLeave = async (req, res) => {
             // Non-working days only (Sundays or Holidays)
             const leaveType = validation.allWeeklyOffs ? 'Weekly Off' : (validation.allCompanyHolidays ? 'Company Holiday' : 'Paid Leave');
             const insertRes = await client.query(`
-        INSERT INTO leave_requests (employee_id, from_date, to_date, days, reason, leave_type, status)
-        VALUES ($1, $2, $3, $4, $5, $6, 'PENDING')
+        INSERT INTO leave_requests (employee_id, from_date, to_date, days, reason, leave_type, status, assigned_to)
+        VALUES ($1, $2, $3, $4, $5, $6, 'PENDING', $7)
         RETURNING id
-      `, [employeeId, startDate, endDate, totalDays, reason, leaveType]);
+      `, [employeeId, startDate, endDate, totalDays, reason, leaveType, targetAdminId]);
             insertedIds.push(insertRes.rows[0].id);
         }
         else if (availableBalance >= paidLeaveRequired) {
             // Entire working duration covered by paid leave
             const insertRes = await client.query(`
-        INSERT INTO leave_requests (employee_id, from_date, to_date, days, reason, leave_type, status)
-        VALUES ($1, $2, $3, $4, $5, 'Paid Leave', 'PENDING')
+        INSERT INTO leave_requests (employee_id, from_date, to_date, days, reason, leave_type, status, assigned_to)
+        VALUES ($1, $2, $3, $4, $5, 'Paid Leave', 'PENDING', $6)
         RETURNING id
-      `, [employeeId, startDate, endDate, totalDays, reason]);
+      `, [employeeId, startDate, endDate, totalDays, reason, targetAdminId]);
             insertedIds.push(insertRes.rows[0].id);
         }
         else {
@@ -136,15 +138,16 @@ const applyLeave = async (req, res) => {
                 const paidEndDate = new Date(currentStartDate);
                 paidEndDate.setDate(paidEndDate.getDate() + paidLeaveDays - 1);
                 const insertRes1 = await client.query(`
-          INSERT INTO leave_requests (employee_id, from_date, to_date, days, reason, leave_type, status)
-          VALUES ($1, $2, $3, $4, $5, 'Paid Leave', 'PENDING')
+          INSERT INTO leave_requests (employee_id, from_date, to_date, days, reason, leave_type, status, assigned_to)
+          VALUES ($1, $2, $3, $4, $5, 'Paid Leave', 'PENDING', $6)
           RETURNING id
         `, [
                     employeeId,
                     currentStartDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
                     paidEndDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
                     paidLeaveDays,
-                    reason
+                    reason,
+                    targetAdminId
                 ]);
                 insertedIds.push(insertRes1.rows[0].id);
                 remainingDays -= paidLeaveDays;
@@ -153,15 +156,16 @@ const applyLeave = async (req, res) => {
             }
             if (remainingDays > 0) {
                 const insertRes2 = await client.query(`
-          INSERT INTO leave_requests (employee_id, from_date, to_date, days, reason, leave_type, status)
-          VALUES ($1, $2, $3, $4, $5, 'Leave Without Pay', 'PENDING')
+          INSERT INTO leave_requests (employee_id, from_date, to_date, days, reason, leave_type, status, assigned_to)
+          VALUES ($1, $2, $3, $4, $5, 'Leave Without Pay', 'PENDING', $6)
           RETURNING id
         `, [
                     employeeId,
                     currentStartDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
                     endDate,
                     remainingDays,
-                    reason
+                    reason,
+                    targetAdminId
                 ]);
                 insertedIds.push(insertRes2.rows[0].id);
             }
@@ -169,13 +173,24 @@ const applyLeave = async (req, res) => {
         await client.query('COMMIT');
         // Trigger Smart Notifications
         try {
-            await notificationService_1.NotificationService.notifyAdmins({
-                title: 'New Leave Request',
-                message: `${req.user.name || 'An employee'} applied for leave from ${startDate} to ${endDate}.`,
-                type: 'Leave',
-                priority: 'Medium',
-                actionUrl: '/leave',
-            });
+            if (targetAdminId) {
+                await notificationService_1.NotificationService.notifyUser(targetAdminId, {
+                    title: 'Leave Request Assigned to You',
+                    message: `${req.user.name || 'An employee'} applied for leave from ${startDate} to ${endDate} and assigned you as approver.`,
+                    type: 'Leave',
+                    priority: 'High',
+                    actionUrl: '/leave',
+                });
+            }
+            else {
+                await notificationService_1.NotificationService.notifyAdmins({
+                    title: 'New Leave Request',
+                    message: `${req.user.name || 'An employee'} applied for leave from ${startDate} to ${endDate}.`,
+                    type: 'Leave',
+                    priority: 'Medium',
+                    actionUrl: '/leave',
+                });
+            }
             await notificationService_1.NotificationService.notifyUser(employeeId, {
                 title: 'Leave Request Submitted',
                 message: `Your leave request for ${startDate} to ${endDate} has been submitted for approval.`,
@@ -222,11 +237,13 @@ const getLeaveHistory = async (req, res) => {
         const histRes = await (0, db_1.query)(`
       SELECT lr.id, lr.leave_type as "leaveType", lr.from_date, lr.to_date, lr.days as total_days, lr.reason, lr.status,
              lr.remarks as "adminComment", lr.approved_at as "reviewedAt",
+             lr.assigned_to as "assignedTo", u_assigned.name as "assignedToName", u_assigned.email as "assignedToEmail",
              u.name as "employeeName", u.employee_id as "employeeCode", u.profile_photo_url as "profilePhotoUrl",
              u_admin.name as "reviewerName", u_admin.email as "reviewerEmail"
       FROM leave_requests lr
       JOIN users u ON lr.employee_id = u.id
       LEFT JOIN users u_admin ON lr.approved_by = u_admin.id
+      LEFT JOIN users u_assigned ON lr.assigned_to = u_assigned.id
       ${filterQuery}
       ORDER BY lr.created_at DESC
       LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}
@@ -247,7 +264,10 @@ const getLeaveHistory = async (req, res) => {
                     status: rec.status,
                     adminComment: rec.adminComment,
                     reviewerName: rec.reviewerName,
-                    reviewedAt: rec.reviewedAt
+                    reviewedAt: rec.reviewedAt,
+                    assignedTo: rec.assignedTo,
+                    assignedToName: rec.assignedToName,
+                    assignedToEmail: rec.assignedToEmail
                 })),
                 pagination: { page, limit, total, totalPages: Math.ceil(total / limit) }
             }
