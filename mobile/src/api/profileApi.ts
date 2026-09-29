@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { Platform } from 'react-native';
+import * as FileSystem from 'expo-file-system/legacy';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || (Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://localhost:3000');
 
@@ -70,29 +71,52 @@ export const changePassword = async (token: string, data: any) => {
 
 export const uploadProfilePhoto = async (token: string, uri: string) => {
   try {
-    const formData = new FormData();
-    const filename = uri.split('/').pop() || 'profile.jpg';
-    const match = /\.(\w+)$/.exec(filename);
-    let type = match ? `image/${match[1].toLowerCase()}` : 'image/jpeg';
-    if (type === 'image/jpg') type = 'image/jpeg';
-
-    formData.append('photo', {
-      uri,
-      name: filename,
-      type,
-    } as any);
-
     const base = API_URL.endsWith('/') ? API_URL.slice(0, -1) : API_URL;
-    const response = await fetch(`${base}/api/profile/photo`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      body: formData,
-    });
+    const uploadUrl = `${base}/api/profile/photo`;
 
-    const data = await response.json();
-    return data;
+    if (Platform.OS !== 'web') {
+      const filename = uri.split('/').pop() || 'profile.jpg';
+      const match = /\.(\w+)$/.exec(filename);
+      let mimeType = match ? `image/${match[1].toLowerCase()}` : 'image/jpeg';
+      if (mimeType === 'image/jpg') mimeType = 'image/jpeg';
+
+      const uploadResult = await FileSystem.uploadAsync(uploadUrl, uri, {
+        httpMethod: 'POST',
+        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+        fieldName: 'photo',
+        mimeType,
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (uploadResult.status >= 200 && uploadResult.status < 300) {
+        return JSON.parse(uploadResult.body);
+      } else {
+        try {
+          const parsed = JSON.parse(uploadResult.body);
+          return parsed || { success: false, error: { message: `Upload failed with status ${uploadResult.status}` } };
+        } catch (_) {
+          return { success: false, error: { message: `Upload failed with status ${uploadResult.status}` } };
+        }
+      }
+    } else {
+      const res = await fetch(uri);
+      const blob = await res.blob();
+      const formData = new FormData();
+      formData.append('photo', blob, 'profile.jpg');
+
+      const response = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      const data = await response.json();
+      return data;
+    }
   } catch (error: any) {
     return { success: false, error: { message: error.message || 'Failed to upload photo.' } };
   }
