@@ -28,6 +28,11 @@ export default function HomeScreen() {
   const [actionLoading, setActionLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [attendance, setAttendance] = useState<AttendanceRecord | null>(null);
+  const [shiftInfo, setShiftInfo] = useState<{
+    name?: string;
+    startTime?: string;
+    endTime?: string;
+  } | null>(null);
   const [homeImageError, setHomeImageError] = useState(false);
 
   const hour = new Date().getHours();
@@ -47,6 +52,7 @@ export default function HomeScreen() {
       }
 
       if (res.success && res.data?.shift) {
+        setShiftInfo(res.data.shift);
         scheduleLocalShiftReminders(
           res.data.shift.startTime,
           res.data.shift.endTime,
@@ -122,6 +128,23 @@ export default function HomeScreen() {
     const h = Math.floor(minutes / 60);
     const m = Math.round(minutes % 60);
     return `${h}h ${m}m`;
+  };
+
+  const formatTime12 = (timeStr?: string | null) => {
+    if (!timeStr) return '';
+    try {
+      const parts = timeStr.split(':');
+      if (parts.length < 2) return timeStr;
+      let h = parseInt(parts[0], 10);
+      const m = parts[1];
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      h = h % 12;
+      if (h === 0) h = 12;
+      const hStr = h < 10 ? `0${h}` : `${h}`;
+      return `${hStr}:${m} ${ampm}`;
+    } catch {
+      return timeStr;
+    }
   };
 
   const status = attendance?.status || 'NOT_MARKED';
@@ -271,7 +294,11 @@ export default function HomeScreen() {
           <View style={styles.heroClockRow}>
             <View>
               <Text style={styles.heroClockTime}>{currentTimeFormatted}</Text>
-              <Text style={styles.heroClockLabel}>Office Hours: 09:00 AM - 07:00 PM</Text>
+              <Text style={styles.heroClockLabel}>
+                Office Hours: {shiftInfo?.startTime && shiftInfo?.endTime
+                  ? `${formatTime12(shiftInfo.startTime)} - ${formatTime12(shiftInfo.endTime)}`
+                  : '10:00 AM - 06:30 PM'}
+              </Text>
             </View>
             <View style={{ alignItems: 'flex-end', gap: 4 }}>
               <View style={styles.gpsIndicator}>
@@ -404,7 +431,7 @@ export default function HomeScreen() {
             </View>
             <Text style={styles.metricLabel}>SHIFT STATUS</Text>
             <Text style={[styles.metricValue, { fontSize: 15 }]}>{badge.label}</Text>
-            <Text style={styles.metricSubtext}>Regular Shift</Text>
+            <Text style={styles.metricSubtext}>{shiftInfo?.name || 'Day Shift'}</Text>
           </View>
         </View>
 
