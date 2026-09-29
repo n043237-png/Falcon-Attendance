@@ -388,7 +388,7 @@ const broadcastSchema = zod_1.z.object({
     title: zod_1.z.string().optional().default('📢 Company Announcement'),
     message: zod_1.z.string().min(3, 'Announcement message is required'),
     priority: zod_1.z.enum(['Low', 'Medium', 'High', 'Critical']).optional().default('High'),
-    target: zod_1.z.enum(['all', 'employee', 'admin']).optional().default('employee'),
+    target: zod_1.z.enum(['all', 'employee', 'admin']).optional().default('all'),
 });
 /**
  * POST /api/notifications/broadcast

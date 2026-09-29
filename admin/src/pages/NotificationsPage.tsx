@@ -90,6 +90,7 @@ export default function NotificationsPage() {
   const [broadcastTitle, setBroadcastTitle] = useState<string>('📢 Company Announcement');
   const [broadcastMessage, setBroadcastMessage] = useState<string>('The office will remain closed on 2 October due to Gandhi Jayanti.');
   const [broadcastPriority, setBroadcastPriority] = useState<'Medium' | 'High' | 'Critical'>('High');
+  const [broadcastTarget, setBroadcastTarget] = useState<'all' | 'employee' | 'admin'>('all');
   const [broadcasting, setBroadcasting] = useState<boolean>(false);
   const [broadcastSuccess, setBroadcastSuccess] = useState<boolean>(false);
 
@@ -166,7 +167,7 @@ export default function NotificationsPage() {
         title: broadcastTitle.trim() || '📢 Company Announcement',
         message: broadcastMessage.trim(),
         priority: broadcastPriority,
-        target: 'employee'
+        target: broadcastTarget
       }, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -936,6 +937,19 @@ export default function NotificationsPage() {
                   placeholder="The office will remain closed on 2 October due to Gandhi Jayanti."
                   required
                 />
+              </div>
+
+              <div className="mb-3">
+                <label className="form-label small fw-semibold text-dark">Target Audience</label>
+                <select
+                  className="form-select"
+                  value={broadcastTarget}
+                  onChange={(e) => setBroadcastTarget(e.target.value as any)}
+                >
+                  <option value="all">Entire Company (All Employees & Admins)</option>
+                  <option value="employee">Employees Only</option>
+                  <option value="admin">Administrators & Managers Only</option>
+                </select>
               </div>
 
               <div className="mb-2">

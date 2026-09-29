@@ -456,7 +456,7 @@ const broadcastSchema = z.object({
   title: z.string().optional().default('📢 Company Announcement'),
   message: z.string().min(3, 'Announcement message is required'),
   priority: z.enum(['Low', 'Medium', 'High', 'Critical']).optional().default('High'),
-  target: z.enum(['all', 'employee', 'admin']).optional().default('employee'),
+  target: z.enum(['all', 'employee', 'admin']).optional().default('all'),
 });
 
 /**

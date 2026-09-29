@@ -68,7 +68,7 @@ class NotificationService {
                 targetUserIds = [payload.recipientUserId];
             }
             else if (role === 'admin') {
-                const adminsRes = await (0, db_1.query)(`SELECT id FROM users WHERE role = 'admin' AND status = 'active'`);
+                const adminsRes = await (0, db_1.query)(`SELECT id FROM users WHERE (role = 'admin' OR 'admin' = ANY(roles)) AND status = 'active'`);
                 targetUserIds = adminsRes.rows.map((r) => r.id);
             }
             else if (role === 'all') {
@@ -76,7 +76,7 @@ class NotificationService {
                 targetUserIds = usersRes.rows.map((r) => r.id);
             }
             else if (role === 'employee') {
-                const empsRes = await (0, db_1.query)(`SELECT id FROM users WHERE role = 'employee' AND status = 'active'`);
+                const empsRes = await (0, db_1.query)(`SELECT id FROM users WHERE (role = 'employee' OR 'employee' = ANY(roles) OR roles IS NULL) AND status = 'active'`);
                 targetUserIds = empsRes.rows.map((r) => r.id);
             }
             if (targetUserIds.length === 0) {
