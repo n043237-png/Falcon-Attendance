@@ -12,4 +12,5 @@ test_report.pdf
 test_report.xlsx
 *.tsbuildinfo
 backend/uploads/
+*.apk
 
