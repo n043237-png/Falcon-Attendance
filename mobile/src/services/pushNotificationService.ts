@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { registerPushToken, unregisterPushToken } from '../api/notificationApi';
 
@@ -58,8 +59,8 @@ export async function registerForPushNotificationsAsync(authToken: string): Prom
       return null;
     }
 
-    // 3. Physical device check
-    if (!Device.isDevice) {
+    // 3. Physical device check (don't hard-crash if Device.isDevice has issues)
+    if (Device && Device.isDevice === false && !__DEV__) {
       console.log('[Push] Running on emulator/simulator; local notifications active');
       return null;
     }
@@ -71,16 +72,18 @@ export async function registerForPushNotificationsAsync(authToken: string): Prom
         Constants.easConfig?.projectId ??
         '5db1250c-a74c-4d1d-8553-9f60acbaeee0';
 
+      console.log('[Push] Fetching push token for projectId:', projectId);
       const tokenResponse = await Notifications.getExpoPushTokenAsync({ projectId });
-      const pushToken = tokenResponse.data;
+      const pushToken = tokenResponse?.data;
 
       if (pushToken) {
-        console.log('[Push] Registered Expo Push Token:', pushToken);
-        await registerPushToken(pushToken, Platform.OS, authToken);
+        console.log('[Push] Successfully obtained push token:', pushToken);
+        const res = await registerPushToken(pushToken, Platform.OS, authToken);
+        console.log('[Push] Registered with backend:', res?.success ? 'SUCCESS' : res);
         return pushToken;
       }
     } catch (e: any) {
-      console.log('[Push] Remote Expo push token unavailable (local notifications active):', e?.message || e);
+      console.warn('[Push] Remote Expo push token error:', e?.message || e);
     }
 
     return null;
@@ -106,7 +109,7 @@ export async function unregisterPushNotificationsAsync(authToken?: string | null
         const projectId =
           Constants.expoConfig?.extra?.eas?.projectId ??
           Constants.easConfig?.projectId ??
-          '8542a6b4-323b-4bac-b3e8-42a5ba83b624';
+          '5db1250c-a74c-4d1d-8553-9f60acbaeee0';
         const tokenResponse = await Notifications.getExpoPushTokenAsync({ projectId });
         pushToken = tokenResponse.data;
       } catch (e) {
