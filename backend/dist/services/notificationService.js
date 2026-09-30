@@ -210,23 +210,32 @@ class NotificationService {
         }));
         if (validExpoMessages.length === 0)
             return;
-        try {
-            const resp = await fetch('https://exp.host/--/api/v2/push/send', {
-                method: 'POST',
-                headers: {
-                    Accept: 'application/json',
-                    'Accept-encoding': 'gzip, deflate',
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(validExpoMessages),
-            });
-            const result = await resp.json().catch(() => null);
-            if (result) {
-                console.log(`[Push Notification] Dispatched ${validExpoMessages.length} message(s). Status:`, result.data ? 'OK' : result);
+        for (const msg of validExpoMessages) {
+            try {
+                const resp = await fetch('https://exp.host/--/api/v2/push/send', {
+                    method: 'POST',
+                    headers: {
+                        Accept: 'application/json',
+                        'Accept-encoding': 'gzip, deflate',
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify([msg]),
+                });
+                const result = await resp.json().catch(() => null);
+                if (result?.data?.[0]?.status === 'ok') {
+                    console.log(`[Push Notification] Delivered to ${msg.to} (ID: ${result.data[0].id})`);
+                }
+                else if (result?.data?.[0]?.status === 'error') {
+                    const errDetail = result.data[0].details?.error;
+                    console.warn(`[Push Notification] Error for ${msg.to}:`, result.data[0].message);
+                    if (errDetail === 'DeviceNotRegistered') {
+                        (0, db_1.query)('DELETE FROM device_push_tokens WHERE push_token = $1', [msg.to]).catch(() => { });
+                    }
+                }
             }
-        }
-        catch (err) {
-            console.warn('Expo push dispatch network error:', err);
+            catch (err) {
+                console.warn('Expo push dispatch network error:', err);
+            }
         }
     }
     /**
