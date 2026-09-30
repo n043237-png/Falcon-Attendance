@@ -232,7 +232,7 @@ router.get('/admins', async (req: AuthRequest, res) => {
     const result = await query(`
       SELECT id, name, email, employee_id
       FROM users
-      WHERE role = 'admin' AND status = 'active'
+      WHERE (role = 'admin' OR 'admin' = ANY(roles)) AND status = 'active'
       ORDER BY name ASC
     `);
     res.json({ success: true, data: result.rows });

@@ -8,6 +8,7 @@ router.use(auth_1.authenticateToken); // Protect all leave routes
 router.get('/balance', leaveController_1.getBalances);
 router.get('/validate', leaveController_1.validateLeave);
 router.post('/validate', leaveController_1.validateLeave);
+router.get('/admins', leaveController_1.getLeaveAdmins);
 router.post('/', leaveController_1.applyLeave);
 router.get('/', leaveController_1.getLeaveHistory);
 router.get('/:id', leaveController_1.getLeaveRequest);

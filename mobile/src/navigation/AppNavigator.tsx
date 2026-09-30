@@ -4,6 +4,7 @@ import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { useAuth } from '../context/AuthContext';
 import LoginScreen from '../screens/LoginScreen';
+import HolidayListScreen from '../screens/HolidayListScreen';
 import TabNavigator from './TabNavigator';
 import { notificationSync } from '../services/notificationSyncService';
 import { handleNotificationUrl } from '../services/pushNotificationService';
@@ -47,7 +48,10 @@ export default function AppNavigator() {
       {token == null ? (
         <Stack.Screen name="Login" component={LoginScreen} />
       ) : (
-        <Stack.Screen name="MainTabs" component={TabNavigator} />
+        <>
+          <Stack.Screen name="MainTabs" component={TabNavigator} />
+          <Stack.Screen name="HolidayList" component={HolidayListScreen} />
+        </>
       )}
     </Stack.Navigator>
   );

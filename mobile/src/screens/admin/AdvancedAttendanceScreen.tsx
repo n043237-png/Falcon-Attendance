@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, TextInput } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, TextInput } from 'react-native';
+import { CustomAlert as Alert } from '../../components/CustomAlert';
 import { Ionicons } from '@expo/vector-icons';
 import { getAdminAttendance } from '../../api/adminApi';
 import DateTimePicker from '@react-native-community/datetimepicker';

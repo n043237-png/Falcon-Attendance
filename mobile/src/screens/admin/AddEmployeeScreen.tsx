@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
+import { CustomAlert as Alert } from '../../components/CustomAlert';
 import { createEmployee } from '../../api/adminApi';
 
 export default function AddEmployeeScreen({ navigation, route }: any) {

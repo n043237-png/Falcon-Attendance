@@ -8,6 +8,7 @@ import {
   getPreferences,
   updatePreferences,
   registerPushToken,
+  unregisterPushToken,
   notificationStream,
   broadcastAnnouncement,
 } from '../controllers/notificationController';
@@ -37,6 +38,7 @@ router.patch('/preferences', updatePreferences);
 
 // Push Tokens
 router.post('/push-token', registerPushToken);
+router.delete('/push-token', unregisterPushToken);
 
 // Broadcast Announcement (Admin only)
 router.post('/broadcast', broadcastAnnouncement);

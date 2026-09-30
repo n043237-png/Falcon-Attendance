@@ -730,8 +730,8 @@ export default function MyProfile() {
                       )}
                     </div>
 
-                    <div className="col-sm-6">
-                      <label className="text-muted small fw-semibold">Primary Emergency Phone</label>
+                    <div className="col-sm-12">
+                      <label className="text-muted small fw-semibold">Emergency Contact Phone</label>
                       {isEditing ? (
                         <Form.Control
                           type="tel"
@@ -743,22 +743,6 @@ export default function MyProfile() {
                         />
                       ) : (
                         <div className="p-2.5 rounded-3 bg-light border fw-medium">{profile?.emergencyContactPhone || 'Not configured'}</div>
-                      )}
-                    </div>
-
-                    <div className="col-sm-6">
-                      <label className="text-muted small fw-semibold">Alternate Emergency Phone</label>
-                      {isEditing ? (
-                        <Form.Control
-                          type="tel"
-                          inputMode="numeric"
-                          maxLength={10}
-                          value={editForm.emergencyContactAltPhone}
-                          onChange={(e) => setEditForm({ ...editForm, emergencyContactAltPhone: e.target.value.replace(/\D/g, '').slice(0, 10) })}
-                          placeholder="10-digit phone number"
-                        />
-                      ) : (
-                        <div className="p-2.5 rounded-3 bg-light border fw-medium">{profile?.emergencyContactAltPhone || 'Not configured'}</div>
                       )}
                     </div>
                   </div>

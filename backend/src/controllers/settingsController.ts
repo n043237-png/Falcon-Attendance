@@ -15,8 +15,9 @@ const settingsSchema = z.object({
 });
 
 const holidaySchema = z.object({
-  holidayDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  name: z.string().min(1),
+  holidayDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format (YYYY-MM-DD)'),
+  name: z.string().min(1, 'Holiday name is required'),
+  description: z.string().optional().nullable(),
   isActive: z.boolean().optional(),
 });
 
@@ -102,8 +103,52 @@ export const updateSettings = async (req: AuthRequest, res: Response): Promise<v
 
 export const getHolidays = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const holRes = await query('SELECT id, holiday_date as "holidayDate", name, is_active as "isActive" FROM holidays ORDER BY holiday_date DESC');
-    res.json({ success: true, data: holRes.rows.map(r => ({ ...r, holidayDate: new Date(r.holidayDate).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }) })) });
+    const yearParam = req.query.year as string;
+    let queryText = 'SELECT id, holiday_date as "holidayDate", name, description, is_active as "isActive" FROM holidays WHERE 1=1';
+    const queryParams: any[] = [];
+
+    const isAdmin = req.user?.roles?.includes('admin') || req.user?.role === 'admin';
+    if (!isAdmin) {
+      queryText += ' AND is_active = true';
+    }
+
+    if (yearParam && /^\d{4}$/.test(yearParam)) {
+      queryParams.push(`${yearParam}-01-01`, `${yearParam}-12-31`);
+      queryText += ` AND holiday_date >= $${queryParams.length - 1} AND holiday_date <= $${queryParams.length}`;
+    }
+
+    queryText += ' ORDER BY holiday_date ASC';
+
+    const holRes = await query(queryText, queryParams);
+    const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+
+    const holidays = holRes.rows.map(r => {
+      const dateStr = new Date(r.holidayDate).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+      const dateObj = new Date(dateStr + 'T12:00:00+05:30');
+      const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'Asia/Kolkata' });
+      const isPast = dateStr < todayStr;
+      const isToday = dateStr === todayStr;
+      const isUpcoming = dateStr >= todayStr;
+
+      const todayDate = new Date(todayStr + 'T12:00:00+05:30');
+      const diffTime = dateObj.getTime() - todayDate.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+      return {
+        id: r.id,
+        holidayDate: dateStr,
+        name: r.name,
+        description: r.description || null,
+        day: dayName,
+        isActive: r.isActive,
+        isPast,
+        isToday,
+        isUpcoming,
+        daysAway: diffDays
+      };
+    });
+
+    res.json({ success: true, data: holidays });
   } catch (error) {
     res.status(500).json({ success: false, error: { message: 'Server error' } });
   }
@@ -116,12 +161,14 @@ export const addHoliday = async (req: AuthRequest, res: Response): Promise<void>
       res.status(400).json({ success: false, error: { message: 'Invalid data format' } });
       return;
     }
-    const { holidayDate, name, isActive } = parsed.data;
+    const { holidayDate, name, description, isActive } = parsed.data;
     await query(`
-      INSERT INTO holidays (holiday_date, name, is_active) 
-      VALUES ($1, $2, COALESCE($3, true))
-    `, [holidayDate, name, isActive]);
-    res.json({ success: true, message: 'Holiday added' });
+      INSERT INTO holidays (holiday_date, name, description, is_active) 
+      VALUES ($1, $2, $3, COALESCE($4, true))
+      ON CONFLICT (holiday_date) DO UPDATE
+      SET name = EXCLUDED.name, description = EXCLUDED.description, is_active = EXCLUDED.is_active, updated_at = NOW()
+    `, [holidayDate, name, description ? description.trim() : null, isActive]);
+    res.json({ success: true, message: 'Holiday saved successfully' });
   } catch (error: any) {
     if (error.code === '23505') res.status(400).json({ success: false, error: { message: 'Holiday already exists on this date' } });
     else res.status(500).json({ success: false, error: { message: 'Server error' } });

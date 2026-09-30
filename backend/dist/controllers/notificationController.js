@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.broadcastAnnouncement = exports.notificationStream = exports.registerPushToken = exports.updatePreferences = exports.getPreferences = exports.deleteNotification = exports.markAllAsRead = exports.markAsRead = exports.getUnreadNotifications = exports.getNotifications = void 0;
+exports.broadcastAnnouncement = exports.notificationStream = exports.unregisterPushToken = exports.registerPushToken = exports.updatePreferences = exports.getPreferences = exports.deleteNotification = exports.markAllAsRead = exports.markAsRead = exports.getUnreadNotifications = exports.getNotifications = void 0;
 const zod_1 = require("zod");
 const db_1 = require("../db");
 const notificationService_1 = require("../services/notificationService");
@@ -49,7 +49,7 @@ const getNotifications = async (req, res) => {
         // Role-based recipient restriction:
         // Employees ONLY see notifications directed to them or their role.
         // Admins see notifications directed to them or admin role.
-        let filterQuery = `WHERE deleted_at IS NULL AND created_at >= (NOW() - INTERVAL '30 days') AND (recipient_user_id = $1 OR (role = $2 AND recipient_user_id IS NULL))`;
+        let filterQuery = `WHERE deleted_at IS NULL AND created_at >= (NOW() - INTERVAL '30 days') AND (COALESCE(recipient_user_id, employee_id) = $1 OR (role = $2 AND recipient_user_id IS NULL AND employee_id IS NULL))`;
         const queryParams = [userId, userRole];
         if (search) {
             queryParams.push(`%${search}%`);
@@ -87,7 +87,7 @@ const getNotifications = async (req, res) => {
        WHERE deleted_at IS NULL 
          AND is_read = FALSE 
          AND created_at >= (NOW() - INTERVAL '30 days')
-         AND (recipient_user_id = $1 OR (role = $2 AND recipient_user_id IS NULL))`, [userId, userRole]);
+         AND (COALESCE(recipient_user_id, employee_id) = $1 OR (role = $2 AND recipient_user_id IS NULL AND employee_id IS NULL))`, [userId, userRole]);
         const unreadCount = parseInt(unreadCountRes.rows[0].unread_count) || 0;
         // Fetch paginated rows
         const itemsRes = await (0, db_1.query)(`SELECT id, recipient_user_id as "recipientUserId", sender_user_id as "senderUserId",
@@ -131,7 +131,7 @@ const getUnreadNotifications = async (req, res) => {
        WHERE deleted_at IS NULL 
          AND is_read = FALSE 
          AND created_at >= (NOW() - INTERVAL '30 days')
-         AND (recipient_user_id = $1 OR (role = $2 AND recipient_user_id IS NULL))`, [userId, userRole]);
+         AND (COALESCE(recipient_user_id, employee_id) = $1 OR (role = $2 AND recipient_user_id IS NULL AND employee_id IS NULL))`, [userId, userRole]);
         const count = parseInt(countRes.rows[0].unread_count) || 0;
         // Latest 10 notifications for dropdown
         const latestRes = await (0, db_1.query)(`SELECT id, recipient_user_id as "recipientUserId", role, title, message, 
@@ -140,7 +140,7 @@ const getUnreadNotifications = async (req, res) => {
        FROM notifications
        WHERE deleted_at IS NULL 
          AND created_at >= (NOW() - INTERVAL '30 days')
-         AND (recipient_user_id = $1 OR (role = $2 AND recipient_user_id IS NULL))
+         AND (COALESCE(recipient_user_id, employee_id) = $1 OR (role = $2 AND recipient_user_id IS NULL AND employee_id IS NULL))
        ORDER BY created_at DESC
        LIMIT 10`, [userId, userRole]);
         res.json({
@@ -169,7 +169,7 @@ const markAsRead = async (req, res) => {
         const notificationId = parseInt(req.params.id);
         const updateRes = await (0, db_1.query)(`UPDATE notifications 
        SET is_read = TRUE, read_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP 
-       WHERE id = $1 AND (recipient_user_id = $2 OR (role = $3 AND recipient_user_id IS NULL))
+       WHERE id = $1 AND (COALESCE(recipient_user_id, employee_id) = $2 OR (role = $3 AND recipient_user_id IS NULL AND employee_id IS NULL))
        RETURNING id`, [notificationId, userId, userRole]);
         if (updateRes.rows.length === 0) {
             res.status(404).json({ success: false, error: { message: 'Notification not found or access denied' } });
@@ -194,7 +194,7 @@ const markAllAsRead = async (req, res) => {
         await (0, db_1.query)(`UPDATE notifications 
        SET is_read = TRUE, read_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP 
        WHERE is_read = FALSE 
-         AND (recipient_user_id = $1 OR (role = $2 AND recipient_user_id IS NULL))`, [userId, userRole]);
+         AND (COALESCE(recipient_user_id, employee_id) = $1 OR (role = $2 AND recipient_user_id IS NULL AND employee_id IS NULL))`, [userId, userRole]);
         res.json({ success: true, message: 'All notifications marked as read' });
     }
     catch (error) {
@@ -214,7 +214,7 @@ const deleteNotification = async (req, res) => {
         const notificationId = parseInt(req.params.id);
         const delRes = await (0, db_1.query)(`UPDATE notifications 
        SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP 
-       WHERE id = $1 AND (recipient_user_id = $2 OR (role = $3 AND recipient_user_id IS NULL))
+       WHERE id = $1 AND (COALESCE(recipient_user_id, employee_id) = $2 OR (role = $3 AND recipient_user_id IS NULL AND employee_id IS NULL))
        RETURNING id`, [notificationId, userId, userRole]);
         if (delRes.rows.length === 0) {
             res.status(404).json({ success: false, error: { message: 'Notification not found or access denied' } });
@@ -355,9 +355,11 @@ const registerPushToken = async (req, res) => {
             return;
         }
         const { token, platform } = parsed.data;
+        // A device push token must strictly belong to the currently authenticated user
         await (0, db_1.query)(`INSERT INTO device_push_tokens (user_id, push_token, platform, updated_at)
        VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
-       ON CONFLICT (user_id, push_token) DO UPDATE SET
+       ON CONFLICT (push_token) DO UPDATE SET
+         user_id = EXCLUDED.user_id,
          platform = EXCLUDED.platform,
          updated_at = CURRENT_TIMESTAMP`, [userId, token, platform]);
         res.json({ success: true, message: 'Push token registered successfully' });
@@ -368,6 +370,28 @@ const registerPushToken = async (req, res) => {
     }
 };
 exports.registerPushToken = registerPushToken;
+/**
+ * DELETE /api/notifications/push-token
+ * Unregister device push token on logout
+ */
+const unregisterPushToken = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { token } = req.body || {};
+        if (token) {
+            await (0, db_1.query)(`DELETE FROM device_push_tokens WHERE user_id = $1 AND push_token = $2`, [userId, token]);
+        }
+        else {
+            await (0, db_1.query)(`DELETE FROM device_push_tokens WHERE user_id = $1`, [userId]);
+        }
+        res.json({ success: true, message: 'Push token unregistered successfully' });
+    }
+    catch (error) {
+        console.error('unregisterPushToken error:', error);
+        res.status(500).json({ success: false, error: { message: 'Failed to unregister push token' } });
+    }
+};
+exports.unregisterPushToken = unregisterPushToken;
 /**
  * GET /api/notifications/stream
  * Server-Sent Events (SSE) endpoint for instant real-time notification push

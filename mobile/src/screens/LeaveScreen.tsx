@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,15 +6,19 @@ import {
   FlatList,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
   Modal,
   TextInput,
   RefreshControl,
   Platform,
   StatusBar,
   ScrollView,
+  KeyboardAvoidingView,
+  Keyboard,
+  TouchableWithoutFeedback,
 } from 'react-native';
+import { CustomAlert as Alert } from '../components/CustomAlert';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useAuth } from '../context/AuthContext';
@@ -27,12 +31,15 @@ import {
   getAdminLeaves,
   approveLeaveRequest,
   rejectLeaveRequest,
+  getAdmins,
   LeaveBalance,
   LeaveRequest,
   LeaveValidationData,
+  AdminApprover,
 } from '../api/leaveApi';
 
 export default function LeaveScreen() {
+  const navigation = useNavigation<any>();
   const { token, user } = useAuth();
   const isAdmin = user?.role === 'admin' || user?.roles?.includes('admin');
 
@@ -46,6 +53,12 @@ export default function LeaveScreen() {
   const [applying, setApplying] = useState(false);
   const [showApplyModal, setShowApplyModal] = useState(false);
   const [showImpactModal, setShowImpactModal] = useState(false);
+  const [showBalanceInfoModal, setShowBalanceInfoModal] = useState(false);
+  // Rejection modal states for Admin
+  const [rejectingItem, setRejectingItem] = useState<{ id: number; employeeName?: string } | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [rejectError, setRejectError] = useState<string | null>(null);
+  const [rejectSubmitting, setRejectSubmitting] = useState(false);
   const [validation, setValidation] = useState<LeaveValidationData | null>(null);
   const [validating, setValidating] = useState(false);
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'>('ALL');
@@ -57,6 +70,12 @@ export default function LeaveScreen() {
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showEndPicker, setShowEndPicker] = useState(false);
 
+  // Approver / Admin selection states
+  const [admins, setAdmins] = useState<AdminApprover[]>([]);
+  const [selectedAdminId, setSelectedAdminId] = useState<number | null>(null);
+  const [showAdminPicker, setShowAdminPicker] = useState(false);
+  const modalScrollRef = useRef<ScrollView>(null);
+
   const fetchData = useCallback(async (isRefresh = false) => {
     if (!token) return;
     if (isRefresh) setRefreshing(true);
@@ -66,6 +85,7 @@ export default function LeaveScreen() {
       const promises: Promise<any>[] = [
         getLeaveBalances(token),
         getLeaveHistory(token, 1),
+        getAdmins(token),
       ];
       if (isAdmin) {
         promises.push(getAdminLeaves(token));
@@ -74,10 +94,12 @@ export default function LeaveScreen() {
       const results = await Promise.all(promises);
       const balRes = results[0];
       const histRes = results[1];
-      const adminRes = isAdmin ? results[2] : null;
+      const admRes = results[2];
+      const adminRes = isAdmin ? results[3] : null;
 
       if (balRes?.success) setBalance(balRes.data);
       if (histRes?.success && histRes.data?.items) setHistory(histRes.data.items);
+      if (admRes?.success && Array.isArray(admRes.data)) setAdmins(admRes.data);
       if (adminRes?.success && adminRes.data?.items) {
         setAdminLeaves(adminRes.data.items);
       }
@@ -152,6 +174,7 @@ export default function LeaveScreen() {
   const availableBalance = balance?.currentBalance ?? 0;
   const isLwpRequired = validation ? validation.isLwpRequired : requestedDays > availableBalance;
   const lwpDays = validation ? validation.lwpDays : (isLwpRequired ? requestedDays - availableBalance : 0);
+  const selectedAdmin = admins.find(a => a.id === selectedAdminId) || null;
 
   const handleApply = async () => {
     if (!token) return;
@@ -200,12 +223,14 @@ export default function LeaveScreen() {
         startDate: formatDateYMD(startDate),
         endDate: formatDateYMD(endDate),
         reason: reason.trim(),
+        assignedToAdminId: selectedAdminId,
       });
 
       if (res.success) {
         Alert.alert('Success 🎉', 'Your leave request has been submitted successfully.');
         setShowApplyModal(false);
         setReason('');
+        setSelectedAdminId(null);
         setStartDate(new Date());
         setEndDate(new Date());
         fetchData(true);
@@ -270,35 +295,37 @@ export default function LeaveScreen() {
     );
   };
 
-  const handleRejectLeave = (id: number, name?: string) => {
-    Alert.alert(
-      'Reject Leave',
-      `Are you sure you want to reject leave for ${name || 'this employee'}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Reject',
-          style: 'destructive',
-          onPress: async () => {
-            if (!token) return;
-            setActionLoading(id);
-            try {
-              const res = await rejectLeaveRequest(token, id);
-              if (res.success) {
-                Alert.alert('Rejected', 'Leave request rejected.');
-                fetchData(true);
-              } else {
-                Alert.alert('Error', res.error?.message || 'Failed to reject leave.');
-              }
-            } catch (err: any) {
-              Alert.alert('Error', err.message || 'Error rejecting leave.');
-            } finally {
-              setActionLoading(null);
-            }
-          },
-        },
-      ]
-    );
+  const handleOpenRejectModal = (id: number, name?: string) => {
+    setRejectingItem({ id, employeeName: name });
+    setRejectReason('');
+    setRejectError(null);
+  };
+
+  const handleConfirmReject = async () => {
+    if (!token || !rejectingItem) return;
+    const trimmed = rejectReason.trim();
+    if (trimmed.length < 3) {
+      setRejectError('Rejection reason is required (minimum 3 characters).');
+      return;
+    }
+
+    setRejectSubmitting(true);
+    setRejectError(null);
+    try {
+      const res = await rejectLeaveRequest(token, rejectingItem.id, trimmed);
+      if (res.success) {
+        setRejectingItem(null);
+        setRejectReason('');
+        Alert.alert('Rejected', 'Leave request has been rejected successfully.');
+        fetchData(true);
+      } else {
+        setRejectError(res.error?.message || 'Failed to reject leave request.');
+      }
+    } catch (err: any) {
+      setRejectError(err.message || 'Error rejecting leave.');
+    } finally {
+      setRejectSubmitting(false);
+    }
   };
 
   const currentList = (isAdmin && activeTab === 'ALL_REQUESTS') ? adminLeaves : history;
@@ -470,8 +497,8 @@ export default function LeaveScreen() {
 
                 <TouchableOpacity
                   style={styles.rejectButton}
-                  onPress={() => handleRejectLeave(item.id, item.employeeName)}
-                  disabled={actionLoading === item.id}
+                  onPress={() => handleOpenRejectModal(item.id, item.employeeName)}
+                  disabled={actionLoading === item.id || rejectSubmitting}
                   activeOpacity={0.8}
                 >
                   <Ionicons name="close-circle" size={16} color="#FFFFFF" style={{ marginRight: 4 }} />
@@ -579,21 +606,41 @@ export default function LeaveScreen() {
               {(!isAdmin || activeTab === 'MY_REQUESTS') && (
                 <View style={styles.balanceSummaryCard}>
                   <View style={styles.balanceMainRow}>
-                    <View>
-                      <Text style={styles.balanceCardLabel}>AVAILABLE PAID BALANCE</Text>
+                    <TouchableOpacity
+                      onPress={() => setShowBalanceInfoModal(true)}
+                      activeOpacity={0.7}
+                      accessibilityLabel="View Leave Balance Details"
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <Text style={styles.balanceCardLabel}>AVAILABLE PAID BALANCE</Text>
+                        <Ionicons name="information-circle-outline" size={13} color="#64748B" style={{ marginLeft: 4 }} />
+                      </View>
                       <View style={styles.balanceNumberRow}>
                         <Text style={styles.balanceBigNumber}>
                           {balance?.currentBalance ?? 0}
                         </Text>
                         <Text style={styles.balanceUnit}>Days</Text>
                       </View>
-                    </View>
-                    <View style={styles.balanceIconWrap}>
-                      <Ionicons name="calendar" size={26} color="#2563EB" />
-                    </View>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.balanceHolidayBtn}
+                      onPress={() => navigation.navigate('HolidayList')}
+                      activeOpacity={0.75}
+                      accessibilityLabel="View Company Holidays"
+                    >
+                      <Ionicons name="calendar" size={16} color="#2563EB" />
+                      <Text style={styles.balanceHolidayBtnText}>Holidays</Text>
+                      <Ionicons name="chevron-forward" size={13} color="#2563EB" />
+                    </TouchableOpacity>
                   </View>
 
-                  <View style={styles.balanceGrid}>
+                  <TouchableOpacity
+                    style={styles.balanceGrid}
+                    activeOpacity={0.75}
+                    onPress={() => setShowBalanceInfoModal(true)}
+                    accessibilityLabel="Tap for balance breakdown"
+                  >
                     <View style={styles.balanceGridItem}>
                       <Text style={styles.gridLabel}>Accrued</Text>
                       <Text style={styles.gridValue}>{balance?.accruedLeave ?? 0}d</Text>
@@ -610,7 +657,7 @@ export default function LeaveScreen() {
                         {balance?.leaveWithoutPay ?? 0}d
                       </Text>
                     </View>
-                  </View>
+                  </TouchableOpacity>
                 </View>
               )}
 
@@ -621,7 +668,7 @@ export default function LeaveScreen() {
                   onPress={() => setShowApplyModal(true)}
                   activeOpacity={0.85}
                 >
-                  <Ionicons name="add-circle" size={20} color="#FFFFFF" style={{ marginRight: 6 }} />
+                  <Ionicons name="add-circle" size={19} color="#FFFFFF" style={{ marginRight: 6 }} />
                   <Text style={styles.applyButtonText}>Apply for Leave</Text>
                 </TouchableOpacity>
               )}
@@ -683,8 +730,23 @@ export default function LeaveScreen() {
       )}
 
       {/* Apply Leave Modal */}
-      <Modal visible={showApplyModal} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
+      <Modal
+        visible={showApplyModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => {
+          setShowApplyModal(false);
+          setSelectedAdminId(null);
+        }}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={styles.modalBackdropDismiss} />
+          </TouchableWithoutFeedback>
+
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
               <View>
@@ -692,14 +754,24 @@ export default function LeaveScreen() {
                 <Text style={styles.modalSubtitle}>Fill details below for approval</Text>
               </View>
               <TouchableOpacity
-                onPress={() => setShowApplyModal(false)}
+                onPress={() => {
+                  setShowApplyModal(false);
+                  setSelectedAdminId(null);
+                }}
                 style={styles.modalCloseBtn}
               >
                 <Ionicons name="close" size={20} color="#64748B" />
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalScroll}>
+            <ScrollView
+              ref={modalScrollRef}
+              style={styles.modalScroll}
+              contentContainerStyle={{ paddingBottom: 16 }}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              showsVerticalScrollIndicator={true}
+            >
               {/* Balance Summary in Modal */}
               <View style={styles.modalBalanceInfo}>
                 <Ionicons name="information-circle-outline" size={16} color="#2563EB" />
@@ -902,6 +974,45 @@ export default function LeaveScreen() {
                 </View>
               )}
 
+              {/* Approving Admin / Manager Selector */}
+              <View style={{ marginTop: 14 }}>
+                <View style={styles.fieldLabelRow}>
+                  <Ionicons name="shield-checkmark-outline" size={15} color="#2563EB" style={{ marginRight: 6 }} />
+                  <Text style={styles.fieldLabel}>Approving Admin / Manager</Text>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.adminSelectorBtn}
+                  onPress={() => setShowAdminPicker(true)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.adminSelectorLeft}>
+                    <View style={[styles.adminAvatarSmall, !selectedAdmin && styles.adminAvatarAll]}>
+                      <Ionicons
+                        name={selectedAdmin ? "person" : "people"}
+                        size={15}
+                        color={selectedAdmin ? "#2563EB" : "#0D9488"}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.adminSelectorTitle} numberOfLines={1}>
+                        {selectedAdmin ? selectedAdmin.name : 'All Admins (Default)'}
+                      </Text>
+                      <Text style={styles.adminSelectorSubtitle} numberOfLines={1}>
+                        {selectedAdmin
+                          ? (selectedAdmin.email ? `${selectedAdmin.email}${selectedAdmin.employee_id ? ` • ${selectedAdmin.employee_id}` : ''}` : 'Designated Approver')
+                          : 'Notify all active administrators'}
+                      </Text>
+                    </View>
+                  </View>
+                  <Ionicons name="chevron-down" size={18} color="#64748B" />
+                </TouchableOpacity>
+
+                <Text style={styles.fieldHelperText}>
+                  Select the specific admin or manager you are applying to, or leave as "All Admins".
+                </Text>
+              </View>
+
               {/* Reason */}
               <View style={{ marginTop: 14 }}>
                 <Text style={styles.fieldLabel}>Reason for Absence *</Text>
@@ -914,6 +1025,11 @@ export default function LeaveScreen() {
                   multiline
                   numberOfLines={3}
                   textAlignVertical="top"
+                  onFocus={() => {
+                    setTimeout(() => {
+                      modalScrollRef.current?.scrollToEnd({ animated: true });
+                    }, 150);
+                  }}
                 />
               </View>
 
@@ -950,7 +1066,10 @@ export default function LeaveScreen() {
             <View style={styles.modalActions}>
               <TouchableOpacity
                 style={styles.modalCancelBtn}
-                onPress={() => setShowApplyModal(false)}
+                onPress={() => {
+                  setShowApplyModal(false);
+                  setSelectedAdminId(null);
+                }}
                 disabled={applying}
               >
                 <Text style={styles.modalCancelText}>Cancel</Text>
@@ -975,6 +1094,115 @@ export default function LeaveScreen() {
                 )}
               </TouchableOpacity>
             </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Admin Picker Modal */}
+      <Modal
+        visible={showAdminPicker}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowAdminPicker(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableWithoutFeedback onPress={() => setShowAdminPicker(false)}>
+            <View style={styles.modalBackdropDismiss} />
+          </TouchableWithoutFeedback>
+          <View style={[styles.modalCard, { maxHeight: '75%' }]}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalTitle}>Approving Admin / Manager</Text>
+                <Text style={styles.modalSubtitle}>Select who should review your leave request</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setShowAdminPicker(false)}
+                style={styles.modalCloseBtn}
+              >
+                <Ionicons name="close" size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ marginTop: 6 }} showsVerticalScrollIndicator={false}>
+              {/* Option 1: All Admins */}
+              <TouchableOpacity
+                style={[
+                  styles.adminOptionCard,
+                  selectedAdminId === null && styles.adminOptionCardSelected,
+                ]}
+                onPress={() => {
+                  setSelectedAdminId(null);
+                  setShowAdminPicker(false);
+                }}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.adminOptionAvatar, styles.adminAvatarAll]}>
+                  <Ionicons name="people" size={20} color="#0D9488" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.adminOptionName, selectedAdminId === null && styles.adminOptionNameSelected]}>
+                    All Admins (Default)
+                  </Text>
+                  <Text style={styles.adminOptionDesc}>
+                    Any active administrator can review and take action
+                  </Text>
+                </View>
+                {selectedAdminId === null && (
+                  <Ionicons name="checkmark-circle" size={22} color="#2563EB" />
+                )}
+              </TouchableOpacity>
+
+              {/* List of active Admins */}
+              {admins.map((admin) => {
+                const isSelected = selectedAdminId === admin.id;
+                const initials = (admin.name || 'Admin')
+                  .split(' ')
+                  .filter(Boolean)
+                  .map((n) => n[0])
+                  .slice(0, 2)
+                  .join('')
+                  .toUpperCase();
+
+                return (
+                  <TouchableOpacity
+                    key={admin.id}
+                    style={[
+                      styles.adminOptionCard,
+                      isSelected && styles.adminOptionCardSelected,
+                    ]}
+                    onPress={() => {
+                      setSelectedAdminId(admin.id);
+                      setShowAdminPicker(false);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.adminOptionAvatar}>
+                      <Text style={styles.adminInitials}>{initials}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.adminOptionName, isSelected && styles.adminOptionNameSelected]}>
+                        {admin.name}
+                      </Text>
+                      <Text style={styles.adminOptionDesc} numberOfLines={1}>
+                        {admin.email}
+                        {admin.employee_id ? ` • ID: ${admin.employee_id}` : ''}
+                      </Text>
+                    </View>
+                    {isSelected && (
+                      <Ionicons name="checkmark-circle" size={22} color="#2563EB" />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+
+              {admins.length === 0 && (
+                <View style={{ padding: 24, alignItems: 'center' }}>
+                  <Text style={{ fontSize: 13, color: '#64748B', textAlign: 'center' }}>
+                    No specific admins found. Your request will be sent to all active administrators.
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -1096,6 +1324,7 @@ export default function LeaveScreen() {
                   onPress={() => {
                     setShowImpactModal(false);
                     setShowApplyModal(false);
+                    setSelectedAdminId(null);
                   }}
                   disabled={applying}
                 >
@@ -1105,6 +1334,216 @@ export default function LeaveScreen() {
             </View>
           </View>
         </View>
+      </Modal>
+
+      {/* Leave Balance Details Modal */}
+      <Modal
+        visible={showBalanceInfoModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowBalanceInfoModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.balanceModalCard}>
+            <View style={styles.balanceModalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <View style={styles.balanceModalIconBadge}>
+                  <Ionicons name="wallet-outline" size={20} color="#2563EB" />
+                </View>
+                <View style={{ marginLeft: 10 }}>
+                  <Text style={styles.balanceModalTitle}>Leave Balance Breakdown</Text>
+                  <Text style={styles.balanceModalSubtitle}>Current annual quota & usage</Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                onPress={() => setShowBalanceInfoModal(false)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons name="close" size={22} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.balanceModalRows}>
+              <View style={styles.balanceModalRow}>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <View style={[styles.balanceDot, { backgroundColor: '#2563EB' }]} />
+                  <Text style={styles.balanceRowLabel}>Available Paid Balance</Text>
+                </View>
+                <Text style={[styles.balanceRowValue, { color: '#2563EB', fontWeight: '800' }]}>
+                  {balance?.currentBalance ?? 0} Days
+                </Text>
+              </View>
+
+              <View style={styles.balanceModalRow}>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <View style={[styles.balanceDot, { backgroundColor: '#059669' }]} />
+                  <Text style={styles.balanceRowLabel}>Total Accrued Leaves</Text>
+                </View>
+                <Text style={styles.balanceRowValue}>{balance?.accruedLeave ?? 0} Days</Text>
+              </View>
+
+              <View style={styles.balanceModalRow}>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <View style={[styles.balanceDot, { backgroundColor: '#F59E0B' }]} />
+                  <Text style={styles.balanceRowLabel}>Used Paid Leaves</Text>
+                </View>
+                <Text style={styles.balanceRowValue}>{balance?.usedPaidLeave ?? 0} Days</Text>
+              </View>
+
+              <View style={styles.balanceModalRow}>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <View style={[styles.balanceDot, { backgroundColor: '#DC2626' }]} />
+                  <Text style={styles.balanceRowLabel}>Leave Without Pay (LWP)</Text>
+                </View>
+                <Text style={[styles.balanceRowValue, { color: '#DC2626' }]}>
+                  {balance?.leaveWithoutPay ?? 0} Days
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.balanceModalNote}>
+              <Ionicons name="information-circle" size={16} color="#475569" style={{ marginRight: 6, marginTop: 1 }} />
+              <Text style={styles.balanceModalNoteText}>
+                Official company holidays do not deduct from your paid leave balance. View company holidays before applying.
+              </Text>
+            </View>
+
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
+              <TouchableOpacity
+                style={styles.modalHolidayBtn}
+                onPress={() => {
+                  setShowBalanceInfoModal(false);
+                  navigation.navigate('HolidayList');
+                }}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="calendar-outline" size={17} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={styles.modalHolidayBtnText}>View Holidays</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.modalCloseBtn}
+                onPress={() => setShowBalanceInfoModal(false)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.modalCloseBtnText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Admin Reject Leave Reason Modal (Matching Custom White Dialog Style) */}
+      <Modal
+        visible={!!rejectingItem}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!rejectSubmitting) setRejectingItem(null);
+        }}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={styles.modalOverlay}>
+              <TouchableWithoutFeedback onPress={() => {}}>
+                <View style={styles.rejectModalCard}>
+                  {/* Top Header */}
+                  <View style={styles.modalHeader}>
+                    <Text style={styles.modalTitle}>Reject Leave Request</Text>
+                    <TouchableOpacity
+                      onPress={() => setRejectingItem(null)}
+                      style={styles.modalCloseBtn}
+                      disabled={rejectSubmitting}
+                      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="close" size={22} color="#64748B" />
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Status Badge Pill */}
+                  <View style={[styles.modalStatusBadge, { backgroundColor: '#FEE2E2', marginBottom: 12 }]}>
+                    <Ionicons name="close-circle" size={16} color="#B91C1C" />
+                    <Text style={[styles.modalStatusText, { color: '#B91C1C' }]}>Rejection</Text>
+                  </View>
+
+                  {/* Employee Name Info */}
+                  <Text style={styles.rejectNoticeText}>
+                    You are rejecting the leave request for{' '}
+                    <Text style={{ fontWeight: '700', color: '#0F172A' }}>
+                      {rejectingItem?.employeeName || 'this employee'}
+                    </Text>
+                    . Please enter a reason below.
+                  </Text>
+
+                  {/* Reason Text Input */}
+                  <View style={{ marginTop: 12 }}>
+                    <Text style={styles.rejectInputLabel}>Reason for Rejection *</Text>
+                    <TextInput
+                      style={[
+                        styles.rejectTextInput,
+                        !!rejectError && { borderColor: '#EF4444' },
+                      ]}
+                      placeholder="e.g. Critical project deadline, lack of coverage..."
+                      placeholderTextColor="#94A3B8"
+                      value={rejectReason}
+                      onChangeText={(text) => {
+                        setRejectReason(text);
+                        if (rejectError) setRejectError(null);
+                      }}
+                      multiline
+                      numberOfLines={3}
+                      textAlignVertical="top"
+                      maxLength={500}
+                    />
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 5 }}>
+                      {!!rejectError ? (
+                        <Text style={styles.rejectErrorText}>{rejectError}</Text>
+                      ) : (
+                        <Text style={styles.rejectHintText}>Minimum 3 characters required</Text>
+                      )}
+                      <Text style={styles.rejectCountText}>{rejectReason.length} / 500</Text>
+                    </View>
+                  </View>
+
+                  {/* Action Buttons */}
+                  <View style={styles.rejectActionsRow}>
+                    <TouchableOpacity
+                      style={styles.rejectCancelBtn}
+                      onPress={() => setRejectingItem(null)}
+                      disabled={rejectSubmitting}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.rejectCancelBtnText}>Cancel</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.rejectSubmitBtn,
+                        rejectReason.trim().length < 3 && { opacity: 0.6 },
+                      ]}
+                      onPress={handleConfirmReject}
+                      disabled={rejectSubmitting}
+                      activeOpacity={0.8}
+                    >
+                      {rejectSubmitting ? (
+                        <ActivityIndicator color="#FFFFFF" size="small" />
+                      ) : (
+                        <>
+                          <Ionicons name="close-circle-outline" size={17} color="#FFFFFF" style={{ marginRight: 6 }} />
+                          <Text style={styles.rejectSubmitBtnText}>Confirm Rejection</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </TouchableWithoutFeedback>
+            </View>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
@@ -1196,6 +1635,127 @@ const styles = StyleSheet.create({
     backgroundColor: '#EFF6FF',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  balanceHolidayBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    paddingVertical: 7,
+    paddingHorizontal: 11,
+    borderRadius: 12,
+    gap: 5,
+  },
+  balanceHolidayBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#2563EB',
+  },
+  balanceModalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 22,
+    width: '100%',
+    maxWidth: 380,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  balanceModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  balanceModalIconBadge: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: '#EFF6FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  balanceModalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  balanceModalSubtitle: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  balanceModalRows: {
+    paddingVertical: 14,
+    gap: 12,
+  },
+  balanceModalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  balanceDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  balanceRowLabel: {
+    fontSize: 13,
+    color: '#475569',
+    fontWeight: '500',
+  },
+  balanceRowValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  balanceModalNote: {
+    flexDirection: 'row',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 10,
+    padding: 10,
+    marginTop: 4,
+  },
+  balanceModalNoteText: {
+    flex: 1,
+    fontSize: 11.5,
+    lineHeight: 16,
+    color: '#64748B',
+  },
+  modalHolidayBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2563EB',
+    borderRadius: 12,
+    paddingVertical: 12,
+  },
+  modalHolidayBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  modalCloseBtn: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalCloseBtnText: {
+    color: '#475569',
+    fontSize: 13,
+    fontWeight: '600',
   },
   balanceGrid: {
     flexDirection: 'row',
@@ -1591,12 +2151,15 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(15, 23, 42, 0.55)',
     justifyContent: 'flex-end',
   },
+  modalBackdropDismiss: {
+    flex: 1,
+  },
   modalCard: {
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 20,
-    maxHeight: '90%',
+    maxHeight: '92%',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1627,6 +2190,7 @@ const styles = StyleSheet.create({
   },
   modalScroll: {
     marginBottom: 14,
+    flexShrink: 1,
   },
   modalBalanceInfo: {
     flexDirection: 'row',
@@ -2001,5 +2565,179 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: '#475569',
+  },
+  fieldLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  adminSelectorBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  adminSelectorLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 10,
+  },
+  adminAvatarSmall: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#EFF6FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  adminAvatarAll: {
+    backgroundColor: '#CCFBF1',
+  },
+  adminSelectorTitle: {
+    fontSize: 13.5,
+    fontWeight: '600',
+    color: '#0F172A',
+  },
+  adminSelectorSubtitle: {
+    fontSize: 11.5,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  fieldHelperText: {
+    fontSize: 11.5,
+    color: '#94A3B8',
+    marginTop: 4,
+  },
+  adminOptionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#F1F5F9',
+    backgroundColor: '#FFFFFF',
+    marginBottom: 8,
+  },
+  adminOptionCardSelected: {
+    borderColor: '#2563EB',
+    backgroundColor: '#EFF6FF',
+  },
+  adminOptionAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#EEF2FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  adminInitials: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#4F46E5',
+  },
+  adminOptionName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  adminOptionNameSelected: {
+    color: '#1D4ED8',
+    fontWeight: '700',
+  },
+  adminOptionDesc: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  rejectModalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
+    padding: 22,
+    width: '100%',
+    maxWidth: 360,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.16,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  rejectNoticeText: {
+    fontSize: 13.5,
+    color: '#475569',
+    lineHeight: 19,
+    marginBottom: 8,
+  },
+  rejectInputLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#334155',
+    marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  rejectTextInput: {
+    borderWidth: 1.2,
+    borderColor: '#CBD5E1',
+    borderRadius: 12,
+    padding: 12,
+    fontSize: 14,
+    color: '#0F172A',
+    backgroundColor: '#F8FAFC',
+    minHeight: 85,
+  },
+  rejectErrorText: {
+    fontSize: 11.5,
+    color: '#DC2626',
+    fontWeight: '600',
+  },
+  rejectHintText: {
+    fontSize: 11.5,
+    color: '#64748B',
+  },
+  rejectCountText: {
+    fontSize: 11.5,
+    color: '#94A3B8',
+  },
+  rejectActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 18,
+  },
+  rejectCancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rejectCancelBtnText: {
+    fontSize: 13.5,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  rejectSubmitBtn: {
+    flex: 1.4,
+    flexDirection: 'row',
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#DC2626',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rejectSubmitBtnText: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 });

@@ -44,7 +44,18 @@ import PhotoUploadModal from '../components/common/PhotoUploadModal';
 import ImagePreviewModal from '../components/common/ImagePreviewModal';
 import AdjustLeaveModal from '../components/common/AdjustLeaveModal';
 
-const STANDARD_DEPARTMENTS = ['Lidar', 'BIM', 'GIS', 'HR', 'ADMIN', 'Sales'] as const;
+const STANDARD_DEPARTMENTS = [
+  'Lidar',
+  'BIM',
+  'GIS',
+  'HR',
+  'ADMIN',
+  'Sales',
+  'Accounts',
+  'Projects',
+  'Management',
+  'IT & Engineering',
+] as const;
 
 const REPORTING_MANAGERS = [
   'Amit Malik',
@@ -2311,7 +2322,7 @@ export default function AdminEmployees() {
                             <div className="p-2 rounded bg-white border small">{detailProfile?.emergencyContactRelationship || 'Not set'}</div>
                           )}
                         </Col>
-                        <Col sm={6}>
+                        <Col sm={12}>
                           <label className="text-muted small fw-semibold">Emergency Contact Phone</label>
                           {detailEditing ? (
                             <Form.Control
@@ -2325,22 +2336,6 @@ export default function AdminEmployees() {
                             />
                           ) : (
                             <div className="p-2 rounded bg-white border small fw-medium">{detailProfile?.emergencyContactPhone || 'Not set'}</div>
-                          )}
-                        </Col>
-                        <Col sm={6}>
-                          <label className="text-muted small fw-semibold">Alternate Emergency Phone</label>
-                          {detailEditing ? (
-                            <Form.Control
-                              size="sm"
-                              type="tel"
-                              inputMode="numeric"
-                              maxLength={10}
-                              placeholder="10-digit number"
-                              value={adminEditProfileForm.emergencyContactAltPhone}
-                              onChange={(e) => setAdminEditProfileForm({ ...adminEditProfileForm, emergencyContactAltPhone: e.target.value.replace(/\D/g, '').slice(0, 10) })}
-                            />
-                          ) : (
-                            <div className="p-2 rounded bg-white border small">{detailProfile?.emergencyContactAltPhone || 'Not set'}</div>
                           )}
                         </Col>
                       </Row>

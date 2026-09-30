@@ -362,7 +362,6 @@ export const checkOut = async (req: AuthRequest, res: Response): Promise<void> =
         const m = Math.floor(mins % 60);
         return `${h}h ${m}m`;
       };
-      const checkOutTime = new Date(updated.check_out).toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
       let notifMsg = `Checkout completed successfully for ${shift.name}. Duration: ${formatDuration(metrics.workingMinutes)}.`;
       if (metrics.breakDeducted && metrics.breakDeducted > 0) {
         notifMsg = `Checkout completed successfully for ${shift.name}. Duration: ${formatDuration(metrics.workingMinutes)} (Break deducted: ${metrics.breakDeducted}m).`;
@@ -370,12 +369,17 @@ export const checkOut = async (req: AuthRequest, res: Response): Promise<void> =
       if (metrics.overtimeMinutes > 0) {
         notifMsg += ` Overtime earned: ${formatDuration(metrics.overtimeMinutes)}.`;
       }
-      await query(`
-        INSERT INTO notifications (employee_id, type, attendance_date, message)
-        VALUES ($1, 'CHECK_OUT', $2, $3)
-      `, [employeeId, updated.attendance_date, notifMsg]);
+
+      await NotificationService.notifyUser(employeeId, {
+        title: 'Check-Out Successful',
+        message: notifMsg,
+        type: 'Attendance',
+        priority: 'Low',
+        actionUrl: '/my-attendance',
+        attendanceDate: updated.attendance_date,
+      });
     } catch (e: any) {
-      if (e.code !== '23505') console.error('Checkout notification error:', e);
+      console.error('Checkout notification error:', e);
     }
 
     res.json({
@@ -722,16 +726,30 @@ export const getCalendar = async (req: AuthRequest, res: Response): Promise<void
     while (current <= actualEnd) {
       const dStr = current.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
       
-      // If the date is strictly in the future, don't generate status.
+      // If the date is strictly in the future, check for holiday, leave, or sunday.
       if (current > today) {
+        let futureStatus = 'NOT_MARKED';
+        let leaveType = null;
+        let holidayName = null;
+
+        if (holMap.has(dStr)) {
+          futureStatus = 'HOLIDAY';
+          holidayName = holMap.get(dStr).name;
+        } else if (leaveMap.has(dStr)) {
+          futureStatus = 'ON_LEAVE';
+          leaveType = leaveMap.get(dStr).leave_type;
+        } else if (current.getDay() === 0) {
+          futureStatus = 'SUNDAY';
+        }
+
         calendar.push({
           date: dStr,
-          status: 'NOT_MARKED',
+          status: futureStatus,
           check_in: null,
           check_out: null,
           working_minutes: 0,
-          leave_type: null,
-          holiday_name: holMap.has(dStr) ? holMap.get(dStr).name : null,
+          leave_type: leaveType,
+          holiday_name: holidayName,
           is_sunday: current.getDay() === 0
         });
         current.setDate(current.getDate() + 1);

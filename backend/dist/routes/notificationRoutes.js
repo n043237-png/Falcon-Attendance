@@ -21,6 +21,7 @@ router.get('/preferences', notificationController_1.getPreferences);
 router.patch('/preferences', notificationController_1.updatePreferences);
 // Push Tokens
 router.post('/push-token', notificationController_1.registerPushToken);
+router.delete('/push-token', notificationController_1.unregisterPushToken);
 // Broadcast Announcement (Admin only)
 router.post('/broadcast', notificationController_1.broadcastAnnouncement);
 exports.default = router;

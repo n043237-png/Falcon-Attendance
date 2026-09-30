@@ -342,7 +342,7 @@ class ShiftService {
         u.designation,
         u.phone,
         u.status,
-        ep.profile_photo_url as "profilePhotoUrl"
+        u.profile_photo_url as "profilePhotoUrl"
       FROM users u
       LEFT JOIN employee_profiles ep ON ep.user_id = u.id
       WHERE u.shift_id = $1

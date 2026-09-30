@@ -28,7 +28,8 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 // For local development on Android emulator, 10.0.2.2 points to host machine.
 // For iOS Simulator, localhost works.
 import { Platform } from 'react-native';
-import { registerForPushNotificationsAsync } from '../services/pushNotificationService';
+import { registerForPushNotificationsAsync, unregisterPushNotificationsAsync } from '../services/pushNotificationService';
+import { notificationSync } from '../services/notificationSyncService';
 const API_URL = process.env.EXPO_PUBLIC_API_URL || (Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://localhost:3000');
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
@@ -77,6 +78,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const logout = async () => {
+    // 1. Stop background notification polling immediately
+    notificationSync.stop();
+
+    // 2. Unregister this device's push token from the backend (fire-and-forget)
+    if (token) {
+      unregisterPushNotificationsAsync(token).catch((err) =>
+        console.warn('[Push] Unregister error on logout:', err)
+      );
+    }
+
+    // 3. Clear local session
     await SecureStore.deleteItemAsync('userToken');
     setToken(null);
     setUser(null);

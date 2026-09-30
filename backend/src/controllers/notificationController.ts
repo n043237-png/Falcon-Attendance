@@ -52,7 +52,7 @@ export const getNotifications = async (req: AuthRequest, res: Response): Promise
     // Role-based recipient restriction:
     // Employees ONLY see notifications directed to them or their role.
     // Admins see notifications directed to them or admin role.
-    let filterQuery = `WHERE deleted_at IS NULL AND created_at >= (NOW() - INTERVAL '30 days') AND (recipient_user_id = $1 OR (role = $2 AND recipient_user_id IS NULL))`;
+    let filterQuery = `WHERE deleted_at IS NULL AND created_at >= (NOW() - INTERVAL '30 days') AND (COALESCE(recipient_user_id, employee_id) = $1 OR (role = $2 AND recipient_user_id IS NULL AND employee_id IS NULL))`;
     const queryParams: any[] = [userId, userRole];
 
     if (search) {
@@ -95,7 +95,7 @@ export const getNotifications = async (req: AuthRequest, res: Response): Promise
        WHERE deleted_at IS NULL 
          AND is_read = FALSE 
          AND created_at >= (NOW() - INTERVAL '30 days')
-         AND (recipient_user_id = $1 OR (role = $2 AND recipient_user_id IS NULL))`,
+         AND (COALESCE(recipient_user_id, employee_id) = $1 OR (role = $2 AND recipient_user_id IS NULL AND employee_id IS NULL))`,
       [userId, userRole]
     );
     const unreadCount = parseInt(unreadCountRes.rows[0].unread_count) || 0;
@@ -147,7 +147,7 @@ export const getUnreadNotifications = async (req: AuthRequest, res: Response): P
        WHERE deleted_at IS NULL 
          AND is_read = FALSE 
          AND created_at >= (NOW() - INTERVAL '30 days')
-         AND (recipient_user_id = $1 OR (role = $2 AND recipient_user_id IS NULL))`,
+         AND (COALESCE(recipient_user_id, employee_id) = $1 OR (role = $2 AND recipient_user_id IS NULL AND employee_id IS NULL))`,
       [userId, userRole]
     );
     const count = parseInt(countRes.rows[0].unread_count) || 0;
@@ -160,7 +160,7 @@ export const getUnreadNotifications = async (req: AuthRequest, res: Response): P
        FROM notifications
        WHERE deleted_at IS NULL 
          AND created_at >= (NOW() - INTERVAL '30 days')
-         AND (recipient_user_id = $1 OR (role = $2 AND recipient_user_id IS NULL))
+         AND (COALESCE(recipient_user_id, employee_id) = $1 OR (role = $2 AND recipient_user_id IS NULL AND employee_id IS NULL))
        ORDER BY created_at DESC
        LIMIT 10`,
       [userId, userRole]
@@ -193,7 +193,7 @@ export const markAsRead = async (req: AuthRequest, res: Response): Promise<void>
     const updateRes = await query(
       `UPDATE notifications 
        SET is_read = TRUE, read_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP 
-       WHERE id = $1 AND (recipient_user_id = $2 OR (role = $3 AND recipient_user_id IS NULL))
+       WHERE id = $1 AND (COALESCE(recipient_user_id, employee_id) = $2 OR (role = $3 AND recipient_user_id IS NULL AND employee_id IS NULL))
        RETURNING id`,
       [notificationId, userId, userRole]
     );
@@ -223,7 +223,7 @@ export const markAllAsRead = async (req: AuthRequest, res: Response): Promise<vo
       `UPDATE notifications 
        SET is_read = TRUE, read_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP 
        WHERE is_read = FALSE 
-         AND (recipient_user_id = $1 OR (role = $2 AND recipient_user_id IS NULL))`,
+         AND (COALESCE(recipient_user_id, employee_id) = $1 OR (role = $2 AND recipient_user_id IS NULL AND employee_id IS NULL))`,
       [userId, userRole]
     );
 
@@ -247,7 +247,7 @@ export const deleteNotification = async (req: AuthRequest, res: Response): Promi
     const delRes = await query(
       `UPDATE notifications 
        SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP 
-       WHERE id = $1 AND (recipient_user_id = $2 OR (role = $3 AND recipient_user_id IS NULL))
+       WHERE id = $1 AND (COALESCE(recipient_user_id, employee_id) = $2 OR (role = $3 AND recipient_user_id IS NULL AND employee_id IS NULL))
        RETURNING id`,
       [notificationId, userId, userRole]
     );
@@ -417,10 +417,12 @@ export const registerPushToken = async (req: AuthRequest, res: Response): Promis
 
     const { token, platform } = parsed.data;
 
+    // A device push token must strictly belong to the currently authenticated user
     await query(
       `INSERT INTO device_push_tokens (user_id, push_token, platform, updated_at)
        VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
-       ON CONFLICT (user_id, push_token) DO UPDATE SET
+       ON CONFLICT (push_token) DO UPDATE SET
+         user_id = EXCLUDED.user_id,
          platform = EXCLUDED.platform,
          updated_at = CURRENT_TIMESTAMP`,
       [userId, token, platform]
@@ -430,6 +432,34 @@ export const registerPushToken = async (req: AuthRequest, res: Response): Promis
   } catch (error) {
     console.error('registerPushToken error:', error);
     res.status(500).json({ success: false, error: { message: 'Failed to register push token' } });
+  }
+};
+
+/**
+ * DELETE /api/notifications/push-token
+ * Unregister device push token on logout
+ */
+export const unregisterPushToken = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const { token } = req.body || {};
+
+    if (token) {
+      await query(
+        `DELETE FROM device_push_tokens WHERE user_id = $1 AND push_token = $2`,
+        [userId, token]
+      );
+    } else {
+      await query(
+        `DELETE FROM device_push_tokens WHERE user_id = $1`,
+        [userId]
+      );
+    }
+
+    res.json({ success: true, message: 'Push token unregistered successfully' });
+  } catch (error) {
+    console.error('unregisterPushToken error:', error);
+    res.status(500).json({ success: false, error: { message: 'Failed to unregister push token' } });
   }
 };
 

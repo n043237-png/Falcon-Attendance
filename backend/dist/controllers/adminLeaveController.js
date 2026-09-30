@@ -249,13 +249,12 @@ const approveLeave = async (req, res) => {
     }
 };
 exports.approveLeave = approveLeave;
-const rejectSchema = zod_1.z.object({ comment: zod_1.z.string().min(3).max(500) });
 const rejectLeave = async (req, res) => {
     try {
         const adminId = req.user.id;
         const leaveId = parseInt(req.params.id);
-        const parsed = rejectSchema.safeParse(req.body);
-        if (!parsed.success) {
+        const commentVal = String(req.body.comment || req.body.comments || req.body.reason || '').trim();
+        if (commentVal.length < 3) {
             res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Rejection reason is required (min 3 chars).' } });
             return;
         }
@@ -289,12 +288,12 @@ const rejectLeave = async (req, res) => {
       UPDATE leave_requests 
       SET status = 'REJECTED', remarks = $1, approved_by = $2, approved_at = CURRENT_TIMESTAMP
       WHERE id = $3
-    `, [parsed.data.comment, adminId, leaveId]);
+    `, [commentVal, adminId, leaveId]);
         // Notify employee of rejection
         try {
             await notificationService_1.NotificationService.notifyUser(existRes.rows[0].employee_id, {
                 title: 'Leave Request Rejected',
-                message: `Your ${existRes.rows[0].leave_type} request was rejected. Reason: ${parsed.data.comment}`,
+                message: `Your ${existRes.rows[0].leave_type} request was rejected. Reason: ${commentVal}`,
                 type: 'Leave',
                 priority: 'High',
                 actionUrl: '/my-leave',

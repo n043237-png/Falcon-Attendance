@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { CustomAlert as Alert } from '../../components/CustomAlert';
 import { Ionicons } from '@expo/vector-icons';
 import { getEmployees, updateEmployeeStatus, resetPassword, deleteEmployee, updateJobStatus, Employee } from '../../api/adminApi';
 
@@ -112,28 +113,33 @@ export default function EmployeesScreen({ navigation }: any) {
   const renderItem = ({ item }: { item: any }) => (
     <View style={styles.card}>
       <View style={styles.cardHeader}>
-        <Text style={styles.name}>{item.name}</Text>
-        <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
-          {item.jobStatus === 'Provisional' ? (
-            <View style={[styles.statusBadge, { backgroundColor: '#FEF3C7' }]}>
-              <Text style={[styles.statusText, { color: '#B45309' }]}>PROVISIONAL</Text>
-            </View>
-          ) : (
-            <View style={[styles.statusBadge, { backgroundColor: '#D1FAE5' }]}>
-              <Text style={[styles.statusText, { color: '#047857' }]}>PERMANENT</Text>
-            </View>
-          )}
-          <View style={[styles.statusBadge, { backgroundColor: item.status === 'active' ? '#d4edda' : '#f8d7da' }]}>
-            <Text style={[styles.statusText, { color: item.status === 'active' ? '#155724' : '#721c24' }]}>
+        <View style={styles.cardHeaderLeft}>
+          <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
+            {item.name}
+          </Text>
+          <Text style={styles.employeeIdText}>ID: {item.employeeId}</Text>
+        </View>
+
+        <View style={styles.badgeColumn}>
+          <View style={[styles.statusBadge, item.jobStatus === 'Provisional' ? styles.badgeProvisional : styles.badgePermanent]}>
+            <Text style={[styles.statusText, item.jobStatus === 'Provisional' ? styles.badgeProvisionalText : styles.badgePermanentText]}>
+              {item.jobStatus === 'Provisional' ? 'PROVISIONAL' : 'PERMANENT'}
+            </Text>
+          </View>
+          <View style={[styles.statusBadge, item.status === 'active' ? styles.badgeActive : styles.badgeInactive]}>
+            <View style={[styles.statusDot, { backgroundColor: item.status === 'active' ? '#16A34A' : '#DC2626' }]} />
+            <Text style={[styles.statusText, item.status === 'active' ? styles.badgeActiveText : styles.badgeInactiveText]}>
               {item.status.toUpperCase()}
             </Text>
           </View>
         </View>
       </View>
-      <Text style={styles.employeeIdText}>ID: {item.employeeId}</Text>
+
       <Text style={styles.detailText}>{item.email}</Text>
       <Text style={styles.detailText}>{item.role.toUpperCase()}</Text>
-      {item.department && <Text style={styles.detailText}>{item.designation} - {item.department}</Text>}
+      {item.department && (
+        <Text style={styles.detailText}>{item.designation} - {item.department}</Text>
+      )}
       {item.jobStatus === 'Provisional' && item.provisionalEndDate && (
         <Text style={[styles.detailText, { color: '#B45309', fontWeight: '600', marginTop: 2 }]}>
           Probation Ends: {item.provisionalEndDate}
@@ -141,52 +147,60 @@ export default function EmployeesScreen({ navigation }: any) {
       )}
       
       <View style={styles.cardActions}>
-        <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap' }}>
-          {item.jobStatus === 'Provisional' && (
-            <TouchableOpacity 
-              style={[styles.actionBtn, { borderColor: '#10B981' }]}
-              onPress={() => handleMarkPermanent(item.id, item.name)}
-            >
-              <Ionicons name="checkmark-done-circle-outline" size={16} color="#10B981" />
-              <Text style={[styles.actionBtnText, { color: '#10B981' }]}>Permanent</Text>
-            </TouchableOpacity>
-          )}
+        {item.jobStatus === 'Provisional' && (
           <TouchableOpacity 
-            style={styles.actionBtn}
-            onPress={() => handleResetPassword(item.id)}
+            style={[styles.actionBtn, styles.actionBtnPermanent]}
+            onPress={() => handleMarkPermanent(item.id, item.name)}
+            activeOpacity={0.7}
           >
-            <Ionicons name="key-outline" size={16} color="#007bff" />
-            <Text style={styles.actionBtnText}>Reset</Text>
+            <Ionicons name="checkmark-done-circle-outline" size={15} color="#059669" />
+            <Text style={[styles.actionBtnText, { color: '#059669' }]}>Permanent</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.actionBtn}
-            onPress={() => navigation.navigate('EditEmployee', { employee: item })}
-          >
-            <Ionicons name="pencil-outline" size={16} color="#28a745" />
-            <Text style={[styles.actionBtnText, { color: '#28a745' }]}>Edit</Text>
-          </TouchableOpacity>
-        </View>
+        )}
+        <TouchableOpacity 
+          style={[styles.actionBtn, styles.actionBtnReset]}
+          onPress={() => handleResetPassword(item.id)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="key-outline" size={15} color="#2563EB" />
+          <Text style={[styles.actionBtnText, { color: '#2563EB' }]}>Reset</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.actionBtn, styles.actionBtnEdit]}
+          onPress={() => navigation.navigate('EditEmployee', { employee: item })}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="pencil-outline" size={15} color="#16A34A" />
+          <Text style={[styles.actionBtnText, { color: '#16A34A' }]}>Edit</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[
+            styles.actionBtn,
+            item.status === 'active' ? styles.actionBtnDeactivate : styles.actionBtnActivate
+          ]}
+          onPress={() => handleToggleStatus(item.id, item.status)}
+          activeOpacity={0.7}
+        >
+          <Ionicons 
+            name={item.status === 'active' ? "close-circle-outline" : "checkmark-circle-outline"} 
+            size={15} 
+            color={item.status === 'active' ? '#DC2626' : '#16A34A'} 
+          />
+          <Text style={[styles.actionBtnText, { color: item.status === 'active' ? '#DC2626' : '#16A34A' }]}>
+            {item.status === 'active' ? 'Deactivate' : 'Activate'}
+          </Text>
+        </TouchableOpacity>
 
-        <View style={{ flexDirection: 'row', gap: 10 }}>
+        {item.status === 'inactive' && (
           <TouchableOpacity 
-            style={[styles.actionBtn, { borderColor: item.status === 'active' ? '#dc3545' : '#28a745' }]}
-            onPress={() => handleToggleStatus(item.id, item.status)}
+            style={[styles.actionBtn, styles.actionBtnDelete]}
+            onPress={() => handleDelete(item.id)}
+            activeOpacity={0.7}
           >
-            <Ionicons name={item.status === 'active' ? "close-circle-outline" : "checkmark-circle-outline"} size={16} color={item.status === 'active' ? '#dc3545' : '#28a745'} />
-            <Text style={[styles.actionBtnText, { color: item.status === 'active' ? '#dc3545' : '#28a745' }]}>
-              {item.status === 'active' ? 'Deactivate' : 'Activate'}
-            </Text>
+            <Ionicons name="trash-outline" size={15} color="#DC2626" />
+            <Text style={[styles.actionBtnText, { color: '#DC2626' }]}>Delete</Text>
           </TouchableOpacity>
-
-          {item.status === 'inactive' && (
-            <TouchableOpacity 
-              style={[styles.actionBtn, { borderColor: '#dc3545' }]}
-              onPress={() => handleDelete(item.id)}
-            >
-              <Ionicons name="trash-outline" size={16} color="#dc3545" />
-            </TouchableOpacity>
-          )}
-        </View>
+        )}
       </View>
     </View>
   );
@@ -252,65 +266,133 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: '#fff',
-    borderRadius: 10,
-    padding: 15,
-    marginBottom: 10,
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
-    elevation: 3,
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 5,
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  cardHeaderLeft: {
+    flex: 1,
+    marginRight: 10,
   },
   name: {
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: 'bold',
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 2,
   },
   employeeIdText: {
-    fontSize: 16,
-    fontWeight: 'bold',
+    fontSize: 14,
+    fontWeight: '700',
     color: '#007bff',
-    marginBottom: 4,
+  },
+  badgeColumn: {
+    alignItems: 'flex-end',
+    justifyContent: 'flex-start',
+    gap: 4,
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  badgePermanent: {
+    backgroundColor: '#D1FAE5',
+  },
+  badgePermanentText: {
+    color: '#047857',
+  },
+  badgeProvisional: {
+    backgroundColor: '#FEF3C7',
+  },
+  badgeProvisionalText: {
+    color: '#B45309',
+  },
+  badgeActive: {
+    backgroundColor: '#DCFCE7',
+  },
+  badgeActiveText: {
+    color: '#15803D',
+  },
+  badgeInactive: {
+    backgroundColor: '#FEE2E2',
+  },
+  badgeInactiveText: {
+    color: '#B91C1C',
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 4,
+  },
+  statusText: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   detailText: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: 13.5,
+    color: '#64748B',
     marginTop: 2,
   },
   cardActions: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 15,
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 14,
     borderTopWidth: 1,
-    borderTopColor: '#eee',
-    paddingTop: 10,
+    borderTopColor: '#F1F5F9',
+    paddingTop: 12,
   },
   actionBtn: {
+    flexGrow: 1,
+    minWidth: 70,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 6,
+    justifyContent: 'center',
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#007bff',
+    backgroundColor: '#FFFFFF',
+  },
+  actionBtnPermanent: {
+    borderColor: '#059669',
+  },
+  actionBtnReset: {
+    borderColor: '#007bff',
+  },
+  actionBtnEdit: {
+    borderColor: '#16A34A',
+  },
+  actionBtnDeactivate: {
+    borderColor: '#DC2626',
+  },
+  actionBtnActivate: {
+    borderColor: '#16A34A',
+  },
+  actionBtnDelete: {
+    borderColor: '#DC2626',
   },
   actionBtnText: {
-    marginLeft: 6,
-    fontSize: 14,
-    color: '#007bff',
+    marginLeft: 5,
+    fontSize: 13,
     fontWeight: '600',
   },
   fab: {

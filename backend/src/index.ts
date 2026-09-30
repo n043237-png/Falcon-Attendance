@@ -13,6 +13,7 @@ import profileRoutes from './routes/profileRoutes';
 import notificationRoutes from './routes/notificationRoutes';
 import employeeRoutes from './routes/employeeRoutes';
 import payrollRoutes from './routes/payrollRoutes';
+import holidayRoutes from './routes/holidayRoutes';
 import { startScheduler } from './services/schedulerService';
 
 import path from 'path';
@@ -43,6 +44,7 @@ app.use('/api/leave', leaveRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/employee', employeeRoutes);
+app.use('/api/holidays', holidayRoutes);
 
 startScheduler();
 

@@ -74,3 +74,18 @@ export const registerPushToken = async (pushToken: string, platform: string, tok
   }
 };
 
+export const unregisterPushToken = async (pushToken: string | null, token: string) => {
+  try {
+    const res = await axios.delete(
+      `${API_URL}/api/notifications/push-token`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+        data: { token: pushToken }
+      }
+    );
+    return res.data;
+  } catch (error: any) {
+    return error.response?.data || { success: false, error: { message: 'Failed to unregister push token' } };
+  }
+};
+

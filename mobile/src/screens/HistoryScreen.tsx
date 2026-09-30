@@ -11,15 +11,23 @@ import {
   StatusBar,
   FlatList,
   RefreshControl,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { getAttendanceSummary, getAttendanceCalendar } from '../api/attendanceApi';
 import { getAdminAttendance } from '../api/adminApi';
 import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
+
+const MONTH_NAMES = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
 
 export default function HistoryScreen() {
+  const navigation = useNavigation<any>();
   const { user, token } = useAuth();
   const isAdmin = user?.role?.toLowerCase() === 'admin';
   const [adminTab, setAdminTab] = useState<'my' | 'all'>('my');
@@ -35,8 +43,11 @@ export default function HistoryScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Modal state
+  // Modal states
   const [selectedDay, setSelectedDay] = useState<any>(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showPickerModal, setShowPickerModal] = useState(false);
+  const [pickerYear, setPickerYear] = useState(new Date().getFullYear());
 
   const loadData = async (isRefresh = false) => {
     if (!token) return;
@@ -77,16 +88,20 @@ export default function HistoryScreen() {
   );
 
   const handlePrevMonth = () => {
-    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
+    const prevMonthDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1);
+    const minPastYear = new Date().getFullYear() - 3;
+    if (prevMonthDate.getFullYear() < minPastYear) {
+      return;
+    }
+    setCurrentDate(prevMonthDate);
   };
 
   const handleNextMonth = () => {
     const nextMonthDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1);
     const today = new Date();
-    if (
-      nextMonthDate.getFullYear() > today.getFullYear() ||
-      (nextMonthDate.getFullYear() === today.getFullYear() && nextMonthDate.getMonth() > today.getMonth())
-    ) {
+    // Allow navigation up to the end of next calendar year so users can access future holidays and calendar
+    const maxFutureYear = today.getFullYear() + 1;
+    if (nextMonthDate.getFullYear() > maxFutureYear) {
       return;
     }
     setCurrentDate(nextMonthDate);
@@ -132,9 +147,20 @@ export default function HistoryScreen() {
         return { color: '#D97706', bg: '#FEF3C7', label: 'Missing Out', icon: 'alert-circle' };
       case 'INSUFFICIENT_HOURS':
         return { color: '#DC2626', bg: '#FEF2F2', label: 'Low Hours', icon: 'time' };
+      case 'NOT_MARKED':
+        return { color: '#94A3B8', bg: '#F8FAFC', label: 'Upcoming', icon: 'time-outline' };
       default:
         return { color: '#94A3B8', bg: '#F8FAFC', label: 'Not Marked', icon: 'ellipse-outline' };
     }
+  };
+
+  const isCurrentDateToday = () => {
+    const t = new Date();
+    return (
+      currentDate.getDate() === t.getDate() &&
+      currentDate.getMonth() === t.getMonth() &&
+      currentDate.getFullYear() === t.getFullYear()
+    );
   };
 
   const renderAdminAllStaff = () => (
@@ -147,12 +173,21 @@ export default function HistoryScreen() {
             setCurrentDate(d);
           }}
           style={styles.navButton}
+          activeOpacity={0.7}
         >
           <Ionicons name="chevron-back" size={20} color="#334155" />
         </TouchableOpacity>
-        <Text style={styles.monthTitle}>
-          {currentDate.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}
-        </Text>
+        <TouchableOpacity
+          onPress={() => setShowDatePicker(true)}
+          style={styles.monthTitleBtn}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="calendar" size={16} color="#2563EB" style={{ marginRight: 7 }} />
+          <Text style={styles.monthTitle}>
+            {currentDate.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}
+          </Text>
+          <Ionicons name="chevron-down" size={15} color="#64748B" style={{ marginLeft: 6 }} />
+        </TouchableOpacity>
         <TouchableOpacity
           onPress={() => {
             const d = new Date(currentDate);
@@ -160,10 +195,24 @@ export default function HistoryScreen() {
             setCurrentDate(d);
           }}
           style={styles.navButton}
+          activeOpacity={0.7}
         >
           <Ionicons name="chevron-forward" size={20} color="#334155" />
         </TouchableOpacity>
       </View>
+
+      {!isCurrentDateToday() && (
+        <View style={styles.todayBar}>
+          <TouchableOpacity
+            onPress={() => setCurrentDate(new Date())}
+            style={styles.todayBadge}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="today" size={13} color="#2563EB" style={{ marginRight: 4 }} />
+            <Text style={styles.todayBadgeText}>Jump to Today</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {loading && !refreshing ? (
         <View style={styles.centerContainer}>
@@ -236,12 +285,24 @@ export default function HistoryScreen() {
       days.push(
         <TouchableOpacity
           key={dNum}
-          style={[styles.calDay, isMarked && { borderColor: st.color + '40', backgroundColor: st.bg + '40' }]}
+          style={[
+            styles.calDay,
+            isMarked
+              ? {
+                  borderColor: st.color + '55',
+                  backgroundColor: st.bg,
+                }
+              : styles.calDayUnmarked,
+          ]}
           onPress={() => setSelectedDay(dayData)}
-          disabled={!isMarked}
           activeOpacity={0.7}
         >
-          <Text style={[styles.calDayNum, isMarked && { fontWeight: '700', color: '#0F172A' }]}>
+          <Text
+            style={[
+              styles.calDayNum,
+              isMarked && { fontWeight: '700', color: '#0F172A' },
+            ]}
+          >
             {dNum}
           </Text>
           {isMarked && <View style={[styles.calDot, { backgroundColor: st.color }]} />}
@@ -274,49 +335,237 @@ export default function HistoryScreen() {
 
     return (
       <Modal visible={!!selectedDay} transparent animationType="fade" onRequestClose={() => setSelectedDay(null)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalDate}>{dateFormatted}</Text>
-              <TouchableOpacity onPress={() => setSelectedDay(null)} style={styles.modalCloseBtn}>
-                <Ionicons name="close" size={22} color="#64748B" />
-              </TouchableOpacity>
-            </View>
-
-            <View style={[styles.modalStatusBadge, { backgroundColor: st.bg }]}>
-              <Ionicons name={st.icon as any} size={18} color={st.color} />
-              <Text style={[styles.modalStatusText, { color: st.color }]}>{st.label}</Text>
-            </View>
-
-            {selectedDay.status === 'HOLIDAY' && (
-              <Text style={styles.modalInfoText}>Holiday: {selectedDay.holiday_name}</Text>
-            )}
-
-            {selectedDay.status === 'ON_LEAVE' && (
-              <Text style={styles.modalInfoText}>Leave: {selectedDay.leave_type}</Text>
-            )}
-
-            {['PRESENT', 'HALF_DAY', 'CHECKOUT_MISSING', 'INSUFFICIENT_HOURS'].includes(selectedDay.status) && (
-              <View style={styles.modalDetailsRow}>
-                <View style={styles.modalDetailCol}>
-                  <Text style={styles.modalLabel}>Check-in</Text>
-                  <Text style={styles.modalVal}>{formatTime(selectedDay.check_in)}</Text>
+        <TouchableWithoutFeedback onPress={() => setSelectedDay(null)}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback onPress={() => {}}>
+              <View style={styles.modalCard}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalDate}>{dateFormatted}</Text>
+                  <TouchableOpacity
+                    onPress={() => setSelectedDay(null)}
+                    style={styles.modalCloseBtn}
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                  >
+                    <Ionicons name="close" size={22} color="#64748B" />
+                  </TouchableOpacity>
                 </View>
-                <View style={styles.modalDetailCol}>
-                  <Text style={styles.modalLabel}>Check-out</Text>
-                  <Text style={styles.modalVal}>{formatTime(selectedDay.check_out)}</Text>
+
+                <View style={[styles.modalStatusBadge, { backgroundColor: st.bg }]}>
+                  <Ionicons name={st.icon as any} size={18} color={st.color} />
+                  <Text style={[styles.modalStatusText, { color: st.color }]}>{st.label}</Text>
                 </View>
-                <View style={styles.modalDetailCol}>
-                  <Text style={styles.modalLabel}>Working</Text>
-                  <Text style={styles.modalVal}>{formatHours(selectedDay.working_minutes)}</Text>
-                </View>
+
+                {selectedDay.status === 'HOLIDAY' && (
+                  <Text style={styles.modalInfoText}>Holiday: {selectedDay.holiday_name}</Text>
+                )}
+
+                {selectedDay.status === 'ON_LEAVE' && (
+                  <Text style={styles.modalInfoText}>Leave: {selectedDay.leave_type}</Text>
+                )}
+
+                {selectedDay.status === 'SUNDAY' && (
+                  <Text style={styles.modalInfoText}>Weekly Off (Sunday)</Text>
+                )}
+
+                {selectedDay.status === 'NOT_MARKED' && (
+                  <Text style={styles.modalInfoText}>Regular working day (upcoming)</Text>
+                )}
+
+                {['PRESENT', 'HALF_DAY', 'CHECKOUT_MISSING', 'INSUFFICIENT_HOURS'].includes(selectedDay.status) && (
+                  <View style={styles.modalDetailsRow}>
+                    <View style={styles.modalDetailCol}>
+                      <Text style={styles.modalLabel}>Check-in</Text>
+                      <Text style={styles.modalVal}>{formatTime(selectedDay.check_in)}</Text>
+                    </View>
+                    <View style={styles.modalDetailCol}>
+                      <Text style={styles.modalLabel}>Check-out</Text>
+                      <Text style={styles.modalVal}>{formatTime(selectedDay.check_out)}</Text>
+                    </View>
+                    <View style={styles.modalDetailCol}>
+                      <Text style={styles.modalLabel}>Working</Text>
+                      <Text style={styles.modalVal}>{formatHours(selectedDay.working_minutes)}</Text>
+                    </View>
+                  </View>
+                )}
               </View>
-            )}
+            </TouchableWithoutFeedback>
           </View>
-        </View>
+        </TouchableWithoutFeedback>
       </Modal>
     );
   };
+
+  const renderMonthYearPickerModal = () => {
+    if (!showPickerModal) return null;
+
+    const currentYear = new Date().getFullYear();
+    const availableYears = [];
+    for (let y = currentYear - 3; y <= currentYear + 2; y++) {
+      availableYears.push(y);
+    }
+
+    return (
+      <Modal
+        visible={showPickerModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowPickerModal(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setShowPickerModal(false)}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={[styles.modalCard, { maxWidth: 360, width: '92%', alignSelf: 'center', padding: 20 }]}>
+                {/* Header */}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <Text style={{ fontSize: 17, fontWeight: '700', color: '#0F172A' }}>Select Month & Year</Text>
+                  <TouchableOpacity
+                    onPress={() => setShowPickerModal(false)}
+                    style={{ padding: 4 }}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Ionicons name="close" size={22} color="#64748B" />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Year Navigation Bar */}
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    backgroundColor: '#F8FAFC',
+                    borderRadius: 12,
+                    paddingVertical: 8,
+                    paddingHorizontal: 12,
+                    marginBottom: 12,
+                    borderWidth: 1,
+                    borderColor: '#E2E8F0',
+                  }}
+                >
+                  <TouchableOpacity
+                    onPress={() => setPickerYear(prev => prev - 1)}
+                    style={{ padding: 6, borderRadius: 8, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#CBD5E1' }}
+                  >
+                    <Ionicons name="chevron-back" size={18} color="#334155" />
+                  </TouchableOpacity>
+
+                  <Text style={{ fontSize: 19, fontWeight: '800', color: '#0F172A' }}>{pickerYear}</Text>
+
+                  <TouchableOpacity
+                    onPress={() => setPickerYear(prev => prev + 1)}
+                    style={{ padding: 6, borderRadius: 8, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#CBD5E1' }}
+                  >
+                    <Ionicons name="chevron-forward" size={18} color="#334155" />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Quick Year Chips */}
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 14 }}>
+                  {availableYears.map(yr => {
+                    const isSelected = yr === pickerYear;
+                    return (
+                      <TouchableOpacity
+                        key={yr}
+                        onPress={() => setPickerYear(yr)}
+                        style={{
+                          paddingHorizontal: 14,
+                          paddingVertical: 7,
+                          borderRadius: 8,
+                          backgroundColor: isSelected ? '#2563EB' : '#F1F5F9',
+                          borderWidth: 1,
+                          borderColor: isSelected ? '#2563EB' : '#CBD5E1',
+                        }}
+                      >
+                        <Text
+                          style={{
+                            fontSize: 13,
+                            fontWeight: '700',
+                            color: isSelected ? '#FFFFFF' : '#475569',
+                          }}
+                        >
+                          {yr}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+
+                {/* Months Grid (3 columns x 4 rows) */}
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'space-between', marginTop: 4 }}>
+                  {MONTH_NAMES.map((name, idx) => {
+                    const isCurrent =
+                      pickerYear === currentDate.getFullYear() && idx === currentDate.getMonth();
+                    return (
+                      <TouchableOpacity
+                        key={name}
+                        onPress={() => {
+                          const updated = new Date(currentDate);
+                          updated.setFullYear(pickerYear);
+                          updated.setMonth(idx);
+                          updated.setDate(1);
+                          setCurrentDate(updated);
+                          setShowPickerModal(false);
+                        }}
+                        style={{
+                          width: '31%',
+                          paddingVertical: 12,
+                          borderRadius: 12,
+                          alignItems: 'center',
+                          backgroundColor: isCurrent ? '#2563EB' : '#F8FAFC',
+                          borderWidth: 1.2,
+                          borderColor: isCurrent ? '#2563EB' : '#E2E8F0',
+                        }}
+                      >
+                        <Text
+                          style={{
+                            fontSize: 14,
+                            fontWeight: isCurrent ? '700' : '600',
+                            color: isCurrent ? '#FFFFFF' : '#334155',
+                          }}
+                        >
+                          {name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                {/* Quick Return to Current Month */}
+                <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 16 }}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      const todayDate = new Date();
+                      setCurrentDate(todayDate);
+                      setShowPickerModal(false);
+                    }}
+                    style={{
+                      paddingVertical: 8,
+                      paddingHorizontal: 14,
+                      borderRadius: 8,
+                      backgroundColor: '#EFF6FF',
+                      borderWidth: 1,
+                      borderColor: '#BFDBFE',
+                    }}
+                  >
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: '#2563EB' }}>This Month</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+    );
+  };
+
+  const today = new Date();
+  const isFutureMonth =
+    currentDate.getFullYear() > today.getFullYear() ||
+    (currentDate.getFullYear() === today.getFullYear() && currentDate.getMonth() > today.getMonth());
+
+  const futureHolidaysCount = calendar.filter(d => d.status === 'HOLIDAY').length;
+  const futureSundaysCount = calendar.filter(d => d.status === 'SUNDAY' || d.is_sunday).length;
+  const futureLeavesCount = calendar.filter(d => d.status === 'ON_LEAVE' || d.status === 'HALF_DAY_LEAVE').length;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -355,9 +604,19 @@ export default function HistoryScreen() {
             <TouchableOpacity onPress={handlePrevMonth} style={styles.navButton} activeOpacity={0.7}>
               <Ionicons name="chevron-back" size={20} color="#334155" />
             </TouchableOpacity>
-            <Text style={styles.monthTitle}>
-              {currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-            </Text>
+            <TouchableOpacity
+              onPress={() => {
+                setPickerYear(currentDate.getFullYear());
+                setShowPickerModal(true);
+              }}
+              style={styles.monthTitleBtn}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.monthTitle}>
+                {currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+              </Text>
+              <Ionicons name="chevron-down" size={16} color="#64748B" style={{ marginLeft: 6 }} />
+            </TouchableOpacity>
             <TouchableOpacity onPress={handleNextMonth} style={styles.navButton} activeOpacity={0.7}>
               <Ionicons name="chevron-forward" size={20} color="#334155" />
             </TouchableOpacity>
@@ -383,7 +642,40 @@ export default function HistoryScreen() {
               }
             >
               {/* Executive Overview Card */}
-              {summary && (
+              {isFutureMonth ? (
+                <View style={styles.summaryCard}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+                    <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#EFF6FF', justifyContent: 'center', alignItems: 'center', marginRight: 10 }}>
+                      <Ionicons name="calendar" size={18} color="#2563EB" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 16, fontWeight: '700', color: '#0F172A' }}>Upcoming Month</Text>
+                      <Text style={{ fontSize: 12, color: '#64748B' }}>Company calendar & scheduled holidays</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.chipsRow}>
+                    <TouchableOpacity
+                      onPress={() => navigation.navigate('HolidayList')}
+                      style={[styles.statChip, { backgroundColor: '#CCFBF1', borderColor: '#99F6E4' }]}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.chipVal, { color: '#0F766E' }]}>{futureHolidaysCount}</Text>
+                      <Text style={[styles.chipLabel, { color: '#0F766E' }]}>Holidays ›</Text>
+                    </TouchableOpacity>
+
+                    <View style={[styles.statChip, { backgroundColor: '#F1F5F9', borderColor: '#CBD5E1' }]}>
+                      <Text style={[styles.chipVal, { color: '#334155' }]}>{futureSundaysCount}</Text>
+                      <Text style={[styles.chipLabel, { color: '#475569' }]}>Sundays</Text>
+                    </View>
+
+                    <View style={[styles.statChip, { backgroundColor: '#DBEAFE', borderColor: '#BFDBFE' }]}>
+                      <Text style={[styles.chipVal, { color: '#1D4ED8' }]}>{futureLeavesCount}</Text>
+                      <Text style={[styles.chipLabel, { color: '#1E40AF' }]}>Leaves</Text>
+                    </View>
+                  </View>
+                </View>
+              ) : summary ? (
                 <View style={styles.summaryCard}>
                   <View style={styles.summaryTopRow}>
                     <View style={styles.heroStatBox}>
@@ -398,33 +690,33 @@ export default function HistoryScreen() {
                   </View>
 
                   <View style={styles.chipsRow}>
-                    <View style={[styles.statChip, { backgroundColor: '#DCFCE7' }]}>
+                    <View style={[styles.statChip, { backgroundColor: '#DCFCE7', borderColor: '#BBF7D0' }]}>
                       <Text style={[styles.chipVal, { color: '#15803D' }]}>{summary.present}</Text>
                       <Text style={[styles.chipLabel, { color: '#166534' }]}>Present</Text>
                     </View>
 
-                    <View style={[styles.statChip, { backgroundColor: '#FEE2E2' }]}>
+                    <View style={[styles.statChip, { backgroundColor: '#FEE2E2', borderColor: '#FECACA' }]}>
                       <Text style={[styles.chipVal, { color: '#B91C1C' }]}>{summary.absent}</Text>
                       <Text style={[styles.chipLabel, { color: '#991B1B' }]}>Absent</Text>
                     </View>
 
-                    <View style={[styles.statChip, { backgroundColor: '#FEF3C7' }]}>
+                    <View style={[styles.statChip, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}>
                       <Text style={[styles.chipVal, { color: '#B45309' }]}>{summary.halfDays}</Text>
                       <Text style={[styles.chipLabel, { color: '#92400E' }]}>Half Day</Text>
                     </View>
 
-                    <View style={[styles.statChip, { backgroundColor: '#DBEAFE' }]}>
+                    <View style={[styles.statChip, { backgroundColor: '#DBEAFE', borderColor: '#BFDBFE' }]}>
                       <Text style={[styles.chipVal, { color: '#1D4ED8' }]}>{summary.onLeave}</Text>
                       <Text style={[styles.chipLabel, { color: '#1E40AF' }]}>Leave</Text>
                     </View>
 
-                    <View style={[styles.statChip, { backgroundColor: '#F1F5F9' }]}>
-                      <Text style={[styles.chipVal, { color: '#475569' }]}>{summary.late}</Text>
+                    <View style={[styles.statChip, { backgroundColor: '#F1F5F9', borderColor: '#CBD5E1' }]}>
+                      <Text style={[styles.chipVal, { color: '#334155' }]}>{summary.late}</Text>
                       <Text style={[styles.chipLabel, { color: '#475569' }]}>Late</Text>
                     </View>
                   </View>
                 </View>
-              )}
+              ) : null}
 
               {/* Calendar Card */}
               <View style={styles.calendarCard}>
@@ -438,6 +730,20 @@ export default function HistoryScreen() {
 
           {renderModal()}
         </>
+      )}
+      {renderMonthYearPickerModal()}
+      {showDatePicker && (
+        <DateTimePicker
+          value={currentDate}
+          mode="date"
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          onChange={(_event: any, selectedDate?: Date) => {
+            setShowDatePicker(false);
+            if (selectedDate) {
+              setCurrentDate(selectedDate);
+            }
+          }}
+        />
       )}
     </SafeAreaView>
   );
@@ -487,17 +793,49 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
   },
+  monthTitleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
   monthTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
     color: '#0F172A',
     letterSpacing: -0.3,
+  },
+  todayBar: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  todayBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  todayBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#2563EB',
   },
   navButton: {
     width: 36,
@@ -591,18 +929,21 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: '18%',
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: 9,
     paddingHorizontal: 4,
     borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   chipVal: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '800',
   },
   chipLabel: {
-    fontSize: 10,
-    fontWeight: '600',
+    fontSize: 10.5,
+    fontWeight: '700',
     marginTop: 2,
+    letterSpacing: 0.1,
   },
   calendarCard: {
     marginHorizontal: 16,
@@ -631,35 +972,39 @@ const styles = StyleSheet.create({
     width: '14.28%',
     textAlign: 'center',
     fontWeight: '700',
-    color: '#94A3B8',
+    color: '#64748B',
     marginBottom: 12,
     fontSize: 12,
     textTransform: 'uppercase',
   },
   calDayEmpty: {
     width: '14.28%',
-    height: 44,
+    height: 46,
   },
   calDay: {
     width: '14.28%',
-    height: 44,
+    height: 46,
     justifyContent: 'center',
     alignItems: 'center',
     borderRadius: 12,
-    borderWidth: 1,
+    borderWidth: 1.2,
     borderColor: 'transparent',
-    marginBottom: 4,
+    marginBottom: 5,
+  },
+  calDayUnmarked: {
+    borderColor: '#F1F5F9',
+    backgroundColor: '#F8FAFC',
   },
   calDayNum: {
-    fontSize: 14,
-    color: '#64748B',
-    fontWeight: '500',
+    fontSize: 14.5,
+    color: '#475569',
+    fontWeight: '600',
   },
   calDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-    marginTop: 3,
+    width: 5.5,
+    height: 5.5,
+    borderRadius: 2.75,
+    marginTop: 2.5,
   },
   modalOverlay: {
     flex: 1,

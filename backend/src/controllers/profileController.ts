@@ -252,7 +252,6 @@ export const uploadProfilePhotoHandler = async (req: AuthRequest, res: Response)
     }
 
     await query(`UPDATE users SET profile_photo_url = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [photoUrl, userId]);
-    await query(`UPDATE employee_profiles SET profile_photo_url = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2`, [photoUrl, userId]);
 
     res.json({
       success: true,
@@ -276,7 +275,6 @@ export const deleteProfilePhotoHandler = async (req: AuthRequest, res: Response)
     }
 
     await query(`UPDATE users SET profile_photo_url = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [userId]);
-    await query(`UPDATE employee_profiles SET profile_photo_url = NULL, updated_at = CURRENT_TIMESTAMP WHERE user_id = $1`, [userId]);
 
     res.json({
       success: true,

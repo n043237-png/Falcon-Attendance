@@ -5,7 +5,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
   Modal,
   TextInput,
   ScrollView,
@@ -14,6 +13,7 @@ import {
   StatusBar,
   RefreshControl,
 } from 'react-native';
+import { CustomAlert as Alert } from '../components/CustomAlert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
@@ -34,6 +34,7 @@ export default function ProfileScreen() {
   // Modals
   const [showEdit, setShowEdit] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [showPhotoOptions, setShowPhotoOptions] = useState(false);
 
   // Forms
   const [phone, setPhone] = useState('');
@@ -202,21 +203,13 @@ export default function ProfileScreen() {
             }
           }
         }
-      ]
+      ],
+      { cancelable: true }
     );
   };
 
   const handleAvatarPress = () => {
-    const options: { text: string; onPress?: () => void; style?: 'default' | 'cancel' | 'destructive' }[] = [
-      { text: 'Choose from Gallery', onPress: pickFromGallery },
-      { text: 'Take Photo', onPress: takePhotoWithCamera },
-    ];
-    if (profile?.profilePhotoUrl || photoUrl) {
-      options.push({ text: 'Remove Photo', onPress: handleRemovePhoto, style: 'destructive' });
-    }
-    options.push({ text: 'Cancel', style: 'cancel' });
-
-    Alert.alert('Profile Photo', 'Select an option to update your photo:', options);
+    setShowPhotoOptions(true);
   };
 
   const handleChangePassword = async () => {
@@ -469,6 +462,82 @@ export default function ProfileScreen() {
           <Text style={styles.btnTextLogout}>Sign Out</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Profile Photo Options Modal */}
+      <Modal
+        visible={showPhotoOptions}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setShowPhotoOptions(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalBg}
+          activeOpacity={1}
+          onPress={() => setShowPhotoOptions(false)}
+        >
+          <View style={styles.photoOptionsCard} onStartShouldSetResponder={() => true}>
+            <View style={styles.modalHeaderRow}>
+              <Text style={styles.modalTitle}>Profile Photo</Text>
+              <TouchableOpacity onPress={() => setShowPhotoOptions(false)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+                <Ionicons name="close" size={22} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.photoOptionsSubtitle}>Select an option to update your photo:</Text>
+
+            <TouchableOpacity
+              style={styles.photoOptionItem}
+              onPress={() => {
+                setShowPhotoOptions(false);
+                takePhotoWithCamera();
+              }}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.photoOptionIconBox, { backgroundColor: '#EFF6FF' }]}>
+                <Ionicons name="camera-outline" size={20} color="#2563EB" />
+              </View>
+              <Text style={styles.photoOptionText}>Take Photo</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.photoOptionItem}
+              onPress={() => {
+                setShowPhotoOptions(false);
+                pickFromGallery();
+              }}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.photoOptionIconBox, { backgroundColor: '#F0FDF4' }]}>
+                <Ionicons name="images-outline" size={20} color="#16A34A" />
+              </View>
+              <Text style={styles.photoOptionText}>Choose from Gallery</Text>
+            </TouchableOpacity>
+
+            {(Boolean(profile?.profilePhotoUrl) || Boolean(photoUrl)) && (
+              <TouchableOpacity
+                style={styles.photoOptionItem}
+                onPress={() => {
+                  setShowPhotoOptions(false);
+                  handleRemovePhoto();
+                }}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.photoOptionIconBox, { backgroundColor: '#FEF2F2' }]}>
+                  <Ionicons name="trash-outline" size={20} color="#DC2626" />
+                </View>
+                <Text style={[styles.photoOptionText, { color: '#DC2626' }]}>Remove Photo</Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              style={styles.photoOptionCancelBtn}
+              onPress={() => setShowPhotoOptions(false)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.photoOptionCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Edit Profile Modal */}
       <Modal visible={showEdit} animationType="slide" transparent onRequestClose={() => setShowEdit(false)}>
@@ -1256,6 +1325,56 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
     textDecorationLine: 'underline',
+  },
+  photoOptionsCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 20,
+    width: '90%',
+    maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  photoOptionsSubtitle: {
+    fontSize: 13.5,
+    color: '#64748B',
+    marginBottom: 16,
+    marginTop: 2,
+  },
+  photoOptionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+  },
+  photoOptionIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  photoOptionText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  photoOptionCancelBtn: {
+    marginTop: 12,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+  },
+  photoOptionCancelText: {
+    fontSize: 14.5,
+    fontWeight: '600',
+    color: '#475569',
   },
 });
 

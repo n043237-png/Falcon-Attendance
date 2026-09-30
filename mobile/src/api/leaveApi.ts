@@ -33,6 +33,31 @@ export interface LeaveRequest {
   assignedToEmail?: string | null;
 }
 
+export interface AdminApprover {
+  id: number;
+  name: string;
+  email: string;
+  employee_id?: string;
+}
+
+export const getAdmins = async (token: string) => {
+  try {
+    const res = await axios.get(`${API_URL}/api/leave/admins`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    return res.data;
+  } catch (error: any) {
+    try {
+      const fallbackRes = await axios.get(`${API_URL}/api/employee/admins`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      return fallbackRes.data;
+    } catch {
+      return error.response?.data || { success: false, error: { message: 'Network error fetching admins' } };
+    }
+  }
+};
+
 export const getLeaveBalances = async (token: string) => {
   try {
     const res = await axios.get(`${API_URL}/api/leave/balance`, {
@@ -174,7 +199,7 @@ export const rejectLeaveRequest = async (token: string, id: number, comments?: s
   try {
     const res = await axios.patch(
       `${API_URL}/api/admin/leave/${id}/reject`,
-      { comments },
+      { comment: comments, reason: comments, comments },
       { headers: { Authorization: `Bearer ${token}` } }
     );
     return res.data;

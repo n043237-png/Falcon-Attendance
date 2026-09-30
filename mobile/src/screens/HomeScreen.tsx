@@ -5,13 +5,13 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
   Platform,
   StatusBar,
   ScrollView,
   RefreshControl,
   Image,
 } from 'react-native';
+import { CustomAlert as Alert } from '../components/CustomAlert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
@@ -19,7 +19,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { getCurrentLocation } from '../services/locationService';
 import { getTodayAttendance, checkIn, checkOut, AttendanceRecord } from '../api/attendanceApi';
 import { resolvePhotoUrl } from '../api/profileApi';
-import { scheduleLocalShiftReminders } from '../services/pushNotificationService';
+import {
+  scheduleLocalShiftReminders,
+  cancelLateMarkReminder,
+  cancelShiftEndReminder,
+} from '../services/pushNotificationService';
 
 export default function HomeScreen() {
   const { user, token, logout, refreshUser } = useAuth();
@@ -51,13 +55,25 @@ export default function HomeScreen() {
         setAttendance(null);
       }
 
+      const isCheckedIn = Boolean(res.data?.attendance?.checkIn);
+      const isCheckedOut = Boolean(res.data?.attendance?.checkOut);
+
+      if (isCheckedIn) {
+        cancelLateMarkReminder();
+      }
+      if (isCheckedOut) {
+        cancelShiftEndReminder();
+      }
+
       if (res.success && res.data?.shift) {
         setShiftInfo(res.data.shift);
         scheduleLocalShiftReminders(
           res.data.shift.startTime,
           res.data.shift.endTime,
           res.data.shift.graceMinutes,
-          res.data.shift.lateAfter
+          res.data.shift.lateAfter,
+          isCheckedIn,
+          isCheckedOut
         );
       }
     } catch (e) {
@@ -87,6 +103,11 @@ export default function HomeScreen() {
           : await checkOut(locData.latitude, locData.longitude, locData.accuracy, token!);
 
       if (result.success) {
+        if (action === 'check-in') {
+          cancelLateMarkReminder();
+        } else {
+          cancelShiftEndReminder();
+        }
         Alert.alert('Success', action === 'check-in' ? 'Attendance marked successfully!' : 'Checked out successfully!');
         loadAttendance();
       } else {
@@ -464,6 +485,21 @@ export default function HomeScreen() {
             <View style={{ flex: 1 }}>
               <Text style={styles.serviceTitle}>Monthly History</Text>
               <Text style={styles.serviceDesc}>View attendance calendar & hours</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.serviceCard}
+            onPress={() => navigation.navigate('HolidayList')}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.serviceIconCircle, { backgroundColor: '#CCFBF1' }]}>
+              <Ionicons name="calendar-outline" size={22} color="#0F766E" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.serviceTitle}>Company Holidays</Text>
+              <Text style={styles.serviceDesc}>Official calendar & holiday schedule</Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
           </TouchableOpacity>

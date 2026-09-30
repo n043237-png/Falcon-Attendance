@@ -235,7 +235,6 @@ const uploadProfilePhotoHandler = async (req, res) => {
             await (0, upload_1.deleteProfilePhotoFile)(userRes.rows[0].profile_photo_url);
         }
         await (0, db_1.query)(`UPDATE users SET profile_photo_url = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [photoUrl, userId]);
-        await (0, db_1.query)(`UPDATE employee_profiles SET profile_photo_url = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2`, [photoUrl, userId]);
         res.json({
             success: true,
             data: {
@@ -258,7 +257,6 @@ const deleteProfilePhotoHandler = async (req, res) => {
             await (0, upload_1.deleteProfilePhotoFile)(userRes.rows[0].profile_photo_url);
         }
         await (0, db_1.query)(`UPDATE users SET profile_photo_url = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [userId]);
-        await (0, db_1.query)(`UPDATE employee_profiles SET profile_photo_url = NULL, updated_at = CURRENT_TIMESTAMP WHERE user_id = $1`, [userId]);
         res.json({
             success: true,
             message: 'Profile photo removed successfully',

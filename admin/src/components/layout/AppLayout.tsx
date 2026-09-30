@@ -18,7 +18,8 @@ import {
   ChevronDown,
   Briefcase,
   ArrowLeft,
-  Clock
+  Clock,
+  CalendarDays
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import Avatar from '../common/Avatar';
@@ -45,6 +46,7 @@ export default function AppLayout() {
     { name: 'Attendance', path: '/attendance', icon: CalendarCheck },
     { name: 'My Attendance', path: '/my-attendance', icon: UserCheck },
     { name: 'Leave Management', path: '/leave', icon: CalendarRange },
+    { name: 'Holidays', path: '/holidays', icon: CalendarDays },
     { name: 'Payroll', path: '/payroll', icon: Briefcase },
     { name: 'Reports', path: '/reports', icon: FileBarChart },
     { name: 'Notifications', path: '/notifications', icon: Bell },
@@ -55,6 +57,7 @@ export default function AppLayout() {
     { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
     { name: 'My Attendance', path: '/my-attendance', icon: CalendarCheck },
     { name: 'My Leave', path: '/my-leave', icon: CalendarRange },
+    { name: 'Holidays', path: '/holidays', icon: CalendarDays },
     { name: 'Salary Slips', path: '/salary-slips', icon: FileText },
     { name: 'Notifications', path: '/notifications', icon: Bell },
     { name: 'My Profile', path: '/profile', icon: UserCheck },

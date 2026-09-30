@@ -9,8 +9,8 @@ import {
   RefreshControl,
   Platform,
   StatusBar,
-  Alert,
 } from 'react-native';
+import { CustomAlert as Alert } from '../components/CustomAlert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';

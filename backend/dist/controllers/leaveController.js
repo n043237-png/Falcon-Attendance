@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.cancelLeave = exports.getLeaveRequest = exports.getLeaveHistory = exports.applyLeave = exports.validateLeave = exports.getBalances = void 0;
+exports.getLeaveAdmins = exports.cancelLeave = exports.getLeaveRequest = exports.getLeaveHistory = exports.applyLeave = exports.validateLeave = exports.getBalances = void 0;
 const zod_1 = require("zod");
 const db_1 = require("../db");
 const notificationService_1 = require("../services/notificationService");
@@ -338,3 +338,19 @@ const cancelLeave = async (req, res) => {
     }
 };
 exports.cancelLeave = cancelLeave;
+const getLeaveAdmins = async (req, res) => {
+    try {
+        const result = await (0, db_1.query)(`
+      SELECT id, name, email, employee_id
+      FROM users
+      WHERE (role = 'admin' OR 'admin' = ANY(roles)) AND status = 'active'
+      ORDER BY name ASC
+    `);
+        res.json({ success: true, data: result.rows });
+    }
+    catch (error) {
+        console.error('getLeaveAdmins error:', error);
+        res.status(500).json({ success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: error.message || 'Failed to fetch admins' } });
+    }
+};
+exports.getLeaveAdmins = getLeaveAdmins;

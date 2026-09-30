@@ -6,13 +6,13 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
-  Alert,
   Platform,
   Image,
   KeyboardAvoidingView,
   ScrollView,
   Keyboard,
 } from 'react-native';
+import { CustomAlert as Alert } from '../components/CustomAlert';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { SafeAreaView } from 'react-native-safe-area-context';

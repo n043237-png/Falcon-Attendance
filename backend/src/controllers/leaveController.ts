@@ -362,3 +362,19 @@ export const cancelLeave = async (req: AuthRequest, res: Response): Promise<void
     res.status(500).json({ success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'Failed to cancel leave' } });
   }
 };
+
+export const getLeaveAdmins = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const result = await query(`
+      SELECT id, name, email, employee_id
+      FROM users
+      WHERE (role = 'admin' OR 'admin' = ANY(roles)) AND status = 'active'
+      ORDER BY name ASC
+    `);
+    res.json({ success: true, data: result.rows });
+  } catch (error: any) {
+    console.error('getLeaveAdmins error:', error);
+    res.status(500).json({ success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: error.message || 'Failed to fetch admins' } });
+  }
+};
+

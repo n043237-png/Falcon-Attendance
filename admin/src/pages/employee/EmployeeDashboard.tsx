@@ -23,7 +23,8 @@ import {
   Sun,
   Coffee,
   Check,
-  FileCheck
+  FileCheck,
+  CalendarDays
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import Avatar from '../../components/common/Avatar';
@@ -628,10 +629,16 @@ export default function EmployeeDashboard() {
                 <h2 className="card-title mb-1">Leave Balances & Annual Quotas</h2>
                 <div className="caption-text">Year {new Date().getFullYear()} accrued leave allowances and usage</div>
               </div>
-              <Link to="/my-leave" className="btn btn-sm btn-primary">
-                <CalendarRange size={14} />
-                <span>Apply Leave</span>
-              </Link>
+              <div className="d-flex align-items-center gap-2">
+                <Link to="/holidays" className="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1.5" style={{ borderRadius: '8px', fontWeight: 600 }}>
+                  <CalendarDays size={14} />
+                  <span>Holidays</span>
+                </Link>
+                <Link to="/my-leave" className="btn btn-sm btn-primary d-inline-flex align-items-center gap-1.5" style={{ borderRadius: '8px', fontWeight: 600 }}>
+                  <CalendarRange size={14} />
+                  <span>Apply Leave</span>
+                </Link>
+              </div>
             </div>
 
             <div className="row g-3">

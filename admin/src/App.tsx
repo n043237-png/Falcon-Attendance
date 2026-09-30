@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import { BrowserRouter, Routes, Route, Navigate, Link } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { CustomAlertProvider } from './context/CustomAlertContext';
 import {
   Users,
   CalendarCheck,
@@ -37,6 +38,7 @@ import EmployeeDashboard from './pages/employee/EmployeeDashboard';
 import MyAttendance from './pages/employee/MyAttendance';
 import MyLeave from './pages/employee/MyLeave';
 import SalarySlips from './pages/employee/SalarySlips';
+import HolidayList from './pages/employee/HolidayList';
 
 import NotificationsPage from './pages/NotificationsPage';
 import MyProfile from './pages/MyProfile';
@@ -400,42 +402,45 @@ function SettingsRouter() {
 function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<Login />} />
+      <CustomAlertProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<Login />} />
 
-          <Route element={<ProtectedRoute />}>
-            <Route element={<AppLayout />}>
-              {/* Shared Routes */}
-              <Route path="/dashboard" element={<DashboardRouter />} />
-              <Route path="/settings" element={<SettingsRouter />} />
-              <Route path="/profile" element={<MyProfile />} />
-              <Route path="/notifications" element={<NotificationsPage />} />
+            <Route element={<ProtectedRoute />}>
+              <Route element={<AppLayout />}>
+                {/* Shared Routes */}
+                <Route path="/dashboard" element={<DashboardRouter />} />
+                <Route path="/settings" element={<SettingsRouter />} />
+                <Route path="/profile" element={<MyProfile />} />
+                <Route path="/notifications" element={<NotificationsPage />} />
 
-              {/* Admin Routes */}
-              <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
-                <Route path="/employees" element={<AdminEmployees />} />
-                <Route path="/shifts" element={<AdminShifts />} />
-                <Route path="/attendance" element={<AdminAttendance />} />
-                <Route path="/payroll" element={<AdminPayroll />} />
-                <Route path="/reports" element={<AdminReports />} />
-                <Route path="/leave" element={<AdminLeave />} />
-                <Route path="/leave-init" element={<LeaveInitialization />} />
-              </Route>
+                {/* Admin Routes */}
+                <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
+                  <Route path="/employees" element={<AdminEmployees />} />
+                  <Route path="/shifts" element={<AdminShifts />} />
+                  <Route path="/attendance" element={<AdminAttendance />} />
+                  <Route path="/payroll" element={<AdminPayroll />} />
+                  <Route path="/reports" element={<AdminReports />} />
+                  <Route path="/leave" element={<AdminLeave />} />
+                  <Route path="/leave-init" element={<LeaveInitialization />} />
+                </Route>
 
-              {/* Personal Self-Service Routes (Available to Employees & Admins) */}
-              <Route element={<ProtectedRoute allowedRoles={['employee', 'admin']} />}>
-                <Route path="/my-attendance" element={<MyAttendance />} />
-                <Route path="/my-leave" element={<MyLeave />} />
-                <Route path="/salary-slips" element={<SalarySlips />} />
+                {/* Personal Self-Service Routes (Available to Employees & Admins) */}
+                <Route element={<ProtectedRoute allowedRoles={['employee', 'admin']} />}>
+                  <Route path="/my-attendance" element={<MyAttendance />} />
+                  <Route path="/my-leave" element={<MyLeave />} />
+                  <Route path="/salary-slips" element={<SalarySlips />} />
+                  <Route path="/holidays" element={<HolidayList />} />
+                </Route>
               </Route>
             </Route>
-          </Route>
 
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
-        </Routes>
-      </BrowserRouter>
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
+        </BrowserRouter>
+      </CustomAlertProvider>
     </AuthProvider>
   );
 }

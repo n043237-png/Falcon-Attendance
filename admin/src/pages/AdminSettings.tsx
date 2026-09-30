@@ -63,6 +63,7 @@ export default function AdminSettings() {
   // New holiday form
   const [newHolDate, setNewHolDate] = useState('');
   const [newHolName, setNewHolName] = useState('');
+  const [newHolDesc, setNewHolDesc] = useState('');
 
   const loadData = async () => {
     try {
@@ -237,12 +238,13 @@ export default function AdminSettings() {
       const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/admin/holidays`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ holidayDate: newHolDate, name: newHolName })
+        body: JSON.stringify({ holidayDate: newHolDate, name: newHolName, description: newHolDesc })
       });
       const data = await res.json();
       if (data.success) {
         setNewHolDate('');
         setNewHolName('');
+        setNewHolDesc('');
         setMsg('Holiday added successfully.');
         loadData();
       } else {
@@ -908,7 +910,7 @@ export default function AdminSettings() {
                       type="date"
                       value={newHolDate}
                       onChange={(e) => setNewHolDate(e.target.value)}
-                      style={{ height: '40px', fontSize: '13.5px', borderRadius: '8px' }}
+                      style={{ height: '38px', fontSize: '13px', borderRadius: '8px' }}
                       required
                     />
                   </Col>
@@ -918,12 +920,21 @@ export default function AdminSettings() {
                       placeholder="e.g. Diwali, Christmas"
                       value={newHolName}
                       onChange={(e) => setNewHolName(e.target.value)}
-                      style={{ height: '40px', fontSize: '13.5px', borderRadius: '8px' }}
+                      style={{ height: '38px', fontSize: '13px', borderRadius: '8px' }}
                       required
                     />
                   </Col>
                   <Col sm={12}>
-                    <button type="submit" className="btn btn-primary w-100" style={{ height: '40px', fontSize: '13.5px', borderRadius: '8px' }}>
+                    <Form.Control
+                      type="text"
+                      placeholder="Optional description (e.g. Festival of Lights)..."
+                      value={newHolDesc}
+                      onChange={(e) => setNewHolDesc(e.target.value)}
+                      style={{ height: '38px', fontSize: '13px', borderRadius: '8px' }}
+                    />
+                  </Col>
+                  <Col sm={12}>
+                    <button type="submit" className="btn btn-primary w-100" style={{ height: '38px', fontSize: '13px', borderRadius: '8px' }}>
                       <Plus size={15} />
                       <span>Add to Calendar</span>
                     </button>
@@ -938,14 +949,15 @@ export default function AdminSettings() {
                 <thead style={{ background: '#F8FAFC' }}>
                   <tr>
                     <th style={{ fontSize: '11.5px', padding: '12px 14px' }}>Date</th>
-                    <th style={{ fontSize: '11.5px', padding: '12px 14px' }}>Holiday Name</th>
+                    <th style={{ fontSize: '11.5px', padding: '12px 14px' }}>Day</th>
+                    <th style={{ fontSize: '11.5px', padding: '12px 14px' }}>Holiday Name & Description</th>
                     <th className="text-end" style={{ fontSize: '11.5px', padding: '12px 14px' }}>Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {holidays.length === 0 ? (
                     <tr>
-                      <td colSpan={3} className="text-center py-4 text-muted" style={{ fontSize: '13.5px' }}>
+                      <td colSpan={4} className="text-center py-4 text-muted" style={{ fontSize: '13.5px' }}>
                         No official holidays configured yet.
                       </td>
                     </tr>
@@ -957,7 +969,15 @@ export default function AdminSettings() {
                             {h.holidayDate}
                           </span>
                         </td>
-                        <td className="fw-medium text-dark" style={{ padding: '12px 14px', fontSize: '13.5px' }}>{h.name}</td>
+                        <td style={{ padding: '12px 14px' }}>
+                          <span className="text-muted small fw-medium">{h.day || '-'}</span>
+                        </td>
+                        <td style={{ padding: '12px 14px' }}>
+                          <div className="fw-medium text-dark" style={{ fontSize: '13.5px' }}>{h.name}</div>
+                          {h.description && (
+                            <div className="text-muted" style={{ fontSize: '11.5px', marginTop: '2px' }}>{h.description}</div>
+                          )}
+                        </td>
                         <td className="text-end" style={{ padding: '12px 14px' }}>
                           <button
                             className="btn btn-outline-danger btn-sm p-1"

@@ -195,7 +195,7 @@ router.get('/admins', async (req, res) => {
         const result = await (0, db_1.query)(`
       SELECT id, name, email, employee_id
       FROM users
-      WHERE role = 'admin' AND status = 'active'
+      WHERE (role = 'admin' OR 'admin' = ANY(roles)) AND status = 'active'
       ORDER BY name ASC
     `);
         res.json({ success: true, data: result.rows });
