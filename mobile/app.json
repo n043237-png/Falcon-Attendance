@@ -2,7 +2,7 @@
   "expo": {
     "name": "Falcon Attendance",
     "slug": "falcon-attendance",
-    "version": "1.0.7",
+    "version": "1.0.8",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -16,7 +16,7 @@
     },
     "android": {
       "package": "com.falconinfo.attendance",
-      "versionCode": 8,
+      "versionCode": 9,
       "googleServicesFile": "./google-services.json",
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
@@ -24,14 +24,11 @@
         "backgroundColor": "#ffffff"
       },
       "permissions": [
-        "ACCESS_COARSE_LOCATION",
-        "ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION",
-        "POST_NOTIFICATIONS",
         "android.permission.POST_NOTIFICATIONS",
-        "SCHEDULE_EXACT_ALARM",
-        "android.permission.SCHEDULE_EXACT_ALARM"
+        "android.permission.SCHEDULE_EXACT_ALARM",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -71,9 +68,10 @@
         }
       ]
     ],
+    "owner": "aman1234567890s-team",
     "extra": {
       "eas": {
-        "projectId": "8542a6b4-323b-4bac-b3e8-42a5ba83b624"
+        "projectId": "5db1250c-a74c-4d1d-8553-9f60acbaeee0"
       }
     }
   }

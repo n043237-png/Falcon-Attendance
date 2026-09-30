@@ -69,7 +69,7 @@ export async function registerForPushNotificationsAsync(authToken: string): Prom
       const projectId =
         Constants.expoConfig?.extra?.eas?.projectId ??
         Constants.easConfig?.projectId ??
-        '8542a6b4-323b-4bac-b3e8-42a5ba83b624';
+        '5db1250c-a74c-4d1d-8553-9f60acbaeee0';
 
       const tokenResponse = await Notifications.getExpoPushTokenAsync({ projectId });
       const pushToken = tokenResponse.data;
