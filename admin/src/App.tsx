@@ -173,10 +173,13 @@ function AdminDashboardView() {
               <Avatar
                 src={user?.profile_photo_url || user?.profilePhotoUrl}
                 name={user?.name}
-                size={62}
+                size={82}
                 showBorder={true}
-                borderColor="rgba(255, 255, 255, 0.95)"
-                style={{ boxShadow: '0 4px 14px rgba(37, 99, 235, 0.18)', cursor: 'pointer' }}
+                borderColor="#FFFFFF"
+                style={{ 
+                  boxShadow: '0 6px 20px rgba(37, 99, 235, 0.22), 0 0 0 3px rgba(255, 255, 255, 0.95)', 
+                  cursor: 'pointer' 
+                }}
                 onClick={() => setShowImagePreview(true)}
                 alt="Click to view full photo"
               />
