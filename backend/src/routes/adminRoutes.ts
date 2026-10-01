@@ -33,6 +33,13 @@ import {
   assignShift, 
   bulkAssignShift 
 } from '../controllers/shiftController';
+import {
+  getEmployeeIdCard,
+  downloadEmployeeIdCardPdf,
+  getBulkIdCardsData,
+  downloadBulkIdCardsPdf,
+  downloadBulkIdCardsZip
+} from '../controllers/idCardController';
 import { authenticateToken, requireRole } from '../middlewares/auth';
 import { uploadProfilePhoto } from '../middlewares/upload';
 import { uploadDocumentMiddleware } from '../services/documentService';
@@ -146,5 +153,12 @@ router.delete('/shifts/:id', deleteShift);
 router.get('/shifts/:id/employees', getShiftEmployees);
 router.post('/shifts/assign', assignShift);
 router.post('/shifts/bulk-assign', bulkAssignShift);
+
+// Digital Employee ID Card Management Routes
+router.get('/employees/:id/id-card', getEmployeeIdCard);
+router.get('/employees/:id/id-card/pdf', downloadEmployeeIdCardPdf);
+router.get('/id-cards/bulk-data', getBulkIdCardsData);
+router.post('/id-cards/bulk-pdf', downloadBulkIdCardsPdf);
+router.post('/id-cards/bulk-zip', downloadBulkIdCardsZip);
 
 export default router;

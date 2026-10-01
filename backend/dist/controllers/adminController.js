@@ -122,7 +122,10 @@ const getAttendance = async (req, res) => {
                ST_Y(att.check_in_location::geometry) as check_in_lat,
                ST_X(att.check_in_location::geometry) as check_in_lng,
                ST_Y(att.check_out_location::geometry) as check_out_lat,
-               ST_X(att.check_out_location::geometry) as check_out_lng
+               ST_X(att.check_out_location::geometry) as check_out_lng,
+               COALESCE(att.attendance_mode, u.attendance_mode, 'Office') as attendance_mode,
+               att.check_in_address, att.check_in_selfie_url,
+               att.check_out_address, att.check_out_selfie_url
         FROM users u
         LEFT JOIN attendance att ON u.id = att.employee_id AND att.attendance_date = $1::date
         LEFT JOIN expanded_leaves el ON u.id = el.employee_id AND el.attendance_date = $1::date
@@ -138,12 +141,16 @@ const getAttendance = async (req, res) => {
                ST_Y(a.check_in_location::geometry) as check_in_lat,
                ST_X(a.check_in_location::geometry) as check_in_lng,
                ST_Y(a.check_out_location::geometry) as check_out_lat,
-               ST_X(a.check_out_location::geometry) as check_out_lng
+               ST_X(a.check_out_location::geometry) as check_out_lng,
+               a.attendance_mode, a.check_in_address, a.check_in_selfie_url,
+               a.check_out_address, a.check_out_selfie_url
         FROM attendance a
         UNION ALL
         SELECT NULL::integer as id, el.attendance_date, el.employee_id, 'ON LEAVE' as computed_status, NULL as check_in, NULL as check_out, 0 as working_minutes,
                false as is_late, 0 as late_minutes,
-               NULL::numeric as check_in_lat, NULL::numeric as check_in_lng, NULL::numeric as check_out_lat, NULL::numeric as check_out_lng
+               NULL::numeric as check_in_lat, NULL::numeric as check_in_lng, NULL::numeric as check_out_lat, NULL::numeric as check_out_lng,
+               'Office' as attendance_mode, NULL as check_in_address, NULL as check_in_selfie_url,
+               NULL as check_out_address, NULL as check_out_selfie_url
         FROM expanded_leaves el
         WHERE NOT EXISTS (
           SELECT 1 FROM attendance a 
@@ -154,6 +161,9 @@ const getAttendance = async (req, res) => {
       SELECT a.id, a.attendance_date, a.check_in, a.check_out, a.working_minutes, a.computed_status as status,
              a.is_late, a.late_minutes,
              a.check_in_lat, a.check_in_lng, a.check_out_lat, a.check_out_lng,
+             COALESCE(a.attendance_mode, u.attendance_mode, 'Office') as attendance_mode,
+             a.check_in_address, a.check_in_selfie_url,
+             a.check_out_address, a.check_out_selfie_url,
              u.name as employee_name, u.employee_id as employee_code, u.profile_photo_url as profile_photo_url,
              u.shift_id as shift_id, s.name as shift_name, s.code as shift_code
       FROM combined a
@@ -185,6 +195,11 @@ const getAttendance = async (req, res) => {
                         status: isLateRecord ? 'LATE' : (rec.status?.toUpperCase() || 'ABSENT'),
                         isLate: isLateRecord,
                         lateMinutes: rec.late_minutes ? Math.round(parseFloat(rec.late_minutes)) : 0,
+                        attendanceMode: rec.attendance_mode || 'Office',
+                        address: rec.check_in_address || null,
+                        selfieUrl: rec.check_in_selfie_url || null,
+                        checkOutAddress: rec.check_out_address || null,
+                        checkOutSelfieUrl: rec.check_out_selfie_url || null,
                         checkInLat: isAbsentOrLeave || !rec.check_in_lat ? null : parseFloat(rec.check_in_lat),
                         checkInLng: isAbsentOrLeave || !rec.check_in_lng ? null : parseFloat(rec.check_in_lng),
                         checkOutLat: isAbsentOrLeave || !rec.check_out_lat ? null : parseFloat(rec.check_out_lat),

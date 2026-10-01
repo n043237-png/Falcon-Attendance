@@ -12,6 +12,11 @@ export interface AttendanceRecord {
   workingMinutes: number;
   status: string;
   isLate?: boolean;
+  attendanceMode?: string;
+  checkInAddress?: string | null;
+  checkInSelfieUrl?: string | null;
+  checkOutAddress?: string | null;
+  checkOutSelfieUrl?: string | null;
   holidayName?: string | null;
   leaveType?: string | null;
 }
@@ -19,6 +24,7 @@ export interface AttendanceRecord {
 export interface TodayResponse {
   success: boolean;
   data?: {
+    attendanceMode?: string;
     attendance: AttendanceRecord | null;
     shift?: {
       shiftId: number;
@@ -40,10 +46,17 @@ export interface TodayResponse {
   };
 }
 
-export const checkIn = async (latitude: number, longitude: number, accuracy: number, token: string) => {
+export const checkIn = async (
+  latitude: number,
+  longitude: number,
+  accuracy: number,
+  token: string,
+  address?: string,
+  selfie?: string
+) => {
   try {
     const res = await axios.post(`${API_URL}/api/attendance/check-in`, 
-      { latitude, longitude, accuracy },
+      { latitude, longitude, accuracy, address, selfie },
       { headers: { Authorization: `Bearer ${token}` } }
     );
     return res.data;
@@ -52,10 +65,17 @@ export const checkIn = async (latitude: number, longitude: number, accuracy: num
   }
 };
 
-export const checkOut = async (latitude: number, longitude: number, accuracy: number, token: string) => {
+export const checkOut = async (
+  latitude: number,
+  longitude: number,
+  accuracy: number,
+  token: string,
+  address?: string,
+  selfie?: string
+) => {
   try {
     const res = await axios.post(`${API_URL}/api/attendance/check-out`, 
-      { latitude, longitude, accuracy },
+      { latitude, longitude, accuracy, address, selfie },
       { headers: { Authorization: `Bearer ${token}` } }
     );
     return res.data;

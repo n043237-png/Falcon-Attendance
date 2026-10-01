@@ -19,9 +19,9 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { getProfile, updateProfile, changePassword, resolvePhotoUrl, uploadProfilePhoto, deleteProfilePhoto } from '../api/profileApi';
 import { Ionicons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
 import { sendTestNotification } from '../services/pushNotificationService';
 import { FullImageModal } from '../components/FullImageModal';
+import { DigitalIdCardModal } from '../components/DigitalIdCardModal';
 
 export default function ProfileScreen() {
   const { token, logout, updateUser } = useAuth();
@@ -37,6 +37,7 @@ export default function ProfileScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [showPhotoOptions, setShowPhotoOptions] = useState(false);
   const [showFullPhoto, setShowFullPhoto] = useState(false);
+  const [showIdCard, setShowIdCard] = useState(false);
 
   // Forms
   const [phone, setPhone] = useState('');
@@ -366,6 +367,26 @@ export default function ProfileScreen() {
                 <Text style={styles.roleBadgeText}>{(profile.role || 'EMPLOYEE').toUpperCase()}</Text>
               </View>
 
+              <View style={[
+                styles.modeBadge,
+                (profile.attendanceMode || 'Office') === 'Field'
+                  ? { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }
+                  : { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }
+              ]}>
+                <Ionicons
+                  name={(profile.attendanceMode || 'Office') === 'Field' ? 'navigate' : 'business'}
+                  size={12}
+                  color={(profile.attendanceMode || 'Office') === 'Field' ? '#D97706' : '#2563EB'}
+                  style={{ marginRight: 4 }}
+                />
+                <Text style={[
+                  styles.modeBadgeText,
+                  { color: (profile.attendanceMode || 'Office') === 'Field' ? '#B45309' : '#1D4ED8' }
+                ]}>
+                  {((profile.attendanceMode || 'Office')).toUpperCase()}
+                </Text>
+              </View>
+
               {profile.jobStatus === 'Provisional' ? (
                 <View style={styles.provisionalBadge}>
                   <Ionicons name="time-outline" size={12} color="#D97706" style={{ marginRight: 4 }} />
@@ -386,6 +407,28 @@ export default function ProfileScreen() {
                   <Text style={styles.label}>Employee ID</Text>
                 </View>
                 <Text style={styles.value}>{profile.employeeId}</Text>
+              </View>
+
+              <View style={styles.infoRow}>
+                <View style={styles.iconLabel}>
+                  <Ionicons name="navigate-circle-outline" size={16} color="#64748B" />
+                  <Text style={styles.label}>Attendance Mode</Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Text style={[
+                    styles.value,
+                    {
+                      fontWeight: '700',
+                      color: (profile.attendanceMode || 'Office') === 'Field' ? '#D97706' : '#2563EB',
+                      marginRight: 4
+                    }
+                  ]}>
+                    {(profile.attendanceMode || 'Office') === 'Field' ? '📍 Field' : '🏢 Office'}
+                  </Text>
+                  <Text style={{ fontSize: 10, color: '#94A3B8', fontWeight: '500' }}>
+                    (Read-only)
+                  </Text>
+                </View>
               </View>
 
               <View style={styles.infoRow}>
@@ -522,6 +565,23 @@ export default function ProfileScreen() {
         )}
 
         {/* Action Buttons */}
+        <TouchableOpacity
+          style={styles.btnIdCard}
+          onPress={() => setShowIdCard(true)}
+          activeOpacity={0.85}
+        >
+          <View style={styles.idCardBtnLeft}>
+            <View style={styles.idCardIconBadge}>
+              <Ionicons name="card" size={20} color="#2563EB" />
+            </View>
+            <View>
+              <Text style={styles.idCardBtnTitle}>Official Employee ID Card</Text>
+              <Text style={styles.idCardBtnSub}>Digital credential with verification QR</Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="#64748B" />
+        </TouchableOpacity>
+
         <TouchableOpacity style={styles.btnPrimary} onPress={() => setShowEdit(true)} activeOpacity={0.8}>
           <Ionicons name="create-outline" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
           <Text style={styles.btnTextPrimary}>Edit Profile Details</Text>
@@ -991,6 +1051,13 @@ export default function ProfileScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Official Digital ID Card Modal */}
+      <DigitalIdCardModal
+        visible={showIdCard}
+        onClose={() => setShowIdCard(false)}
+        token={token}
+      />
     </SafeAreaView>
   );
 }
@@ -1122,6 +1189,19 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.5,
   },
+  modeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  modeBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
   permanentBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1249,6 +1329,45 @@ const styles = StyleSheet.create({
     color: '#0F172A',
     fontSize: 14,
     fontWeight: '600',
+  },
+  btnIdCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1.5,
+    borderColor: '#DBEAFE',
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  idCardBtnLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  idCardIconBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  idCardBtnTitle: {
+    fontSize: 14.5,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  idCardBtnSub: {
+    fontSize: 11.5,
+    color: '#64748B',
+    marginTop: 2,
   },
   btnPrimary: {
     flexDirection: 'row',

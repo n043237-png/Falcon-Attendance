@@ -5,6 +5,7 @@ export type NotificationType =
   | 'Attendance'
   | 'Leave'
   | 'Payroll'
+  | 'Expense'
   | 'Profile'
   | 'Employee'
   | 'Announcement'

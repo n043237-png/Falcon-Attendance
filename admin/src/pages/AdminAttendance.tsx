@@ -14,6 +14,8 @@ import {
   Filter,
   Calendar,
   MapPin,
+  Building,
+  Camera,
   ExternalLink,
   X
 } from 'lucide-react';
@@ -48,6 +50,7 @@ export default function AdminAttendance() {
   const [search, setSearch] = useState(initialSearch);
   const [status, setStatus] = useState(initialStatus);
   const [shiftFilter, setShiftFilter] = useState('All');
+  const [modeFilter, setModeFilter] = useState('All');
   const [availableShifts, setAvailableShifts] = useState<any[]>([]);
 
   const [records, setRecords] = useState<any[]>([]);
@@ -428,7 +431,7 @@ export default function AdminAttendance() {
             </Form.Group>
           </Col>
 
-          <Col md={3}>
+          <Col md={2}>
             <Form.Group>
               <Form.Label className="d-flex align-items-center gap-2">
                 <Clock size={14} className="text-muted" />
@@ -443,7 +446,21 @@ export default function AdminAttendance() {
             </Form.Group>
           </Col>
 
-          <Col md={3}>
+          <Col md={2}>
+            <Form.Group>
+              <Form.Label className="d-flex align-items-center gap-2">
+                <MapPin size={14} className="text-muted" />
+                <span>Attendance Mode</span>
+              </Form.Label>
+              <Form.Select value={modeFilter} onChange={(e) => setModeFilter(e.target.value)}>
+                <option value="All">All Modes</option>
+                <option value="Office">Office</option>
+                <option value="Field">Field</option>
+              </Form.Select>
+            </Form.Group>
+          </Col>
+
+          <Col md={2}>
             <Form.Group>
               <Form.Label className="d-flex align-items-center gap-2">
                 <Filter size={14} className="text-muted" />
@@ -499,6 +516,7 @@ export default function AdminAttendance() {
                     <th>Employee ID</th>
                     <th>Shift</th>
                     <th>Date</th>
+                    <th>Mode</th>
                     <th>Check-in</th>
                     <th>Check-out</th>
                     <th>Working Hours</th>
@@ -507,8 +525,10 @@ export default function AdminAttendance() {
                   </tr>
                 </thead>
                 <tbody>
-                  {records.length > 0 ? (
-                    records.map((r) => (
+                  {records.filter(r => modeFilter === 'All' || (r.attendanceMode || 'Office').toLowerCase() === modeFilter.toLowerCase()).length > 0 ? (
+                    records
+                      .filter(r => modeFilter === 'All' || (r.attendanceMode || 'Office').toLowerCase() === modeFilter.toLowerCase())
+                      .map((r) => (
                       <tr key={r.attendanceId}>
                         <td>
                           <div className="d-flex align-items-center gap-3">
@@ -544,6 +564,17 @@ export default function AdminAttendance() {
                         <td style={{ color: '#475569', fontSize: '13.5px' }}>
                           {new Date(r.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
                         </td>
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          {r.attendanceMode === 'Field' ? (
+                            <span className="badge bg-warning-subtle text-warning-emphasis border border-warning fw-medium d-inline-flex align-items-center gap-1" style={{ fontSize: '11px', padding: '3px 8px' }}>
+                              <MapPin size={11} /> Field
+                            </span>
+                          ) : (
+                            <span className="badge bg-primary-subtle text-primary border border-primary-subtle fw-medium d-inline-flex align-items-center gap-1" style={{ fontSize: '11px', padding: '3px 8px' }}>
+                              <Building size={11} /> Office
+                            </span>
+                          )}
+                        </td>
                         <td style={{ fontWeight: 500, color: '#1E293B' }}>
                           {r.status?.toUpperCase() === 'ABSENT' || r.status?.toUpperCase().includes('LEAVE') ? '--:--' : formatTime(r.checkIn)}
                         </td>
@@ -555,11 +586,20 @@ export default function AdminAttendance() {
                             <Clock size={13} />
                             <span>{r.status?.toUpperCase() === 'ABSENT' || r.status?.toUpperCase().includes('LEAVE') ? '0h 0m' : formatHours(r.workingMinutes)}</span>
                           </div>
+                          {r.checkOut && r.workingMinutes < 510 && !r.status?.toUpperCase().includes('LEAVE') && r.status?.toUpperCase() !== 'ABSENT' && (
+                            <div className="mt-1">
+                              <span className="badge bg-danger-subtle text-danger border border-danger-subtle fw-medium" style={{ fontSize: '10px', padding: '2px 6px' }} title="Completed less than required 510 minutes (8h 30m)">
+                                Short ({510 - r.workingMinutes}m)
+                              </span>
+                            </div>
+                          )}
                         </td>
                         <td>
                           <span
                             className={`badge ${
-                              r.status?.toUpperCase() === 'LATE' || r.isLate
+                              r.status?.toUpperCase() === 'INSUFFICIENT_HOURS' || r.status?.toUpperCase() === 'INSUFFICIENT HOURS'
+                                ? 'bg-danger-subtle text-danger border border-danger fw-semibold'
+                                : r.status?.toUpperCase() === 'LATE' || r.isLate
                                 ? 'bg-warning text-dark'
                                 : r.status?.toUpperCase() === 'PRESENT'
                                 ? 'bg-success'
@@ -568,7 +608,9 @@ export default function AdminAttendance() {
                                 : 'bg-secondary'
                             }`}
                           >
-                            {r.status?.toUpperCase() === 'LATE' || r.isLate ? (
+                            {r.status?.toUpperCase() === 'INSUFFICIENT_HOURS' || r.status?.toUpperCase() === 'INSUFFICIENT HOURS' ? (
+                              'Insufficient Working Hours'
+                            ) : r.status?.toUpperCase() === 'LATE' || r.isLate ? (
                               <>
                                 LATE{r.lateMinutes ? ` (${formatLateMinutes(r.lateMinutes)})` : ''}
                               </>
@@ -578,7 +620,51 @@ export default function AdminAttendance() {
                           </span>
                         </td>
                         <td>
-                          {r.checkInLat && r.checkInLng ? (
+                          {r.attendanceMode === 'Field' ? (
+                            <div className="d-flex align-items-center gap-1.5 flex-wrap">
+                              <span 
+                                className="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle d-inline-flex align-items-center gap-1"
+                                style={{ fontSize: '11px', padding: '4px 7px', borderRadius: '6px' }}
+                                title={r.address || 'Field Location'}
+                              >
+                                <MapPin size={11} className="text-warning-emphasis" />
+                                <span style={{ maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {r.address || 'Field Location'}
+                                </span>
+                              </span>
+                              {r.checkInLat && r.checkInLng && (
+                                <a
+                                  href={`https://www.google.com/maps?q=${r.checkInLat},${r.checkInLng}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-decoration-none text-muted"
+                                  title="View GPS on Google Maps"
+                                  style={{ padding: '2px 4px' }}
+                                >
+                                  <ExternalLink size={12} />
+                                </a>
+                              )}
+                              {r.selfieUrl && (
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-outline-warning p-0 px-1.5 d-inline-flex align-items-center gap-1"
+                                  style={{ fontSize: '11px', height: '22px', borderRadius: '4px' }}
+                                  title="View captured check-in selfie"
+                                  onClick={() => {
+                                    setPreviewEmployee({
+                                      ...r,
+                                      name: `${r.employeeName} (Selfie - Field Mode)`,
+                                      profilePhotoUrl: r.selfieUrl
+                                    });
+                                    setShowPreviewModal(true);
+                                  }}
+                                >
+                                  <Camera size={11} />
+                                  <span>Selfie</span>
+                                </button>
+                              )}
+                            </div>
+                          ) : r.checkInLat && r.checkInLng ? (
                             <div className="d-flex align-items-center gap-1.5">
                               <span 
                                 className="badge bg-light text-primary border d-inline-flex align-items-center gap-1"
@@ -607,7 +693,7 @@ export default function AdminAttendance() {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={8} className="text-center py-5 text-muted">
+                      <td colSpan={10} className="text-center py-5 text-muted">
                         No attendance records found for the selected criteria.
                       </td>
                     </tr>

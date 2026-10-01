@@ -19,7 +19,9 @@ import {
   Briefcase,
   ArrowLeft,
   Clock,
-  CalendarDays
+  CalendarDays,
+  CreditCard,
+  Receipt
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import Avatar from '../common/Avatar';
@@ -42,12 +44,14 @@ export default function AppLayout() {
   const adminLinks = [
     { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
     { name: 'Employees', path: '/employees', icon: Users },
+    { name: 'ID Cards', path: '/id-cards', icon: CreditCard },
     { name: 'Shifts', path: '/shifts', icon: Clock },
     { name: 'Attendance', path: '/attendance', icon: CalendarCheck },
     { name: 'My Attendance', path: '/my-attendance', icon: UserCheck },
     { name: 'Leave Management', path: '/leave', icon: CalendarRange },
     { name: 'Holidays', path: '/holidays', icon: CalendarDays },
     { name: 'Payroll', path: '/payroll', icon: Briefcase },
+    { name: 'Expenses & Advances', path: '/expenses', icon: Receipt },
     { name: 'Reports', path: '/reports', icon: FileBarChart },
     { name: 'Notifications', path: '/notifications', icon: Bell },
     { name: 'Settings', path: '/settings', icon: Settings },
@@ -57,6 +61,8 @@ export default function AppLayout() {
     { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
     { name: 'My Attendance', path: '/my-attendance', icon: CalendarCheck },
     { name: 'My Leave', path: '/my-leave', icon: CalendarRange },
+    { name: 'My Expenses', path: '/my-expenses', icon: Receipt },
+    { name: 'My ID Card', path: '/my-id-card', icon: CreditCard },
     { name: 'Holidays', path: '/holidays', icon: CalendarDays },
     { name: 'Salary Slips', path: '/salary-slips', icon: FileText },
     { name: 'Notifications', path: '/notifications', icon: Bell },

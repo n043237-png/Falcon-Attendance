@@ -15,7 +15,8 @@ import {
   Mail,
   BadgeCheck,
   Clock,
-  Briefcase
+  Briefcase,
+  Receipt
 } from 'lucide-react';
 import axios from 'axios';
 
@@ -42,6 +43,11 @@ import HolidayList from './pages/employee/HolidayList';
 
 import NotificationsPage from './pages/NotificationsPage';
 import MyProfile from './pages/MyProfile';
+import AdminIdCards from './pages/AdminIdCards';
+import MyIdCard from './pages/employee/MyIdCard';
+import VerifyIdCard from './pages/VerifyIdCard';
+import AdminExpenses from './pages/expenses/AdminExpenses';
+import MyExpenses from './pages/employee/MyExpenses';
 import Avatar from './components/common/Avatar';
 import ImagePreviewModal from './components/common/ImagePreviewModal';
 
@@ -120,6 +126,14 @@ function AdminDashboardView() {
       icon: Clock,
       color: '#0D9488',
       badge: 'Shifts'
+    },
+    {
+      title: 'Expenses & Advances',
+      desc: 'Project travel advances, fuel/hotel receipts, claim approvals, and reimbursement audits.',
+      path: '/expenses',
+      icon: Receipt,
+      color: '#059669',
+      badge: 'Finance'
     },
     {
       title: 'System Settings',
@@ -441,6 +455,7 @@ function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<Login />} />
+            <Route path="/verify-id/:verificationId" element={<VerifyIdCard />} />
 
             <Route element={<ProtectedRoute />}>
               <Route element={<AppLayout />}>
@@ -453,9 +468,11 @@ function App() {
                 {/* Admin Routes */}
                 <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
                   <Route path="/employees" element={<AdminEmployees />} />
+                  <Route path="/id-cards" element={<AdminIdCards />} />
                   <Route path="/shifts" element={<AdminShifts />} />
                   <Route path="/attendance" element={<AdminAttendance />} />
                   <Route path="/payroll" element={<AdminPayroll />} />
+                  <Route path="/expenses" element={<AdminExpenses />} />
                   <Route path="/reports" element={<AdminReports />} />
                   <Route path="/leave" element={<AdminLeave />} />
                   <Route path="/leave-init" element={<LeaveInitialization />} />
@@ -465,6 +482,8 @@ function App() {
                 <Route element={<ProtectedRoute allowedRoles={['employee', 'admin']} />}>
                   <Route path="/my-attendance" element={<MyAttendance />} />
                   <Route path="/my-leave" element={<MyLeave />} />
+                  <Route path="/my-expenses" element={<MyExpenses />} />
+                  <Route path="/my-id-card" element={<MyIdCard />} />
                   <Route path="/salary-slips" element={<SalarySlips />} />
                   <Route path="/holidays" element={<HolidayList />} />
                 </Route>

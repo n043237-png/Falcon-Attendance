@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteProfilePhotoFile = exports.processAndSaveProfilePhoto = exports.uploadProfilePhoto = void 0;
+exports.deleteProfilePhotoFile = exports.processAndSaveAttendanceSelfie = exports.processAndSaveProfilePhoto = exports.uploadProfilePhoto = void 0;
 const multer_1 = __importDefault(require("multer"));
 const sharp_1 = __importDefault(require("sharp"));
 const path_1 = __importDefault(require("path"));
@@ -63,6 +63,41 @@ const processAndSaveProfilePhoto = async (buffer, prefix = 'profile') => {
     return `data:image/webp;base64,${webpBuffer.toString('base64')}`;
 };
 exports.processAndSaveProfilePhoto = processAndSaveProfilePhoto;
+const ATTENDANCE_UPLOAD_DIR = path_1.default.join(process.cwd(), 'uploads', 'attendance');
+if (!fs_1.default.existsSync(ATTENDANCE_UPLOAD_DIR)) {
+    fs_1.default.mkdirSync(ATTENDANCE_UPLOAD_DIR, { recursive: true });
+}
+const processAndSaveAttendanceSelfie = async (rawInput, prefix = 'selfie') => {
+    let buffer;
+    if (Buffer.isBuffer(rawInput)) {
+        buffer = rawInput;
+    }
+    else if (typeof rawInput === 'string' && rawInput.startsWith('data:')) {
+        const base64Data = rawInput.replace(/^data:image\/\w+;base64,/, '');
+        buffer = Buffer.from(base64Data, 'base64');
+    }
+    else if (typeof rawInput === 'string') {
+        buffer = Buffer.from(rawInput, 'base64');
+    }
+    else {
+        throw new Error('Invalid selfie image data');
+    }
+    const filename = `${prefix}-${Date.now()}-${crypto_1.default.randomBytes(6).toString('hex')}.webp`;
+    const filePath = path_1.default.join(ATTENDANCE_UPLOAD_DIR, filename);
+    const webpBuffer = await (0, sharp_1.default)(buffer)
+        .rotate()
+        .resize(500, 500, { fit: 'cover', position: 'center' })
+        .webp({ quality: 75 })
+        .toBuffer();
+    try {
+        await fs_1.default.promises.writeFile(filePath, webpBuffer);
+    }
+    catch (err) {
+        console.warn('Could not write local selfie file:', err);
+    }
+    return `data:image/webp;base64,${webpBuffer.toString('base64')}`;
+};
+exports.processAndSaveAttendanceSelfie = processAndSaveAttendanceSelfie;
 /**
  * Delete a profile photo safely from the filesystem
  */

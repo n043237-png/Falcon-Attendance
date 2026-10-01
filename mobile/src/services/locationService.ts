@@ -38,3 +38,25 @@ export const getCurrentLocation = async (): Promise<LocationData> => {
     throw new Error('Failed to retrieve location. Please try again.');
   }
 };
+
+export const getReadableAddress = async (latitude: number, longitude: number): Promise<string> => {
+  try {
+    const addresses = await Location.reverseGeocodeAsync({ latitude, longitude });
+    if (addresses && addresses.length > 0) {
+      const item = addresses[0];
+      const parts = [
+        item.name || item.street,
+        item.district || item.subregion,
+        item.city,
+        item.region,
+        item.postalCode,
+      ].filter(Boolean);
+      if (parts.length > 0) {
+        return parts.join(', ');
+      }
+    }
+  } catch (e) {
+    console.warn('reverseGeocode failed:', e);
+  }
+  return `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+};

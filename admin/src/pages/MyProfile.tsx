@@ -9,6 +9,7 @@ import { useAuth } from '../context/AuthContext';
 import Avatar from '../components/common/Avatar';
 import PhotoUploadModal from '../components/common/PhotoUploadModal';
 import ImagePreviewModal from '../components/common/ImagePreviewModal';
+import IdCardModal from '../components/idcard/IdCardModal';
 
 export default function MyProfile() {
   const { user, token, updateUser } = useAuth();
@@ -21,6 +22,7 @@ export default function MyProfile() {
   // Modals & Photos
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [showIdCardModal, setShowIdCardModal] = useState(false);
 
   // Active section tab
   const [activeTab, setActiveTab] = useState<'personal' | 'contact' | 'emergency' | 'professional' | 'bank' | 'documents' | 'activity'>('personal');
@@ -284,13 +286,22 @@ export default function MyProfile() {
               </button>
             </>
           ) : (
-            <button
-              className="btn btn-outline-primary btn-sm d-flex align-items-center gap-1.5 px-3"
-              onClick={() => setIsEditing(true)}
-            >
-              <Edit3 size={15} />
-              <span>Edit Contact Info</span>
-            </button>
+            <>
+              <button
+                className="btn btn-outline-dark btn-sm d-flex align-items-center gap-1.5 px-3"
+                onClick={() => setShowIdCardModal(true)}
+              >
+                <CreditCard size={15} className="text-primary" />
+                <span>View Digital ID Card</span>
+              </button>
+              <button
+                className="btn btn-outline-primary btn-sm d-flex align-items-center gap-1.5 px-3"
+                onClick={() => setIsEditing(true)}
+              >
+                <Edit3 size={15} />
+                <span>Edit Contact Info</span>
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -1120,6 +1131,14 @@ export default function MyProfile() {
         employeeId={profile?.employeeCode || profile?.employeeId}
         role={profile?.role}
         department={profile?.department}
+      />
+
+      {/* Digital ID Card Modal */}
+      <IdCardModal
+        show={showIdCardModal}
+        onHide={() => setShowIdCardModal(false)}
+        employeeId={user?.id}
+        token={token || undefined}
       />
     </div>
   );

@@ -146,3 +146,19 @@ export const deleteProfilePhoto = async (token: string) => {
   }
 };
 
+export const getIdCard = async (token: string) => {
+  try {
+    const res = await axios.get(`${API_URL}/api/profile/id-card`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    return res.data;
+  } catch (error: any) {
+    return error.response?.data || { success: false, error: { message: 'Failed to load ID card.' } };
+  }
+};
+
+export const getDownloadIdCardPdfUrl = () => {
+  return `${API_URL}/api/profile/id-card/pdf`;
+};
+
+

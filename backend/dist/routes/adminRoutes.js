@@ -40,6 +40,7 @@ const adminLeaveController_1 = require("../controllers/adminLeaveController");
 const adminEmployeeController_1 = require("../controllers/adminEmployeeController");
 const settingsController_1 = require("../controllers/settingsController");
 const shiftController_1 = require("../controllers/shiftController");
+const idCardController_1 = require("../controllers/idCardController");
 const auth_1 = require("../middlewares/auth");
 const upload_1 = require("../middlewares/upload");
 const documentService_1 = require("../services/documentService");
@@ -144,4 +145,10 @@ router.delete('/shifts/:id', shiftController_1.deleteShift);
 router.get('/shifts/:id/employees', shiftController_1.getShiftEmployees);
 router.post('/shifts/assign', shiftController_1.assignShift);
 router.post('/shifts/bulk-assign', shiftController_1.bulkAssignShift);
+// Digital Employee ID Card Management Routes
+router.get('/employees/:id/id-card', idCardController_1.getEmployeeIdCard);
+router.get('/employees/:id/id-card/pdf', idCardController_1.downloadEmployeeIdCardPdf);
+router.get('/id-cards/bulk-data', idCardController_1.getBulkIdCardsData);
+router.post('/id-cards/bulk-pdf', idCardController_1.downloadBulkIdCardsPdf);
+router.post('/id-cards/bulk-zip', idCardController_1.downloadBulkIdCardsZip);
 exports.default = router;

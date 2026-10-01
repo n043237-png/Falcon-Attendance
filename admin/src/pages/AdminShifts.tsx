@@ -91,7 +91,8 @@ export default function AdminShifts() {
     endTime: '18:30',
     graceMinutes: 15,
     breakMinutes: 0,
-    minimumWorkHours: 8.0,
+    minimumWorkHours: 8.5,
+    halfDayHours: 4.0,
     halfDayMinutes: 240,
     overtimeEnabled: true,
     description: '',
@@ -157,8 +158,9 @@ export default function AdminShifts() {
       startTime: '09:30',
       endTime: '18:30',
       graceMinutes: 15,
-      breakMinutes: 60,
-      minimumWorkHours: 8.0,
+      breakMinutes: 0,
+      minimumWorkHours: 8.5,
+      halfDayHours: 4.0,
       halfDayMinutes: 240,
       overtimeEnabled: true,
       description: '',
@@ -171,6 +173,8 @@ export default function AdminShifts() {
   // Open Edit Modal
   const handleOpenEdit = (shift: Shift) => {
     setEditingShift(shift);
+    const halfDayMins = Number(shift.halfDayMinutes) || 240;
+    const halfDayHrs = Number((halfDayMins / 60).toFixed(2));
     setFormData({
       name: shift.name,
       code: shift.code,
@@ -178,8 +182,9 @@ export default function AdminShifts() {
       endTime: shift.endTime.substring(0, 5),
       graceMinutes: shift.graceMinutes,
       breakMinutes: shift.breakMinutes,
-      minimumWorkHours: shift.minimumWorkHours,
-      halfDayMinutes: shift.halfDayMinutes,
+      minimumWorkHours: Number(shift.minimumWorkHours),
+      halfDayHours: halfDayHrs,
+      halfDayMinutes: halfDayMins,
       overtimeEnabled: shift.overtimeEnabled,
       description: shift.description || '',
       status: shift.status
@@ -194,18 +199,32 @@ export default function AdminShifts() {
     setModalLoading(true);
     setModalError(null);
 
+    const payload = {
+      name: formData.name,
+      code: formData.code,
+      startTime: formData.startTime,
+      endTime: formData.endTime,
+      graceMinutes: formData.graceMinutes,
+      breakMinutes: formData.breakMinutes,
+      minimumWorkHours: formData.minimumWorkHours,
+      halfDayMinutes: Math.round(formData.halfDayHours * 60),
+      overtimeEnabled: formData.overtimeEnabled,
+      description: formData.description,
+      status: formData.status
+    };
+
     try {
       if (editingShift) {
         const res = await axios.put(
           `${API_URL}/api/admin/shifts/${editingShift.id}`,
-          formData,
+          payload,
           { headers: { Authorization: `Bearer ${token}` } }
         );
         setActionSuccess(res.data.message || 'Shift updated successfully');
       } else {
         const res = await axios.post(
           `${API_URL}/api/admin/shifts`,
-          formData,
+          payload,
           { headers: { Authorization: `Bearer ${token}` } }
         );
         setActionSuccess(res.data.message || 'Shift created successfully');
@@ -945,39 +964,67 @@ export default function AdminShifts() {
 
               <Col md={6}>
                 <Form.Group>
-                  <Form.Label className="fw-semibold text-dark" style={{ fontSize: '13px' }}>
-                    Minimum Work Hours (For Full Day)
-                  </Form.Label>
-                  <Form.Control
-                    type="number"
-                    step="0.5"
-                    min={1}
-                    max={24}
-                    value={formData.minimumWorkHours}
-                    onChange={(e) => setFormData({ ...formData, minimumWorkHours: parseFloat(e.target.value) || 8.0 })}
-                    style={{ fontSize: '13.5px' }}
-                  />
+                  <div className="d-flex justify-content-between align-items-center mb-1">
+                    <Form.Label className="fw-semibold text-dark mb-0" style={{ fontSize: '13px' }}>
+                      Minimum Work Hours (Full Day)
+                    </Form.Label>
+                    <Badge bg="primary" className="fw-normal" style={{ fontSize: '11px' }}>
+                      {Math.round(formData.minimumWorkHours * 60)} mins
+                    </Badge>
+                  </div>
+                  <InputGroup>
+                    <Form.Control
+                      type="number"
+                      step="0.25"
+                      min={1}
+                      max={24}
+                      value={formData.minimumWorkHours}
+                      onChange={(e) => setFormData({ ...formData, minimumWorkHours: parseFloat(e.target.value) || 0 })}
+                      style={{ fontSize: '13.5px' }}
+                    />
+                    <InputGroup.Text className="bg-light fw-medium text-secondary" style={{ fontSize: '12.5px' }}>
+                      Hours
+                    </InputGroup.Text>
+                  </InputGroup>
                   <Form.Text className="text-muted" style={{ fontSize: '11px' }}>
-                    Net hours required to mark employee full day PRESENT.
+                    Net hours required for full day PRESENT (= {Math.floor(formData.minimumWorkHours)}h {Math.round((formData.minimumWorkHours % 1) * 60)}m).
                   </Form.Text>
                 </Form.Group>
               </Col>
 
               <Col md={6}>
                 <Form.Group>
-                  <Form.Label className="fw-semibold text-dark" style={{ fontSize: '13px' }}>
-                    Half Day Threshold (Minutes)
-                  </Form.Label>
-                  <Form.Control
-                    type="number"
-                    min={60}
-                    max={600}
-                    value={formData.halfDayMinutes}
-                    onChange={(e) => setFormData({ ...formData, halfDayMinutes: parseInt(e.target.value, 10) || 240 })}
-                    style={{ fontSize: '13.5px' }}
-                  />
+                  <div className="d-flex justify-content-between align-items-center mb-1">
+                    <Form.Label className="fw-semibold text-dark mb-0" style={{ fontSize: '13px' }}>
+                      Half Day Threshold (Hours)
+                    </Form.Label>
+                    <Badge bg="secondary" className="fw-normal" style={{ fontSize: '11px' }}>
+                      {Math.round(formData.halfDayHours * 60)} mins
+                    </Badge>
+                  </div>
+                  <InputGroup>
+                    <Form.Control
+                      type="number"
+                      step="0.25"
+                      min={0.5}
+                      max={12}
+                      value={formData.halfDayHours}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value) || 0;
+                        setFormData({
+                          ...formData,
+                          halfDayHours: val,
+                          halfDayMinutes: Math.round(val * 60)
+                        });
+                      }}
+                      style={{ fontSize: '13.5px' }}
+                    />
+                    <InputGroup.Text className="bg-light fw-medium text-secondary" style={{ fontSize: '12.5px' }}>
+                      Hours
+                    </InputGroup.Text>
+                  </InputGroup>
                   <Form.Text className="text-muted" style={{ fontSize: '11px' }}>
-                    e.g. 240 minutes = 4.0 hours for half day.
+                    Net hours required for HALF DAY (= {Math.floor(formData.halfDayHours)}h {Math.round((formData.halfDayHours % 1) * 60)}m).
                   </Form.Text>
                 </Form.Group>
               </Col>

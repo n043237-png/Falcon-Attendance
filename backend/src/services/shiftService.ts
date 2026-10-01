@@ -563,11 +563,9 @@ export class ShiftService {
         overtimeMinutes = Math.round(workingMinutes - expectedWorkingMinutes);
       }
 
-      // Attendance status calculation based on working minutes vs thresholds
-      if (workingMinutes < halfDayMinutes) {
+      // Attendance status calculation based on working minutes vs required threshold (510 mins / 8h 30m)
+      if (workingMinutes < expectedWorkingMinutes) {
         status = 'INSUFFICIENT_HOURS';
-      } else if (workingMinutes < expectedWorkingMinutes) {
-        status = 'HALF_DAY';
       } else {
         status = 'PRESENT';
       }

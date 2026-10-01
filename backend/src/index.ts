@@ -14,6 +14,8 @@ import notificationRoutes from './routes/notificationRoutes';
 import employeeRoutes from './routes/employeeRoutes';
 import payrollRoutes from './routes/payrollRoutes';
 import holidayRoutes from './routes/holidayRoutes';
+import expenseRoutes from './routes/expenseRoutes';
+import { verifyIdCard } from './controllers/idCardController';
 import { startScheduler } from './services/schedulerService';
 
 import path from 'path';
@@ -45,6 +47,8 @@ app.use('/api/profile', profileRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/employee', employeeRoutes);
 app.use('/api/holidays', holidayRoutes);
+app.use('/api/expenses', expenseRoutes);
+app.get('/api/verify/id-card/:verificationId', verifyIdCard);
 
 startScheduler();
 

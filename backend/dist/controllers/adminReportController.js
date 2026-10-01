@@ -40,6 +40,7 @@ const getAttendanceReport = async (req, res) => {
         // 2. Fetch Employees
         let empQuery = `
       SELECT u.id, u.name, u.email, u.employee_id, u.employee_code, u.department, u.designation,
+             COALESCE(u.attendance_mode, 'Office') as attendance_mode,
              u.shift_id, s.name as shift_name, s.code as shift_code
       FROM users u
       LEFT JOIN shifts s ON s.id = u.shift_id
@@ -181,7 +182,10 @@ const getAttendanceReport = async (req, res) => {
                         shiftName: emp.shift_name,
                         leaveType: result.leaveType,
                         holidayName: result.holidayName,
-                        isLate: result.status === 'PRESENT' && result.isLate
+                        isLate: result.status === 'PRESENT' && result.isLate,
+                        attendanceMode: rec?.attendance_mode || emp.attendance_mode || 'Office',
+                        address: rec?.check_in_address || null,
+                        selfieUrl: rec?.check_in_selfie_url || null
                     });
                 }
                 // Summary calculations
@@ -237,6 +241,7 @@ const getAttendanceReport = async (req, res) => {
                     email: emp.email,
                     empId: emp.employee_code || emp.employee_id,
                     employeeCode: emp.employee_code || emp.employee_id,
+                    attendanceMode: emp.attendance_mode || 'Office',
                     shiftId: emp.shift_id,
                     shiftName: emp.shift_name,
                     shiftCode: emp.shift_code,

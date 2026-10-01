@@ -9,6 +9,7 @@ import {
   deleteProfileDocumentHandler,
   getProfileActivityHandler
 } from '../controllers/profileController';
+import { getMyIdCard, downloadMyIdCardPdf } from '../controllers/idCardController';
 import { authenticateToken } from '../middlewares/auth';
 import { uploadProfilePhoto } from '../middlewares/upload';
 import { uploadDocumentMiddleware } from '../services/documentService';
@@ -22,6 +23,10 @@ router.patch('/', updateProfile);
 router.patch('/change-password', changePassword);
 router.post('/photo', uploadProfilePhoto.single('photo'), uploadProfilePhotoHandler);
 router.delete('/photo', deleteProfilePhotoHandler);
+
+// Digital Employee ID Card
+router.get('/id-card', getMyIdCard);
+router.get('/id-card/pdf', downloadMyIdCardPdf);
 
 // Document management
 router.post('/documents', uploadDocumentMiddleware.single('file'), uploadProfileDocumentHandler);

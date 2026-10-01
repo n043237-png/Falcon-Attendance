@@ -32,6 +32,7 @@ import {
   History,
   CreditCard,
   Building,
+  MapPin,
   Save,
   X,
   ShieldCheck,
@@ -43,6 +44,7 @@ import Avatar from '../components/common/Avatar';
 import PhotoUploadModal from '../components/common/PhotoUploadModal';
 import ImagePreviewModal from '../components/common/ImagePreviewModal';
 import AdjustLeaveModal from '../components/common/AdjustLeaveModal';
+import IdCardModal from '../components/idcard/IdCardModal';
 
 const STANDARD_DEPARTMENTS = [
   'Lidar',
@@ -102,6 +104,8 @@ export default function AdminEmployees() {
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [previewUser, setPreviewUser] = useState<any>(null);
+  const [showIdCardModal, setShowIdCardModal] = useState(false);
+  const [selectedEmpForIdCard, setSelectedEmpForIdCard] = useState<number | null>(null);
 
   // Job Status Modals
   const [showExtendModal, setShowExtendModal] = useState(false);
@@ -166,6 +170,7 @@ export default function AdminEmployees() {
     provisionalStartDate: '',
     provisionalEndDate: '',
     shiftId: undefined as number | undefined,
+    attendanceMode: 'Office',
     motherName: '',
     fatherName: '',
     reportingManager: ''
@@ -359,6 +364,7 @@ export default function AdminEmployees() {
       provisionalStartDate: '',
       provisionalEndDate: '',
       shiftId: availableShifts.length > 0 ? availableShifts[0].id : 1,
+      attendanceMode: 'Office',
       motherName: '',
       fatherName: '',
       reportingManager: ''
@@ -406,6 +412,7 @@ export default function AdminEmployees() {
             : String(user.provisionalEndDate).slice(0, 10))
         : '',
       shiftId: user.shiftId || 1,
+      attendanceMode: user.attendanceMode || user.attendance_mode || 'Office',
       motherName: user.motherName || '',
       fatherName: user.fatherName || '',
       reportingManager: user.reportingManager || ''
@@ -999,6 +1006,7 @@ export default function AdminEmployees() {
                     <th>Role</th>
                     <th>Status</th>
                     <th>Job Status</th>
+                    <th>Mode</th>
                     <th className="text-end" style={{ width: '230px', minWidth: '230px' }}>Actions</th>
                   </tr>
                 </thead>
@@ -1079,6 +1087,17 @@ export default function AdminEmployees() {
                             </span>
                           )}
                         </td>
+                        <td>
+                          {r.attendanceMode === 'Field' ? (
+                            <span className="badge bg-warning-subtle text-warning-emphasis border border-warning fw-medium d-inline-flex align-items-center gap-1" style={{ fontSize: '11px', padding: '3px 8px' }}>
+                              <MapPin size={11} /> Field
+                            </span>
+                          ) : (
+                            <span className="badge bg-primary-subtle text-primary border border-primary-subtle fw-medium d-inline-flex align-items-center gap-1" style={{ fontSize: '11px', padding: '3px 8px' }}>
+                              <Building size={11} /> Office
+                            </span>
+                          )}
+                        </td>
                         <td className="text-end" style={{ width: '230px', minWidth: '230px' }}>
                           <div className="d-inline-flex align-items-center gap-1.5">
                             <button
@@ -1108,6 +1127,18 @@ export default function AdminEmployees() {
                               <Edit2 size={13} />
                               <span>Edit</span>
                             </button>
+                            <button
+                              className="btn btn-outline-info btn-sm d-inline-flex align-items-center gap-1 px-2 py-1"
+                              onClick={() => {
+                                setSelectedEmpForIdCard(r.id);
+                                setShowIdCardModal(true);
+                              }}
+                              title="Digital ID Card"
+                              style={{ fontSize: '12.5px', height: '30px' }}
+                            >
+                              <CreditCard size={13} />
+                              <span>ID Card</span>
+                            </button>
 
                             <Dropdown align="end" drop={index >= records.length - 3 ? 'up' : 'down'} className="d-inline-block position-relative">
                               <Dropdown.Toggle
@@ -1123,6 +1154,17 @@ export default function AdminEmployees() {
                                 style={{ fontSize: '13px', minWidth: '190px', zIndex: 1060 }}
                                 className="shadow border py-1"
                               >
+                                <Dropdown.Item
+                                  onClick={() => {
+                                    setSelectedEmpForIdCard(r.id);
+                                    setShowIdCardModal(true);
+                                  }}
+                                  className="d-flex align-items-center gap-2 py-1.5"
+                                >
+                                  <CreditCard size={14} className="text-primary" />
+                                  <span>Digital ID Card</span>
+                                </Dropdown.Item>
+                                <Dropdown.Divider className="my-1" />
                                 {r.jobStatus === 'Provisional' && (
                                   <>
                                     <Dropdown.Item
@@ -1675,6 +1717,48 @@ export default function AdminEmployees() {
 
               <Col md={12}>
                 <div className="p-3 rounded-3 border bg-light mt-1">
+                  <div className="d-flex align-items-center justify-content-between mb-2">
+                    <Form.Label className="fw-semibold text-dark mb-0 d-flex align-items-center gap-1.5">
+                      <MapPin size={15} className="text-primary" />
+                      <span>Attendance Mode</span>
+                    </Form.Label>
+                    <span className="text-muted" style={{ fontSize: '12px' }}>Geofencing & remote attendance policy</span>
+                  </div>
+
+                  <Row className="g-3">
+                    <Col md={6}>
+                      <Form.Group>
+                        <Form.Label style={{ fontSize: '13px' }}>Attendance Mode *</Form.Label>
+                        <Form.Select
+                          value={formData.attendanceMode || 'Office'}
+                          onChange={(e: any) => setFormData({ ...formData, attendanceMode: e.target.value })}
+                        >
+                          <option value="Office">Office (Restricted to Office Geofence)</option>
+                          <option value="Field">Field (Permitted from Any Location)</option>
+                        </Form.Select>
+                      </Form.Group>
+                    </Col>
+                    <Col md={6} className="d-flex align-items-center">
+                      <div className="p-2.5 rounded-2 bg-white border w-100" style={{ fontSize: '12px' }}>
+                        {formData.attendanceMode === 'Field' ? (
+                          <div className="text-warning-emphasis d-flex align-items-start gap-1.5">
+                            <span className="fw-bold">📍 Field Mode:</span>
+                            <span>Employees (LiDAR, GIS, Sales, Site) can punch in from anywhere. Current GPS, live address, timestamp & selfie are mandatory.</span>
+                          </div>
+                        ) : (
+                          <div className="text-primary d-flex align-items-start gap-1.5">
+                            <span className="fw-bold">🏢 Office Mode:</span>
+                            <span>Default for all employees. Attendance is strictly verified against configured office geofence radius.</span>
+                          </div>
+                        )}
+                      </div>
+                    </Col>
+                  </Row>
+                </div>
+              </Col>
+
+              <Col md={12}>
+                <div className="p-3 rounded-3 border bg-light mt-1">
                   <Form.Group>
                     <Form.Label className="d-flex align-items-center gap-1.5 fw-semibold text-dark mb-1">
                       <Clock size={15} className="text-primary" />
@@ -1745,6 +1829,9 @@ export default function AdminEmployees() {
                   <span className="small fw-semibold">{detailProfile.completeness.percentage}% Complete</span>
                 </div>
               )}
+              <span className={`badge ${detailData?.profile?.attendanceMode === 'Field' ? 'bg-warning text-dark border border-warning' : 'bg-primary-subtle text-primary border border-primary-subtle'}`}>
+                {detailData?.profile?.attendanceMode === 'Field' ? '📍 FIELD' : '🏢 OFFICE'}
+              </span>
               <span className={`badge ${detailData?.profile?.jobStatus === 'Provisional' ? 'bg-warning text-dark' : 'bg-success'}`}>
                 {detailData?.profile?.jobStatus?.toUpperCase() || 'PERMANENT'}
               </span>
@@ -2869,6 +2956,14 @@ export default function AdminEmployees() {
         currentBalance={adjustLeaveBalance}
         token={token}
         onSuccess={handleAdjustLeaveSuccess}
+      />
+
+      {/* Digital ID Card Modal */}
+      <IdCardModal
+        show={showIdCardModal}
+        onHide={() => setShowIdCardModal(false)}
+        employeeId={selectedEmpForIdCard}
+        token={token || undefined}
       />
     </div>
   );

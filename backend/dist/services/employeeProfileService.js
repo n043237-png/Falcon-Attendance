@@ -99,6 +99,7 @@ class EmployeeProfileService {
         u.status,
         u.joining_date as "joiningDate",
         u.profile_photo_url as "profilePhotoUrl",
+        COALESCE(u.attendance_mode, 'Office') as "attendanceMode",
         COALESCE(u.job_status, 'Permanent') as "jobStatus",
         u.provisional_start_date as "provisionalStartDate",
         u.provisional_end_date as "provisionalEndDate",

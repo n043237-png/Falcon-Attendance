@@ -71,6 +71,8 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     (userWithoutPassword as any).profilePhotoUrl = photoUrl;
     (userWithoutPassword as any).profile_photo_url = photoUrl;
     (userWithoutPassword as any).roles = roles;
+    (userWithoutPassword as any).attendanceMode = user.attendance_mode || 'Office';
+    (userWithoutPassword as any).attendance_mode = user.attendance_mode || 'Office';
 
     res.json({
       message: 'Login successful',
@@ -95,7 +97,7 @@ export const getMe = async (req: AuthRequest, res: Response): Promise<void> => {
     }
 
     const result = await query(
-      `SELECT id, employee_id, name, email, phone, role, roles, status, profile_photo_url, profile_photo_url as "profilePhotoUrl", created_at FROM users WHERE id = $1`,
+      `SELECT id, employee_id, name, email, phone, role, roles, status, COALESCE(attendance_mode, 'Office') as "attendanceMode", COALESCE(attendance_mode, 'Office') as attendance_mode, profile_photo_url, profile_photo_url as "profilePhotoUrl", created_at FROM users WHERE id = $1`,
       [req.user.id]
     );
 

@@ -21,13 +21,14 @@ export function startScheduler() {
     timezone: 'Asia/Kolkata'
   });
 
-  // 10:00 AM IST - Daily Morning Attendance Check-In Reminder Push Notification
-  cron.schedule('0 10 * * 1-6', async () => {
+  // 9:55 AM IST - Check-in Reminder (Employee Alert)
+  cron.schedule('55 9 * * 1-6', async () => {
     try {
       const now = new Date();
       const dateStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 
-      // Check holidays
+      // Skip Sundays & Holidays
+      if (new Date(dateStr).getDay() === 0) return;
       const holidayRes = await query('SELECT id FROM holidays WHERE holiday_date = $1 AND is_active = true', [dateStr]);
       if (holidayRes.rows.length > 0) return;
 
@@ -38,7 +39,7 @@ export function startScheduler() {
         WHERE u.status = 'active'
           AND u.role IN ('employee', 'admin')
           AND NOT EXISTS (
-            SELECT 1 FROM attendance a WHERE a.employee_id = u.id AND a.attendance_date = $1
+            SELECT 1 FROM attendance a WHERE a.employee_id = u.id AND a.attendance_date = $1 AND a.check_in IS NOT NULL
           )
           AND NOT EXISTS (
             SELECT 1 FROM leave_requests lr 
@@ -52,25 +53,75 @@ export function startScheduler() {
       for (const emp of missingRes.rows) {
         try {
           const alreadyNotified = await query(
-            `SELECT id FROM notifications WHERE recipient_user_id = $1 AND title = '⏰ Reminder' AND attendance_date = $2`,
+            `SELECT id FROM notifications WHERE recipient_user_id = $1 AND title = 'Check-in Reminder' AND attendance_date = $2`,
             [emp.id, dateStr]
           );
           if (alreadyNotified.rows.length === 0) {
             await NotificationService.notifyUser(emp.id, {
-              title: '⏰ Reminder',
-              message: 'You have not marked your attendance yet. Please check in before 11:00 AM.',
+              title: 'Check-in Reminder',
+              message: "You haven't marked your attendance yet. Please check in before 10:00 AM.",
               type: 'Attendance',
               priority: 'High',
               actionUrl: '/home',
               attendanceDate: dateStr,
             });
+            console.log(`[Scheduler] 9:55 AM Check-in Reminder sent to ${emp.name} (ID: ${emp.id})`);
           }
         } catch (err) {
-          console.error(`Failed to send morning reminder to user ${emp.id}:`, err);
+          console.error(`Failed to send 9:55 AM reminder to user ${emp.id}:`, err);
         }
       }
     } catch (e) {
-      console.error('[Scheduler] 10:00 AM Attendance Reminder error:', e);
+      console.error('[Scheduler] 9:55 AM Check-in Reminder error:', e);
+    }
+  }, {
+    timezone: 'Asia/Kolkata'
+  });
+
+  // 6:30 PM IST - Check-out Reminder (Employee Alert)
+  cron.schedule('30 18 * * 1-6', async () => {
+    try {
+      const now = new Date();
+      const dateStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+
+      // Skip Sundays & Holidays
+      if (new Date(dateStr).getDay() === 0) return;
+      const holidayRes = await query('SELECT id FROM holidays WHERE holiday_date = $1 AND is_active = true', [dateStr]);
+      if (holidayRes.rows.length > 0) return;
+
+      // Find employees who checked in today but have not checked out yet
+      const missingOutRes = await query(`
+        SELECT u.id, u.name
+        FROM users u
+        JOIN attendance a ON a.employee_id = u.id AND a.attendance_date = $1
+        WHERE u.status = 'active'
+          AND a.check_in IS NOT NULL
+          AND a.check_out IS NULL
+      `, [dateStr]);
+
+      for (const emp of missingOutRes.rows) {
+        try {
+          const alreadyNotified = await query(
+            `SELECT id FROM notifications WHERE recipient_user_id = $1 AND title = 'Check-out Reminder' AND attendance_date = $2`,
+            [emp.id, dateStr]
+          );
+          if (alreadyNotified.rows.length === 0) {
+            await NotificationService.notifyUser(emp.id, {
+              title: 'Check-out Reminder',
+              message: "Your shift has ended. Please remember to check out.",
+              type: 'Attendance',
+              priority: 'High',
+              actionUrl: '/home',
+              attendanceDate: dateStr,
+            });
+            console.log(`[Scheduler] 6:30 PM Check-out Reminder sent to ${emp.name} (ID: ${emp.id})`);
+          }
+        } catch (err) {
+          console.error(`Failed to send 6:30 PM reminder to user ${emp.id}:`, err);
+        }
+      }
+    } catch (e) {
+      console.error('[Scheduler] 6:30 PM Check-out Reminder error:', e);
     }
   }, {
     timezone: 'Asia/Kolkata'
@@ -182,7 +233,7 @@ export function startScheduler() {
       }
 
       // 1. ABSENCE PROCESSING
-      // If current time >= absence_cutoff
+      // If current time >= absence_cutoff (11:00 AM IST)
       if (timeStr >= settings.absence_cutoff) {
         // Find active employees with no check-in today
         const absentRes = await query(`
@@ -190,11 +241,11 @@ export function startScheduler() {
           FROM users u
           WHERE u.status = 'active'
           AND NOT EXISTS (
-            SELECT 1 FROM attendance a WHERE a.employee_id = u.id AND a.attendance_date = $1
+            SELECT 1 FROM attendance a WHERE a.employee_id = u.id AND a.attendance_date = $1 AND a.check_in IS NOT NULL
           )
         `, [dateStr]);
 
-        const absentCount = absentRes.rows.length;
+        const uncheckedEmployees: { id: number; name: string; empCode: string }[] = [];
 
         for (const user of absentRes.rows) {
           const empCode = user.emp_code || `FISPL${String(user.id).padStart(3, '0')}`;
@@ -209,67 +260,79 @@ export function startScheduler() {
               AND to_date >= $2
           `, [user.id, dateStr]);
 
-          let attendanceStatus = 'ABSENT';
-          
           if (leaveRes.rows.length > 0) {
-            attendanceStatus = leaveRes.rows[0].leave_type === 'Paid Leave' ? 'PAID LEAVE' : 'LEAVE WITHOUT PAY';
+            // Employee is on approved leave
+            continue;
           }
 
-          if (attendanceStatus === 'ABSENT') {
-            // Notify Employee
-            try {
-              const alreadyNotified = await query(
-                `SELECT id FROM notifications WHERE recipient_user_id = $1 AND title = 'Attendance Marked Absent' AND attendance_date = $2`,
-                [user.id, dateStr]
-              );
-              if (alreadyNotified.rows.length === 0) {
-                await NotificationService.notifyUser(user.id, {
-                  title: 'Attendance Marked Absent',
-                  message: 'Attendance not marked today. You have been marked absent.',
-                  type: 'Attendance',
-                  priority: 'Critical',
-                  actionUrl: '/my-attendance',
-                  attendanceDate: dateStr,
-                });
-              }
-            } catch (e: any) {
-              console.error('Failed to insert absence notification:', e);
-            }
+          uncheckedEmployees.push({ id: user.id, name: user.name, empCode });
 
-            // 1. Employee Marked Absent -> Notify Admins
-            try {
-              const alreadyAdminNotified = await query(
-                `SELECT id FROM notifications WHERE role = 'admin' AND title = 'Absent Alert' AND message LIKE $1 AND attendance_date = $2`,
-                [`%${empCode}%`, dateStr]
-              );
-              if (alreadyAdminNotified.rows.length === 0) {
-                await NotificationService.notifyAdmins({
-                  title: 'Absent Alert',
-                  message: `${user.name} (${empCode}) has not marked attendance and has been marked Absent for today.`,
-                  type: 'Attendance',
-                  priority: 'High',
-                  actionUrl: `/attendance?status=Absent&date=${dateStr}&search=${encodeURIComponent(user.name)}`,
-                  attendanceDate: dateStr,
-                });
-              }
-            } catch (e: any) {
-              console.error('Failed to insert admin absent alert:', e);
+          // 1. Notify Absent Employee
+          try {
+            const alreadyNotified = await query(
+              `SELECT id FROM notifications WHERE recipient_user_id = $1 AND title = 'Attendance Marked Absent' AND attendance_date = $2`,
+              [user.id, dateStr]
+            );
+            if (alreadyNotified.rows.length === 0) {
+              await NotificationService.notifyUser(user.id, {
+                title: 'Attendance Marked Absent',
+                message: 'Attendance not marked today by 11:00 AM. You have been marked absent.',
+                type: 'Attendance',
+                priority: 'Critical',
+                actionUrl: '/my-attendance',
+                attendanceDate: dateStr,
+              });
             }
+          } catch (e: any) {
+            console.error('Failed to insert absence notification:', e);
           }
-          
+
+          // 2. Insert or update ABSENT record in attendance table
           try {
             const attCheck = await query(`SELECT id FROM attendance WHERE employee_id = $1 AND attendance_date = $2`, [user.id, dateStr]);
             if (attCheck.rows.length === 0) {
               await query(`
                 INSERT INTO attendance (employee_id, office_id, attendance_date, check_in, status)
-                VALUES ($1, (SELECT id FROM offices LIMIT 1), $2, NULL, $3)
-              `, [user.id, dateStr, attendanceStatus]);
+                VALUES ($1, (SELECT id FROM offices LIMIT 1), $2, NULL, 'ABSENT')
+              `, [user.id, dateStr]);
             }
           } catch (e) {
             console.error('Failed to insert absence attendance record:', e);
           }
         }
 
+        // 3. Consolidated Admin Alert at 11:00 AM listing all employees who have not checked in
+        try {
+          const alreadyAdminNotified = await query(
+            `SELECT id FROM notifications WHERE role = 'admin' AND title = '🚨 Absent Notification (11:00 AM)' AND attendance_date = $1`,
+            [dateStr]
+          );
+          if (alreadyAdminNotified.rows.length === 0) {
+            if (uncheckedEmployees.length > 0) {
+              const empListStr = uncheckedEmployees.map(u => `${u.name} (${u.empCode})`).join(', ');
+              await NotificationService.notifyAdmins({
+                title: '🚨 Absent Notification (11:00 AM)',
+                message: `The following ${uncheckedEmployees.length} employee(s) have not checked in by 11:00 AM and are considered absent: ${empListStr}.`,
+                type: 'Attendance',
+                priority: 'High',
+                actionUrl: `/attendance?status=Absent&date=${dateStr}`,
+                attendanceDate: dateStr,
+              });
+              console.log(`[Scheduler] 11:00 AM Absent Alert sent to Admins. Absent employees: ${empListStr}`);
+            } else {
+              await NotificationService.notifyAdmins({
+                title: '🚨 Absent Notification (11:00 AM)',
+                message: 'All employees have marked attendance by 11:00 AM. Zero absences reported today.',
+                type: 'Attendance',
+                priority: 'Low',
+                actionUrl: `/attendance?date=${dateStr}`,
+                attendanceDate: dateStr,
+              });
+            }
+          }
+        } catch (e: any) {
+          console.error('Failed to insert consolidated admin absent alert:', e);
+        }
         // WhatsApp Late Attendance Alerts (Disabled per request)
         /*
         try {
@@ -413,24 +476,24 @@ export async function checkAndSendFiveMinuteReminders(dateStr: string, timeStr: 
             const alreadyNotified = await query(
               `SELECT id FROM notifications 
                WHERE recipient_user_id = $1 
-                 AND title = '⏰ 5 Mins Left: Check In Soon!' 
+                 AND title = 'Check-in Reminder' 
                  AND attendance_date = $2`,
               [emp.id, dateStr]
             );
 
             if (alreadyNotified.rows.length === 0) {
               await NotificationService.notifyUser(emp.id, {
-                title: '⏰ 5 Mins Left: Check In Soon!',
-                message: `Only 5 minutes left! Please check in before ${formattedLate} to avoid being marked late today.`,
+                title: 'Check-in Reminder',
+                message: "You haven't marked your attendance yet. Please check in before 10:00 AM.",
                 type: 'Attendance',
                 priority: 'High',
                 actionUrl: '/home',
                 attendanceDate: dateStr,
               });
-              console.log(`[Scheduler] 5-min pre-late reminder sent to ${emp.name} (${emp.employee_id}) for shift ${shift.name}`);
+              console.log(`[Scheduler] Check-in reminder sent to ${emp.name} (${emp.employee_id}) for shift ${shift.name}`);
             }
           } catch (err) {
-            console.error(`Failed to send 5-min pre-late reminder to ${emp.id}:`, err);
+            console.error(`Failed to send check-in reminder to ${emp.id}:`, err);
           }
         }
       }
@@ -454,37 +517,29 @@ export async function checkAndSendFiveMinuteReminders(dateStr: string, timeStr: 
             AND a.check_out IS NULL
         `, [shift.id, dateStr]);
 
-        const format12 = (tStr: string) => {
-          const [h, m] = tStr.split(':').map(Number);
-          const ampm = h >= 12 ? 'PM' : 'AM';
-          const h12 = h % 12 || 12;
-          return `${h12}:${m < 10 ? '0' + m : m} ${ampm}`;
-        };
-        const formattedEnd = format12(shift.end_time);
-
         for (const emp of missingLogoutRes.rows) {
           try {
             const alreadyNotified = await query(
               `SELECT id FROM notifications 
                WHERE recipient_user_id = $1 
-                 AND title = '⏰ 5 Mins Left: Shift Ending Soon' 
+                 AND title = 'Check-out Reminder' 
                  AND attendance_date = $2`,
               [emp.id, dateStr]
             );
 
             if (alreadyNotified.rows.length === 0) {
               await NotificationService.notifyUser(emp.id, {
-                title: '⏰ 5 Mins Left: Shift Ending Soon',
-                message: `Your shift ends at ${formattedEnd}. Please remember to check out before leaving.`,
+                title: 'Check-out Reminder',
+                message: "Your shift has ended. Please remember to check out.",
                 type: 'Attendance',
                 priority: 'High',
                 actionUrl: '/home',
                 attendanceDate: dateStr,
               });
-              console.log(`[Scheduler] 5-min pre-logout reminder sent to ${emp.name} (${emp.employee_id}) for shift ${shift.name}`);
+              console.log(`[Scheduler] Check-out reminder sent to ${emp.name} (${emp.employee_id}) for shift ${shift.name}`);
             }
           } catch (err) {
-            console.error(`Failed to send 5-min pre-logout reminder to ${emp.id}:`, err);
+            console.error(`Failed to send check-out reminder to ${emp.id}:`, err);
           }
         }
       }

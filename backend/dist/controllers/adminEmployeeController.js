@@ -81,6 +81,7 @@ const createEmployeeSchema = zod_1.z.object({
         return v.substring(0, 10);
     }),
     shiftId: zod_1.z.number().int().positive().optional(),
+    attendanceMode: zod_1.z.string().default('Office').optional(),
     motherName: zod_1.z.string().max(100).optional().or(zod_1.z.literal('')).or(zod_1.z.null()),
     fatherName: zod_1.z.string().max(100).optional().or(zod_1.z.literal('')).or(zod_1.z.null()),
     reportingManager: zod_1.z.string().max(100).optional().or(zod_1.z.literal('')).or(zod_1.z.null()),
@@ -157,6 +158,7 @@ const getEmployees = async (req, res) => {
              u.is_custom_employee_id as "isCustomEmployeeId",
              u.name, u.email, u.phone, u.department, 
              u.designation, u.joining_date as "joiningDate", u.status, u.role, u.roles,
+             COALESCE(u.attendance_mode, 'Office') as "attendanceMode",
              COALESCE(u.job_status, 'Permanent') as "jobStatus",
              u.provisional_start_date as "provisionalStartDate",
              u.provisional_end_date as "provisionalEndDate",
@@ -226,6 +228,7 @@ const getEmployeeDetail = async (req, res) => {
         const userRes = await (0, db_1.query)(`
       SELECT u.id, u.employee_id as "employeeId", u.name, u.email, u.phone, u.department, 
              u.designation, u.joining_date as "joiningDate", u.status, u.role, u.roles,
+             COALESCE(u.attendance_mode, 'Office') as "attendanceMode",
              COALESCE(u.job_status, 'Permanent') as "jobStatus",
              u.provisional_start_date as "provisionalStartDate",
              u.provisional_end_date as "provisionalEndDate",
@@ -329,7 +332,7 @@ const createEmployee = async (req, res) => {
             res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: parsed.error.issues[0].message } });
             return;
         }
-        const { name, email, phone, department, designation, joiningDate, role, roles, useCustomEmployeeId, customEmployeeId, customIdReason, password, profilePhotoUrl, jobStatus, provisionalStartDate, provisionalEndDate, motherName, fatherName, reportingManager } = parsed.data;
+        const { name, email, phone, department, designation, joiningDate, role, roles, useCustomEmployeeId, customEmployeeId, customIdReason, password, profilePhotoUrl, jobStatus, provisionalStartDate, provisionalEndDate, shiftId, attendanceMode, motherName, fatherName, reportingManager } = parsed.data;
         // Check email uniqueness
         const emailRes = await client.query(`SELECT id FROM users WHERE LOWER(email) = LOWER($1)`, [email]);
         if (emailRes.rows.length > 0) {
@@ -382,18 +385,20 @@ const createEmployee = async (req, res) => {
       INSERT INTO users (
         employee_id, employee_code, is_custom_employee_id, name, email, phone, department, designation, 
         joining_date, role, roles, password_hash, status, profile_photo_url,
-        job_status, provisional_start_date, provisional_end_date, shift_id
+        job_status, provisional_start_date, provisional_end_date, shift_id, attendance_mode
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, 'active', $13, $14, $15, $16, $17)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, 'active', $13, $14, $15, $16, $17, $18)
       RETURNING id, employee_id as "employeeId", employee_code as "employeeCode",
                 is_custom_employee_id as "isCustomEmployeeId", profile_photo_url as "profilePhotoUrl",
                 job_status as "jobStatus", provisional_start_date as "provisionalStartDate",
-                provisional_end_date as "provisionalEndDate", roles, role, shift_id as "shiftId"
+                provisional_end_date as "provisionalEndDate", roles, role, shift_id as "shiftId",
+                attendance_mode as "attendanceMode"
     `;
         const insertParams = [
             employeeCode, employeeCode, isCustom, name, email ? email.trim().toLowerCase() : email, phone || null, department || null, designation || null,
             joiningDate || null, primaryRole, JSON.stringify(userRoles), hashed, profilePhotoUrl || null,
-            jobStatus || 'Permanent', provisionalStartDate || null, provisionalEndDate || null, targetShiftId || null
+            jobStatus || 'Permanent', provisionalStartDate || null, provisionalEndDate || null, targetShiftId || null,
+            attendanceMode || 'Office'
         ];
         const result = await client.query(insertQuery, insertParams);
         const createdUserId = result.rows[0].id;
@@ -475,7 +480,7 @@ const editEmployee = async (req, res) => {
             res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: parsed.error.issues[0].message } });
             return;
         }
-        const { name, email, phone, department, designation, joiningDate, role, roles, profilePhotoUrl, jobStatus, provisionalStartDate, provisionalEndDate, shiftId, motherName, fatherName, reportingManager } = parsed.data;
+        const { name, email, phone, department, designation, joiningDate, role, roles, profilePhotoUrl, jobStatus, provisionalStartDate, provisionalEndDate, shiftId, attendanceMode, motherName, fatherName, reportingManager } = parsed.data;
         // Safety check: Prevent logged-in admin from accidentally removing their own admin role
         if (req.user?.id === id) {
             if (roles !== undefined && !roles.map((r) => r.toLowerCase()).includes('admin')) {
@@ -526,6 +531,9 @@ const editEmployee = async (req, res) => {
         addField(jobStatus, 'job_status');
         addField(provisionalStartDate, 'provisional_start_date');
         addField(provisionalEndDate, 'provisional_end_date');
+        if (attendanceMode !== undefined) {
+            addField(attendanceMode, 'attendance_mode');
+        }
         if (shiftId !== undefined) {
             addField(shiftId, 'shift_id');
             // If shift has changed, record assignment history & update profile employment info

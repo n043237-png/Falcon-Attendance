@@ -56,6 +56,8 @@ const login = async (req, res) => {
         userWithoutPassword.profilePhotoUrl = photoUrl;
         userWithoutPassword.profile_photo_url = photoUrl;
         userWithoutPassword.roles = roles;
+        userWithoutPassword.attendanceMode = user.attendance_mode || 'Office';
+        userWithoutPassword.attendance_mode = user.attendance_mode || 'Office';
         res.json({
             message: 'Login successful',
             token,
@@ -78,7 +80,7 @@ const getMe = async (req, res) => {
             res.status(401).json({ error: 'Unauthorized' });
             return;
         }
-        const result = await (0, db_1.query)(`SELECT id, employee_id, name, email, phone, role, roles, status, profile_photo_url, profile_photo_url as "profilePhotoUrl", created_at FROM users WHERE id = $1`, [req.user.id]);
+        const result = await (0, db_1.query)(`SELECT id, employee_id, name, email, phone, role, roles, status, COALESCE(attendance_mode, 'Office') as "attendanceMode", COALESCE(attendance_mode, 'Office') as attendance_mode, profile_photo_url, profile_photo_url as "profilePhotoUrl", created_at FROM users WHERE id = $1`, [req.user.id]);
         if (result.rows.length === 0) {
             res.status(404).json({ error: 'User not found' });
             return;

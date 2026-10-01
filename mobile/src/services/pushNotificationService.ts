@@ -206,8 +206,8 @@ export async function scheduleLocalShiftReminders(
           await Notifications.scheduleNotificationAsync({
             identifier: 'falcon-late-mark-reminder',
             content: {
-              title: '⏰ 5 Mins Left: Check In Soon!',
-              body: `Only 5 minutes left! Please check in before ${formattedLate} to avoid being marked late today.`,
+              title: 'Check-in Reminder',
+              body: "You haven't marked your attendance yet. Please check in before 10:00 AM.",
               sound: 'default',
               priority: Notifications.AndroidNotificationPriority.MAX,
               data: { url: '/attendance' },
@@ -219,7 +219,7 @@ export async function scheduleLocalShiftReminders(
               channelId: 'falcon-default',
             },
           });
-          console.log(`[Push] Scheduled daily pre-late reminder at ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')} (deadline: ${formattedLate})`);
+          console.log(`[Push] Scheduled daily check-in reminder at ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')} (deadline: ${formattedLate})`);
         }
       }
     }
@@ -230,22 +230,20 @@ export async function scheduleLocalShiftReminders(
     } else {
       await cancelShiftEndReminder();
 
-      const endMinutes = parseTimeToMinutes(shiftEndTime);
+      const endMinutes = parseTimeToMinutes(shiftEndTime) || 18 * 60 + 30; // 6:30 PM (18:30)
       if (endMinutes !== null) {
-        const logoutRemMin = (endMinutes - 5 + 1440) % 1440;
-        const hour = Math.floor(logoutRemMin / 60);
-        const minute = logoutRemMin % 60;
-        const formattedEnd = formatMinutesTo12Hour(endMinutes);
+        const hour = Math.floor(endMinutes / 60);
+        const minute = endMinutes % 60;
 
         const now = new Date();
         const currentMins = now.getHours() * 60 + now.getMinutes();
 
-        if (currentMins < logoutRemMin) {
+        if (currentMins < endMinutes) {
           await Notifications.scheduleNotificationAsync({
             identifier: 'falcon-shift-end-reminder',
             content: {
-              title: '⏰ 5 Mins Left: Shift Ending Soon',
-              body: `Your shift ends at ${formattedEnd}. Please remember to check out before leaving.`,
+              title: 'Check-out Reminder',
+              body: "Your shift has ended. Please remember to check out.",
               sound: 'default',
               priority: Notifications.AndroidNotificationPriority.MAX,
               data: { url: '/attendance' },
@@ -257,7 +255,7 @@ export async function scheduleLocalShiftReminders(
               channelId: 'falcon-default',
             },
           });
-          console.log(`[Push] Scheduled daily pre-logout reminder at ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')} (shift end: ${formattedEnd})`);
+          console.log(`[Push] Scheduled daily check-out reminder at ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')} (shift end: 6:30 PM)`);
         }
       }
     }

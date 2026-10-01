@@ -8,6 +8,8 @@ interface User {
   name: string;
   email: string;
   role: string;
+  attendanceMode?: string;
+  attendance_mode?: string;
   profilePhotoUrl?: string;
   profile_photo_url?: string;
 }

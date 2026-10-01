@@ -117,14 +117,14 @@ export function calculateStatus(
     return result;
   }
 
-  // 5. Working Hours Calculation
+  // 5. Working Hours Calculation (Required working time: 510 minutes / 8h 30m)
   if (result.workingMinutes >= effectiveFullDayMinutes) {
     result.status = 'PRESENT';
-  } else if (result.workingMinutes >= effectiveHalfDayMinutes) {
+  } else if (hasHalfDayLeave && result.workingMinutes >= effectiveHalfDayMinutes) {
     // If they have HALF_DAY_LEAVE, working half a day implies full compliance.
-    result.status = hasHalfDayLeave ? 'PRESENT' : 'HALF_DAY';
+    result.status = 'PRESENT';
   } else {
-    // Less than half day
+    // Checked out before completing required working time (510 minutes)
     result.status = 'INSUFFICIENT_HOURS';
   }
 

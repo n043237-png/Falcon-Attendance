@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const profileController_1 = require("../controllers/profileController");
+const idCardController_1 = require("../controllers/idCardController");
 const auth_1 = require("../middlewares/auth");
 const upload_1 = require("../middlewares/upload");
 const documentService_1 = require("../services/documentService");
@@ -12,6 +13,9 @@ router.patch('/', profileController_1.updateProfile);
 router.patch('/change-password', profileController_1.changePassword);
 router.post('/photo', upload_1.uploadProfilePhoto.single('photo'), profileController_1.uploadProfilePhotoHandler);
 router.delete('/photo', profileController_1.deleteProfilePhotoHandler);
+// Digital Employee ID Card
+router.get('/id-card', idCardController_1.getMyIdCard);
+router.get('/id-card/pdf', idCardController_1.downloadMyIdCardPdf);
 // Document management
 router.post('/documents', documentService_1.uploadDocumentMiddleware.single('file'), profileController_1.uploadProfileDocumentHandler);
 router.delete('/documents/:docId', profileController_1.deleteProfileDocumentHandler);

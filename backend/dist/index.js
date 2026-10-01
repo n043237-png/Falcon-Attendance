@@ -17,6 +17,8 @@ const notificationRoutes_1 = __importDefault(require("./routes/notificationRoute
 const employeeRoutes_1 = __importDefault(require("./routes/employeeRoutes"));
 const payrollRoutes_1 = __importDefault(require("./routes/payrollRoutes"));
 const holidayRoutes_1 = __importDefault(require("./routes/holidayRoutes"));
+const expenseRoutes_1 = __importDefault(require("./routes/expenseRoutes"));
+const idCardController_1 = require("./controllers/idCardController");
 const schedulerService_1 = require("./services/schedulerService");
 const path_1 = __importDefault(require("path"));
 const app = (0, express_1.default)();
@@ -42,6 +44,8 @@ app.use('/api/profile', profileRoutes_1.default);
 app.use('/api/notifications', notificationRoutes_1.default);
 app.use('/api/employee', employeeRoutes_1.default);
 app.use('/api/holidays', holidayRoutes_1.default);
+app.use('/api/expenses', expenseRoutes_1.default);
+app.get('/api/verify/id-card/:verificationId', idCardController_1.verifyIdCard);
 (0, schedulerService_1.startScheduler)();
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', message: 'Falcon Office Backend is running' });

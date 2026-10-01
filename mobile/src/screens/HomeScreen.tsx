@@ -16,7 +16,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
-import { getCurrentLocation } from '../services/locationService';
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
+import { getCurrentLocation, getReadableAddress } from '../services/locationService';
 import { getTodayAttendance, checkIn, checkOut, AttendanceRecord } from '../api/attendanceApi';
 import { resolvePhotoUrl } from '../api/profileApi';
 import {
@@ -34,6 +36,7 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [showFullPhoto, setShowFullPhoto] = useState(false);
   const [attendance, setAttendance] = useState<AttendanceRecord | null>(null);
+  const [attendanceMode, setAttendanceMode] = useState<string>('Office');
   const [shiftInfo, setShiftInfo] = useState<{
     name?: string;
     startTime?: string;
@@ -69,6 +72,14 @@ export default function HomeScreen() {
         setAttendance(res.data.attendance);
       } else {
         setAttendance(null);
+      }
+
+      if (res.success && res.data?.attendanceMode) {
+        setAttendanceMode(res.data.attendanceMode);
+      } else if (res.success && res.data?.attendance?.attendanceMode) {
+        setAttendanceMode(res.data.attendance.attendanceMode);
+      } else if (user?.attendanceMode) {
+        setAttendanceMode(user.attendanceMode);
       }
 
       if (res.success && res.data?.office) {
@@ -112,15 +123,73 @@ export default function HomeScreen() {
     }, [token])
   );
 
+  const effectiveMode = attendance?.attendanceMode || attendanceMode || user?.attendanceMode || 'Office';
+  const isFieldMode = effectiveMode.toLowerCase() === 'field';
+
   const handleAction = async (action: 'check-in' | 'check-out') => {
     setActionLoading(true);
     try {
       const locData = await getCurrentLocation();
 
+      let liveAddress: string | undefined;
+      let selfieDataUri: string | undefined;
+
+      if (isFieldMode) {
+        // 1. Fetch live address via reverse geocoding
+        try {
+          liveAddress = await getReadableAddress(locData.latitude, locData.longitude);
+        } catch (addrErr) {
+          console.warn('Reverse geocoding error:', addrErr);
+        }
+
+        // 2. Mandatory front camera selfie capture for Field employees
+        const { status: camStatus } = await ImagePicker.requestCameraPermissionsAsync();
+        if (camStatus !== 'granted') {
+          Alert.alert(
+            'Camera Permission Required',
+            'Selfie capture is mandatory to mark attendance in Field Mode. Please enable camera access in settings.'
+          );
+          setActionLoading(false);
+          return;
+        }
+
+        const camResult = await ImagePicker.launchCameraAsync({
+          cameraType: ImagePicker.CameraType.front,
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.6,
+          base64: true,
+        });
+
+        if (camResult.canceled || !camResult.assets || camResult.assets.length === 0) {
+          Alert.alert(
+            'Selfie Required',
+            'Attendance in Field Mode requires a mandatory front selfie. Action cancelled.'
+          );
+          setActionLoading(false);
+          return;
+        }
+
+        let base64Photo = camResult.assets[0].base64;
+        if (!base64Photo && camResult.assets[0].uri) {
+          base64Photo = await FileSystem.readAsStringAsync(camResult.assets[0].uri, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+        }
+
+        if (!base64Photo) {
+          Alert.alert('Selfie Error', 'Unable to process captured selfie. Please try again.');
+          setActionLoading(false);
+          return;
+        }
+
+        selfieDataUri = `data:image/jpeg;base64,${base64Photo}`;
+      }
+
       const result =
         action === 'check-in'
-          ? await checkIn(locData.latitude, locData.longitude, locData.accuracy, token!)
-          : await checkOut(locData.latitude, locData.longitude, locData.accuracy, token!);
+          ? await checkIn(locData.latitude, locData.longitude, locData.accuracy, token!, liveAddress, selfieDataUri)
+          : await checkOut(locData.latitude, locData.longitude, locData.accuracy, token!, liveAddress, selfieDataUri);
 
       if (result.success) {
         if (action === 'check-in') {
@@ -128,11 +197,14 @@ export default function HomeScreen() {
         } else {
           cancelShiftEndReminder();
         }
-        Alert.alert('Success', action === 'check-in' ? 'Attendance marked successfully!' : 'Checked out successfully!');
+        const successMsg = isFieldMode && liveAddress
+          ? (action === 'check-in' ? `Check-in marked successfully from ${liveAddress}!` : `Check-out marked successfully from ${liveAddress}!`)
+          : (action === 'check-in' ? 'Attendance marked successfully!' : 'Checked out successfully!');
+        Alert.alert('Success', successMsg);
         loadAttendance();
       } else {
         const configuredRadius = officeInfo?.radiusMeters || result.data?.allowedRadiusMeters || 20;
-        const errorTitle = action === 'check-in' ? 'Check-In Outside Permitted Area' : 'Check-Out Outside Permitted Area';
+        const errorTitle = action === 'check-in' ? 'Check-In Verification' : 'Check-Out Verification';
         const errorMsg = result.error?.message || (
           result.data?.distanceMeters !== undefined
             ? `You are outside the permitted office location (${result.data.distanceMeters}m away). Attendance is only allowed within ${result.data.allowedRadiusMeters || configuredRadius} metres of the office.`
@@ -195,6 +267,9 @@ export default function HomeScreen() {
 
   const getStatusBadge = () => {
     if (hasCheckedOut) {
+      if (status === 'INSUFFICIENT_HOURS' || (attendance?.workingMinutes !== undefined && attendance.workingMinutes < 510)) {
+        return { label: 'Insufficient Hours', color: '#DC2626', bg: '#FEE2E2', icon: 'alert-circle' as const };
+      }
       return { label: 'Completed', color: '#15803D', bg: '#DCFCE7', icon: 'checkmark-circle' as const };
     }
     if (hasCheckedIn) {
@@ -363,7 +438,7 @@ export default function HomeScreen() {
               <Text style={styles.heroClockLabel}>
                 Office Hours: {shiftInfo?.startTime && shiftInfo?.endTime
                   ? `${formatTime12(shiftInfo.startTime)} - ${formatTime12(shiftInfo.endTime)}`
-                  : '10:00 AM - 06:30 PM'}
+                  : '09:30 AM - 06:30 PM'}
               </Text>
             </View>
             <View style={{ alignItems: 'flex-end', gap: 4 }}>
@@ -371,10 +446,17 @@ export default function HomeScreen() {
                 <View style={styles.gpsDot} />
                 <Text style={styles.gpsText}>GPS Active</Text>
               </View>
-              <View style={styles.geoFenceBadge}>
-                <Ionicons name="navigate-outline" size={10} color="#1D4ED8" />
-                <Text style={styles.geoFenceBadgeText}>{officeInfo?.radiusMeters || 20}m Radius</Text>
-              </View>
+              {isFieldMode ? (
+                <View style={[styles.geoFenceBadge, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}>
+                  <Ionicons name="navigate-circle" size={11} color="#D97706" />
+                  <Text style={[styles.geoFenceBadgeText, { color: '#B45309' }]}>📍 Field Mode</Text>
+                </View>
+              ) : (
+                <View style={styles.geoFenceBadge}>
+                  <Ionicons name="navigate-outline" size={10} color="#1D4ED8" />
+                  <Text style={styles.geoFenceBadgeText}>{officeInfo?.radiusMeters || 20}m Radius</Text>
+                </View>
+              )}
             </View>
           </View>
 
@@ -392,11 +474,13 @@ export default function HomeScreen() {
                 <Ionicons name={badge.icon} size={36} color={badge.color} />
               </View>
               <Text style={[styles.completedTitle, { color: badge.color }]}>
-                {hasCheckedOut ? 'Day Complete' : badge.label}
+                {hasCheckedOut ? (status === 'INSUFFICIENT_HOURS' || (attendance?.workingMinutes !== undefined && attendance.workingMinutes < 510) ? 'Insufficient Hours' : 'Day Complete') : badge.label}
               </Text>
               <Text style={styles.completedSubtitle}>
                 {hasCheckedOut
-                  ? `You checked out at ${formatTime(attendance?.checkOut || null)}. Great work today!`
+                  ? (status === 'INSUFFICIENT_HOURS' || (attendance?.workingMinutes !== undefined && attendance.workingMinutes < 510)
+                    ? `You checked out at ${formatTime(attendance?.checkOut || null)} (${formatDuration(attendance?.workingMinutes || 0)}). Less than the required 8h 30m (510 mins).`
+                    : `You checked out at ${formatTime(attendance?.checkOut || null)}. Great work today!`)
                   : status === 'ON_LEAVE'
                   ? `Approved Leave: ${attendance?.leaveType || 'Annual Leave'}`
                   : status === 'HOLIDAY'
@@ -431,7 +515,9 @@ export default function HomeScreen() {
                       {!hasCheckedIn ? 'PUNCH IN' : 'PUNCH OUT'}
                     </Text>
                     <Text style={styles.punchButtonSubtitle}>
-                      {!hasCheckedIn ? 'Tap to mark your arrival' : 'Tap to end your workday'}
+                      {isFieldMode
+                        ? (!hasCheckedIn ? 'Tap to capture selfie & mark arrival' : 'Tap to capture selfie & end workday')
+                        : (!hasCheckedIn ? 'Tap to mark your arrival' : 'Tap to end your workday')}
                     </Text>
                   </>
                 )}
@@ -446,9 +532,18 @@ export default function HomeScreen() {
                 </View>
               )}
 
-              <Text style={styles.geoFenceFootnote}>
-                📍 Attendance permitted within {officeInfo?.radiusMeters || 20} metres of {officeInfo?.name || 'Falcon office'}
-              </Text>
+              {isFieldMode ? (
+                <View style={styles.fieldModeFootnoteBox}>
+                  <Ionicons name="camera-outline" size={15} color="#D97706" style={{ marginRight: 6 }} />
+                  <Text style={styles.fieldModeFootnoteText}>
+                    Field Mode Active: Punch from any location with live GPS, address & mandatory selfie verification.
+                  </Text>
+                </View>
+              ) : (
+                <Text style={styles.geoFenceFootnote}>
+                  📍 Attendance permitted within {officeInfo?.radiusMeters || 20} metres of {officeInfo?.name || 'Falcon office'}
+                </Text>
+              )}
             </View>
           )}
         </View>
@@ -488,7 +583,7 @@ export default function HomeScreen() {
             <Text style={styles.metricLabel}>WORK DURATION</Text>
             <Text style={styles.metricValue}>{getRealtimeWorkDuration()}</Text>
             <Text style={styles.metricSubtext}>
-              {hasCheckedIn && !hasCheckedOut ? 'Live • Target: 9h' : 'Target: 9h'}
+              {hasCheckedIn && !hasCheckedOut ? 'Live • Target: 8h 30m' : 'Target: 8h 30m'}
             </Text>
           </View>
 
@@ -502,6 +597,20 @@ export default function HomeScreen() {
             <Text style={styles.metricSubtext}>{shiftInfo?.name || 'Day Shift'}</Text>
           </View>
         </View>
+
+        {/* Recorded Field Location Card */}
+        {attendance?.checkInAddress && (
+          <View style={styles.locationBannerCard}>
+            <View style={styles.locationBannerHeader}>
+              <Ionicons name="location" size={16} color="#2563EB" />
+              <Text style={styles.locationBannerTitle}>Recorded Punch-In Location</Text>
+              <View style={styles.fieldModeTag}>
+                <Text style={styles.fieldModeTagText}>{attendance.attendanceMode || 'Field'}</Text>
+              </View>
+            </View>
+            <Text style={styles.locationBannerAddress}>{attendance.checkInAddress}</Text>
+          </View>
+        )}
 
         {/* Quick Navigation Cards */}
         <Text style={styles.sectionHeader}>Quick Services</Text>
@@ -768,6 +877,68 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#64748B',
     marginTop: 10,
+    fontWeight: '500',
+  },
+  fieldModeFootnoteBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginTop: 12,
+  },
+  fieldModeFootnoteText: {
+    flex: 1,
+    fontSize: 11,
+    color: '#92400E',
+    fontWeight: '600',
+    lineHeight: 16,
+  },
+  locationBannerCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  locationBannerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  locationBannerTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginLeft: 6,
+    flex: 1,
+  },
+  fieldModeTag: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  fieldModeTagText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#2563EB',
+  },
+  locationBannerAddress: {
+    fontSize: 13,
+    color: '#475569',
+    lineHeight: 18,
     fontWeight: '500',
   },
   heroDivider: {

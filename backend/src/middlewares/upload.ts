@@ -65,6 +65,42 @@ export const processAndSaveProfilePhoto = async (buffer: Buffer, prefix = 'profi
   return `data:image/webp;base64,${webpBuffer.toString('base64')}`;
 };
 
+const ATTENDANCE_UPLOAD_DIR = path.join(process.cwd(), 'uploads', 'attendance');
+if (!fs.existsSync(ATTENDANCE_UPLOAD_DIR)) {
+  fs.mkdirSync(ATTENDANCE_UPLOAD_DIR, { recursive: true });
+}
+
+export const processAndSaveAttendanceSelfie = async (rawInput: Buffer | string, prefix = 'selfie'): Promise<string> => {
+  let buffer: Buffer;
+  if (Buffer.isBuffer(rawInput)) {
+    buffer = rawInput;
+  } else if (typeof rawInput === 'string' && rawInput.startsWith('data:')) {
+    const base64Data = rawInput.replace(/^data:image\/\w+;base64,/, '');
+    buffer = Buffer.from(base64Data, 'base64');
+  } else if (typeof rawInput === 'string') {
+    buffer = Buffer.from(rawInput, 'base64');
+  } else {
+    throw new Error('Invalid selfie image data');
+  }
+
+  const filename = `${prefix}-${Date.now()}-${crypto.randomBytes(6).toString('hex')}.webp`;
+  const filePath = path.join(ATTENDANCE_UPLOAD_DIR, filename);
+
+  const webpBuffer = await sharp(buffer)
+    .rotate()
+    .resize(500, 500, { fit: 'cover', position: 'center' })
+    .webp({ quality: 75 })
+    .toBuffer();
+
+  try {
+    await fs.promises.writeFile(filePath, webpBuffer);
+  } catch (err) {
+    console.warn('Could not write local selfie file:', err);
+  }
+
+  return `data:image/webp;base64,${webpBuffer.toString('base64')}`;
+};
+
 /**
  * Delete a profile photo safely from the filesystem
  */

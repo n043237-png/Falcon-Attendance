@@ -7,10 +7,14 @@ import { NotificationService } from '../services/notificationService';
 import { getAttendanceSettings, calculateStatus } from '../services/attendanceStatusService';
 import { ShiftService } from '../services/shiftService';
 
+import { processAndSaveAttendanceSelfie } from '../middlewares/upload';
+
 const coordsSchema = z.object({
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
-  accuracy: z.number().positive(),
+  accuracy: z.number().positive().optional().default(10),
+  address: z.string().optional().nullable(),
+  selfie: z.string().optional().nullable(),
 });
 
 export const checkIn = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -20,36 +24,85 @@ export const checkIn = async (req: AuthRequest, res: Response): Promise<void> =>
       res.status(400).json({ success: false, error: { code: 'INVALID_COORDINATES', message: 'Invalid latitude, longitude, or accuracy.' }});
       return;
     }
-    const { latitude, longitude, accuracy } = parsed.data;
+    const { latitude, longitude, accuracy, address, selfie } = parsed.data;
     const employeeId = req.user!.id;
 
-    // 1. Verify location
-    let locResult;
-    try {
-      locResult = await verifyLocation(latitude, longitude, accuracy);
-    } catch (verr: any) {
-      if (verr.status) {
-        res.status(verr.status).json({ success: false, error: { code: verr.code, message: verr.message } });
-        return;
-      }
-      throw verr;
-    }
+    // Check employee's assigned Attendance Mode (Office vs Field)
+    const userModeRes = await query('SELECT attendance_mode FROM users WHERE id = $1', [employeeId]);
+    const attendanceMode = userModeRes.rows[0]?.attendance_mode || 'Office';
+    const isFieldMode = attendanceMode.toLowerCase() === 'field';
 
-    if (!locResult.insideOffice) {
-      res.status(403).json({
+    // In Field Mode, selfie is mandatory
+    if (isFieldMode && (!selfie || !selfie.trim())) {
+      res.status(400).json({
         success: false,
-        error: { 
-          code: 'OUTSIDE_OFFICE', 
-          message: `You are outside the permitted office location (${locResult.distanceMeters}m away). Check-in is only permitted within ${locResult.allowedRadiusMeters} metres of ${locResult.officeName || 'the office'}.` 
-        },
-        data: { 
-          distanceMeters: locResult.distanceMeters, 
-          allowedRadiusMeters: locResult.allowedRadiusMeters,
-          officeName: locResult.officeName 
-        }
+        error: { code: 'SELFIE_REQUIRED', message: 'Selfie capture is mandatory for Field attendance.' }
       });
       return;
     }
+
+    // Process & store selfie image if provided
+    let selfieUrl: string | null = null;
+    if (selfie && selfie.trim()) {
+      try {
+        selfieUrl = await processAndSaveAttendanceSelfie(selfie, `selfie-in-${employeeId}`);
+      } catch (err: any) {
+        console.warn('Selfie processing warning:', err.message);
+        selfieUrl = selfie.startsWith('data:') ? selfie : null;
+      }
+    }
+
+    // 1. Verify location
+    let locResult = {
+      officeId: null as number | null,
+      officeName: isFieldMode ? 'Field Location' : 'Office',
+      insideOffice: true,
+      distanceMeters: 0,
+      allowedRadiusMeters: 0
+    };
+
+    if (!isFieldMode) {
+      // Office Mode: Strictly validate office geofence & radius
+      try {
+        const vr = await verifyLocation(latitude, longitude, accuracy);
+        locResult = {
+          officeId: vr.officeId,
+          officeName: vr.officeName,
+          insideOffice: vr.insideOffice,
+          distanceMeters: vr.distanceMeters,
+          allowedRadiusMeters: vr.allowedRadiusMeters
+        };
+      } catch (verr: any) {
+        if (verr.status) {
+          res.status(verr.status).json({ success: false, error: { code: verr.code, message: verr.message } });
+          return;
+        }
+        throw verr;
+      }
+
+      if (!locResult.insideOffice) {
+        res.status(403).json({
+          success: false,
+          error: { 
+            code: 'OUTSIDE_OFFICE', 
+            message: `You are outside the permitted office location (${locResult.distanceMeters}m away). Check-in is only permitted within ${locResult.allowedRadiusMeters} metres of ${locResult.officeName || 'the office'}.` 
+          },
+          data: { 
+            distanceMeters: locResult.distanceMeters, 
+            allowedRadiusMeters: locResult.allowedRadiusMeters,
+            officeName: locResult.officeName 
+          }
+        });
+        return;
+      }
+    } else {
+      // Field Mode: Can check in from any location! Link to default office for foreign key if present
+      const defOff = await query('SELECT id, name FROM offices WHERE status = $1 ORDER BY id ASC LIMIT 1', ['active']);
+      locResult.officeId = defOff.rows[0]?.id || null;
+      locResult.officeName = defOff.rows[0]?.name || 'Field Location';
+    }
+
+    const recordedAddress = address?.trim() || (isFieldMode ? `GPS (${latitude.toFixed(5)}, ${longitude.toFixed(5)})` : (locResult.officeName || 'Office'));
 
     // 2. Fetch employee's assigned shift
     const shift = await ShiftService.getEmployeeShift(employeeId);
@@ -91,22 +144,27 @@ export const checkIn = async (req: AuthRequest, res: Response): Promise<void> =>
             status = $4,
             shift_id = $5,
             is_late = $6,
-            late_minutes = $7
-        WHERE id = $8
-        RETURNING id, attendance_date, check_in, status, shift_id, is_late, late_minutes
-      `, [locResult.officeId, longitude, latitude, checkInStatus, shift.id, evalResult.isLate, evalResult.lateMinutes, existRes.rows[0].id]);
+            late_minutes = $7,
+            attendance_mode = $8,
+            check_in_latitude = $9,
+            check_in_longitude = $10,
+            check_in_address = $11,
+            check_in_selfie_url = $12
+        WHERE id = $13
+        RETURNING id, attendance_date, check_in, status, shift_id, is_late, late_minutes, attendance_mode, check_in_address, check_in_selfie_url
+      `, [locResult.officeId, longitude, latitude, checkInStatus, shift.id, evalResult.isLate, evalResult.lateMinutes, attendanceMode, latitude, longitude, recordedAddress, selfieUrl, existRes.rows[0].id]);
       newRecord = updateRes.rows[0];
     } else {
       // 3. Create attendance
       const insertRes = await query(`
         INSERT INTO attendance (
           employee_id, office_id, attendance_date, check_in, check_out, check_in_location, status,
-          shift_id, is_late, late_minutes
+          shift_id, is_late, late_minutes, attendance_mode, check_in_latitude, check_in_longitude, check_in_address, check_in_selfie_url
         ) VALUES (
           $1, $2, $3, CURRENT_TIMESTAMP, NULL, ST_SetSRID(ST_MakePoint($4, $5), 4326), $6,
-          $7, $8, $9
-        ) RETURNING id, attendance_date, check_in, status, shift_id, is_late, late_minutes
-      `, [employeeId, locResult.officeId, attendanceDate, longitude, latitude, checkInStatus, shift.id, evalResult.isLate, evalResult.lateMinutes]);
+          $7, $8, $9, $10, $11, $12, $13, $14
+        ) RETURNING id, attendance_date, check_in, status, shift_id, is_late, late_minutes, attendance_mode, check_in_address, check_in_selfie_url
+      `, [employeeId, locResult.officeId, attendanceDate, longitude, latitude, checkInStatus, shift.id, evalResult.isLate, evalResult.lateMinutes, attendanceMode, latitude, longitude, recordedAddress, selfieUrl]);
       newRecord = insertRes.rows[0];
     }
 
@@ -194,6 +252,9 @@ export const checkIn = async (req: AuthRequest, res: Response): Promise<void> =>
         attendanceDate: newRecord.attendance_date,
         checkIn: newRecord.check_in,
         status: newRecord.status,
+        attendanceMode: newRecord.attendance_mode || attendanceMode,
+        address: newRecord.check_in_address,
+        selfieUrl: newRecord.check_in_selfie_url,
         shift: {
           id: shift.id,
           name: shift.name,
@@ -219,36 +280,73 @@ export const checkOut = async (req: AuthRequest, res: Response): Promise<void> =
       res.status(400).json({ success: false, error: { code: 'INVALID_COORDINATES', message: 'Invalid latitude, longitude, or accuracy.' }});
       return;
     }
-    const { latitude, longitude, accuracy } = parsed.data;
+    const { latitude, longitude, accuracy, address, selfie } = parsed.data;
     const employeeId = req.user!.id;
 
-    // 1. Verify location
-    let locResult;
-    try {
-      locResult = await verifyLocation(latitude, longitude, accuracy);
-    } catch (verr: any) {
-      if (verr.status) {
-        res.status(verr.status).json({ success: false, error: { code: verr.code, message: verr.message } });
-        return;
+    // Check employee's assigned Attendance Mode
+    const userModeRes = await query('SELECT attendance_mode FROM users WHERE id = $1', [employeeId]);
+    const attendanceMode = userModeRes.rows[0]?.attendance_mode || 'Office';
+    const isFieldMode = attendanceMode.toLowerCase() === 'field';
+
+    // Process & store checkout selfie if provided
+    let outSelfieUrl: string | null = null;
+    if (selfie && selfie.trim()) {
+      try {
+        outSelfieUrl = await processAndSaveAttendanceSelfie(selfie, `selfie-out-${employeeId}`);
+      } catch (err: any) {
+        console.warn('Checkout selfie processing warning:', err.message);
+        outSelfieUrl = selfie.startsWith('data:') ? selfie : null;
       }
-      throw verr;
     }
 
-    if (!locResult.insideOffice) {
-      res.status(403).json({
-        success: false,
-        error: { 
-          code: 'OUTSIDE_OFFICE', 
-          message: `You are outside the permitted office location (${locResult.distanceMeters}m away). Check-out is only permitted within ${locResult.allowedRadiusMeters} metres of ${locResult.officeName || 'the office'}.` 
-        },
-        data: { 
-          distanceMeters: locResult.distanceMeters, 
-          allowedRadiusMeters: locResult.allowedRadiusMeters,
-          officeName: locResult.officeName 
+    // 1. Verify location
+    let locResult = {
+      officeId: null as number | null,
+      officeName: isFieldMode ? 'Field Location' : 'Office',
+      insideOffice: true,
+      distanceMeters: 0,
+      allowedRadiusMeters: 0
+    };
+
+    if (!isFieldMode) {
+      // Office Mode: Strictly validate office geofence & radius
+      try {
+        const vr = await verifyLocation(latitude, longitude, accuracy);
+        locResult = {
+          officeId: vr.officeId,
+          officeName: vr.officeName,
+          insideOffice: vr.insideOffice,
+          distanceMeters: vr.distanceMeters,
+          allowedRadiusMeters: vr.allowedRadiusMeters
+        };
+      } catch (verr: any) {
+        if (verr.status) {
+          res.status(verr.status).json({ success: false, error: { code: verr.code, message: verr.message } });
+          return;
         }
-      });
-      return;
+        throw verr;
+      }
+
+      if (!locResult.insideOffice) {
+        res.status(403).json({
+          success: false,
+          error: { 
+            code: 'OUTSIDE_OFFICE', 
+            message: `You are outside the permitted office location (${locResult.distanceMeters}m away). Check-out is only permitted within ${locResult.allowedRadiusMeters} metres of ${locResult.officeName || 'the office'}.` 
+          },
+          data: { 
+            distanceMeters: locResult.distanceMeters, 
+            allowedRadiusMeters: locResult.allowedRadiusMeters,
+            officeName: locResult.officeName 
+          }
+        });
+        return;
+      }
+    } else {
+      locResult.officeName = 'Field Location';
     }
+
+    const recordedOutAddress = address?.trim() || (isFieldMode ? `GPS (${latitude.toFixed(5)}, ${longitude.toFixed(5)})` : (locResult.officeName || 'Office'));
 
     // 2. Find open attendance record (supporting night shifts across midnight)
     const openRes = await query(`
@@ -286,15 +384,17 @@ export const checkOut = async (req: AuthRequest, res: Response): Promise<void> =
     // Calculate metrics using ShiftService
     const metrics = ShiftService.evaluateAttendance(shift, checkInDate, now);
 
-    // Determine final status
+    // Determine final status (Required working time: 510 minutes / 8h 30m)
+    const requiredWorkingMins = shift.minimumWorkHours ? Math.round(shift.minimumWorkHours * 60) : 510;
     const isLateAttendance = attendance.is_late || metrics.isLate;
-    let finalStatus = isLateAttendance ? 'LATE' : 'PRESENT';
-    if (metrics.workingMinutes >= shift.minimumWorkHours * 60) {
-      finalStatus = isLateAttendance ? 'LATE' : 'PRESENT';
-    } else if (metrics.workingMinutes >= shift.halfDayMinutes) {
-      finalStatus = 'HALF_DAY';
-    } else {
+    let finalStatus = 'PRESENT';
+
+    if (metrics.workingMinutes < requiredWorkingMins) {
       finalStatus = 'INSUFFICIENT_HOURS';
+    } else if (isLateAttendance) {
+      finalStatus = 'LATE';
+    } else {
+      finalStatus = 'PRESENT';
     }
 
     // 3. Update checkout
@@ -309,9 +409,13 @@ export const checkOut = async (req: AuthRequest, res: Response): Promise<void> =
         status = $6,
         shift_id = COALESCE(shift_id, $7),
         is_late = $8,
-        late_minutes = $9
-      WHERE id = $10
-      RETURNING id, attendance_date, check_in, check_out, working_minutes, overtime_minutes, early_departure_minutes, status, shift_id, is_late, late_minutes
+        late_minutes = $9,
+        check_out_latitude = $10,
+        check_out_longitude = $11,
+        check_out_address = $12,
+        check_out_selfie_url = $13
+      WHERE id = $14
+      RETURNING id, attendance_date, check_in, check_out, working_minutes, overtime_minutes, early_departure_minutes, status, shift_id, is_late, late_minutes, attendance_mode, check_in_address, check_out_address
     `, [
       longitude, 
       latitude, 
@@ -322,6 +426,10 @@ export const checkOut = async (req: AuthRequest, res: Response): Promise<void> =
       shift.id, 
       isLateAttendance,
       metrics.lateMinutes,
+      latitude,
+      longitude,
+      recordedOutAddress,
+      outSelfieUrl,
       attendance.id
     ]);
 
@@ -368,7 +476,9 @@ export const checkOut = async (req: AuthRequest, res: Response): Promise<void> =
         return `${h}h ${m}m`;
       };
       let notifMsg = `Checkout completed successfully for ${shift.name}. Duration: ${formatDuration(metrics.workingMinutes)}.`;
-      if (metrics.breakDeducted && metrics.breakDeducted > 0) {
+      if (metrics.workingMinutes < requiredWorkingMins) {
+        notifMsg = `Checkout recorded for ${shift.name}. Duration: ${formatDuration(metrics.workingMinutes)}. Insufficient Working Hours (Required: 8h 30m / 510 mins).`;
+      } else if (metrics.breakDeducted && metrics.breakDeducted > 0) {
         notifMsg = `Checkout completed successfully for ${shift.name}. Duration: ${formatDuration(metrics.workingMinutes)} (Break deducted: ${metrics.breakDeducted}m).`;
       }
       if (metrics.overtimeMinutes > 0) {
@@ -419,7 +529,10 @@ export const getToday = async (req: AuthRequest, res: Response): Promise<void> =
 
     const [existRes, setRes, holRes, leaveRes, officeRes] = await Promise.all([
       query(`
-        SELECT id, attendance_date, check_in, check_out, working_minutes, status 
+        SELECT id, attendance_date, check_in, check_out, working_minutes, status,
+               COALESCE(attendance_mode, 'Office') as attendance_mode,
+               check_in_address, check_in_selfie_url,
+               check_out_address, check_out_selfie_url 
         FROM attendance WHERE employee_id = $1 AND attendance_date = $2
       `, [employeeId, today]),
       getAttendanceSettings(),
@@ -448,20 +561,22 @@ export const getToday = async (req: AuthRequest, res: Response): Promise<void> =
       radiusMeters: officeRes.rows[0].radiusMeters
     } : null;
 
-    // Fetch employee shift details for local reminder sync
+    // Fetch employee shift details and attendance mode for reminder & UI sync
     const userShiftRes = await query(`
-      SELECT s.id, s.name, s.start_time as "startTime", s.end_time as "endTime", s.grace_minutes as "graceMinutes", s.late_after as "lateAfter"
+      SELECT s.id, s.name, s.start_time as "startTime", s.end_time as "endTime", s.grace_minutes as "graceMinutes", s.late_after as "lateAfter",
+             COALESCE(u.attendance_mode, 'Office') as "attendanceMode"
       FROM users u
       LEFT JOIN shifts s ON s.id = COALESCE(u.shift_id, (SELECT id FROM shifts ORDER BY id ASC LIMIT 1))
       WHERE u.id = $1
     `, [employeeId]);
     const userShift = userShiftRes.rows[0] || null;
+    const userAttendanceMode = userShift?.attendanceMode || 'Office';
 
     // Compute absolute state
     const result = calculateStatus(today, record, setRes, holiday, leave, new Date());
 
     if (result.status === 'NOT_MARKED') {
-      res.json({ success: true, data: { attendance: null, shift: userShift, office: officeInfo } });
+      res.json({ success: true, data: { attendance: null, attendanceMode: userAttendanceMode, shift: userShift, office: officeInfo } });
       return;
     }
 
@@ -483,9 +598,15 @@ export const getToday = async (req: AuthRequest, res: Response): Promise<void> =
           workingMinutes: liveWorkingMinutes,
           status: result.status,
           isLate: result.isLate,
+          attendanceMode: record?.attendance_mode || userAttendanceMode,
+          checkInAddress: record?.check_in_address || null,
+          checkInSelfieUrl: record?.check_in_selfie_url || null,
+          checkOutAddress: record?.check_out_address || null,
+          checkOutSelfieUrl: record?.check_out_selfie_url || null,
           holidayName: holiday ? holiday.name : null,
           leaveType: leave ? leave.leave_type : null
         },
+        attendanceMode: userAttendanceMode,
         shift: userShift,
         office: officeInfo
       }
@@ -563,7 +684,12 @@ export const getHistory = async (req: AuthRequest, res: Response): Promise<void>
             checkOut: result.checkOut,
             workingMinutes: Math.round(result.workingMinutes),
             status: result.status,
-            isLate: result.isLate
+            isLate: result.isLate,
+            attendanceMode: rec?.attendance_mode || 'Office',
+            checkInAddress: rec?.check_in_address || null,
+            checkInSelfieUrl: rec?.check_in_selfie_url || null,
+            checkOutAddress: rec?.check_out_address || null,
+            checkOutSelfieUrl: rec?.check_out_selfie_url || null
           });
         }
       }
