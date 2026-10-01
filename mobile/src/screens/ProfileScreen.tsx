@@ -21,6 +21,7 @@ import { getProfile, updateProfile, changePassword, resolvePhotoUrl, uploadProfi
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { sendTestNotification } from '../services/pushNotificationService';
+import { FullImageModal } from '../components/FullImageModal';
 
 export default function ProfileScreen() {
   const { token, logout, updateUser } = useAuth();
@@ -35,9 +36,17 @@ export default function ProfileScreen() {
   const [showEdit, setShowEdit] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showPhotoOptions, setShowPhotoOptions] = useState(false);
+  const [showFullPhoto, setShowFullPhoto] = useState(false);
 
   // Forms
   const [phone, setPhone] = useState('');
+  const [personalEmail, setPersonalEmail] = useState('');
+  const [currentAddress, setCurrentAddress] = useState('');
+  const [emergencyContactName, setEmergencyContactName] = useState('');
+  const [emergencyContactRelationship, setEmergencyContactRelationship] = useState('');
+  const [emergencyContactPhone, setEmergencyContactPhone] = useState('');
+  const [fatherName, setFatherName] = useState('');
+  const [motherName, setMotherName] = useState('');
   const [photoUrl, setPhotoUrl] = useState('');
   const [saving, setSaving] = useState(false);
   const [photoUploading, setPhotoUploading] = useState(false);
@@ -71,6 +80,13 @@ export default function ProfileScreen() {
     if (res.success && res.data) {
       setProfile(res.data);
       setPhone(res.data.phone || '');
+      setPersonalEmail(res.data.personalEmail ? res.data.personalEmail.replace(/@gmail\.com$/i, '') : '');
+      setCurrentAddress(res.data.currentAddress || '');
+      setEmergencyContactName(res.data.emergencyContactName || '');
+      setEmergencyContactRelationship(res.data.emergencyContactRelationship || '');
+      setEmergencyContactPhone(res.data.emergencyContactPhone || '');
+      setFatherName(res.data.fatherName || '');
+      setMotherName(res.data.motherName || '');
       setPhotoUrl(res.data.profilePhotoUrl || '');
       setImageError(false);
       if (res.data.profilePhotoUrl) {
@@ -92,8 +108,31 @@ export default function ProfileScreen() {
 
   const handleSaveProfile = async () => {
     if (!token) return;
+
+    if (phone && phone.length !== 10) {
+      return Alert.alert('Invalid Phone', 'Phone number must be exactly 10 digits.');
+    }
+    if (emergencyContactPhone && emergencyContactPhone.length !== 10) {
+      return Alert.alert('Invalid Emergency Phone', 'Emergency contact phone must be exactly 10 digits.');
+    }
+
+    let emailToSend = personalEmail.trim().toLowerCase();
+    if (emailToSend && !emailToSend.includes('@')) {
+      emailToSend = `${emailToSend}@gmail.com`;
+    }
+
     setSaving(true);
-    const res = await updateProfile(token, { phone, profilePhotoUrl: photoUrl });
+    const res = await updateProfile(token, {
+      phone: phone || undefined,
+      personalEmail: emailToSend || null,
+      currentAddress: currentAddress.trim() || null,
+      emergencyContactName: emergencyContactName.trim() || null,
+      emergencyContactRelationship: emergencyContactRelationship.trim() || null,
+      emergencyContactPhone: emergencyContactPhone || null,
+      fatherName: fatherName.trim() || null,
+      motherName: motherName.trim() || null,
+      profilePhotoUrl: photoUrl || null,
+    });
     setSaving(false);
     if (res.success) {
       Alert.alert('Success', 'Profile updated successfully.');
@@ -209,7 +248,12 @@ export default function ProfileScreen() {
   };
 
   const handleAvatarPress = () => {
-    setShowPhotoOptions(true);
+    const photoUri = resolvePhotoUrl(profile?.profilePhotoUrl);
+    if (photoUri && !imageError) {
+      setShowFullPhoto(true);
+    } else {
+      setShowPhotoOptions(true);
+    }
   };
 
   const handleChangePassword = async () => {
@@ -298,9 +342,17 @@ export default function ProfileScreen() {
                   </View>
                 );
               })()}
-              <View style={styles.cameraIconBadge}>
+              <TouchableOpacity
+                style={styles.cameraIconBadge}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  setShowPhotoOptions(true);
+                }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                activeOpacity={0.8}
+              >
                 <Ionicons name="camera" size={13} color="#FFFFFF" />
-              </View>
+              </TouchableOpacity>
             </TouchableOpacity>
 
             <Text style={styles.name}>{profile.name}</Text>
@@ -349,10 +401,20 @@ export default function ProfileScreen() {
               <View style={styles.infoRow}>
                 <View style={styles.iconLabel}>
                   <Ionicons name="mail-outline" size={16} color="#64748B" />
-                  <Text style={styles.label}>Email</Text>
+                  <Text style={styles.label}>Work Email</Text>
                 </View>
                 <Text style={styles.value}>{profile.email ? profile.email.toLowerCase() : ''}</Text>
               </View>
+
+              {profile.personalEmail ? (
+                <View style={styles.infoRow}>
+                  <View style={styles.iconLabel}>
+                    <Ionicons name="mail-unread-outline" size={16} color="#64748B" />
+                    <Text style={styles.label}>Personal Email</Text>
+                  </View>
+                  <Text style={styles.value}>{profile.personalEmail.toLowerCase()}</Text>
+                </View>
+              ) : null}
 
               <View style={styles.infoRow}>
                 <View style={styles.iconLabel}>
@@ -361,6 +423,31 @@ export default function ProfileScreen() {
                 </View>
                 <Text style={styles.value}>{profile.phone || 'Not provided'}</Text>
               </View>
+
+              {profile.currentAddress ? (
+                <View style={styles.infoRow}>
+                  <View style={styles.iconLabel}>
+                    <Ionicons name="home-outline" size={16} color="#64748B" />
+                    <Text style={styles.label}>Current Address</Text>
+                  </View>
+                  <Text style={[styles.value, { flex: 1, textAlign: 'right' }]} numberOfLines={2}>
+                    {profile.currentAddress}
+                  </Text>
+                </View>
+              ) : null}
+
+              {profile.emergencyContactName ? (
+                <View style={styles.infoRow}>
+                  <View style={styles.iconLabel}>
+                    <Ionicons name="medkit-outline" size={16} color="#DC2626" />
+                    <Text style={styles.label}>Emergency Contact</Text>
+                  </View>
+                  <Text style={[styles.value, { flex: 1, textAlign: 'right' }]}>
+                    {profile.emergencyContactName} {profile.emergencyContactRelationship ? `(${profile.emergencyContactRelationship})` : ''}
+                    {profile.emergencyContactPhone ? ` • ${profile.emergencyContactPhone}` : ''}
+                  </Text>
+                </View>
+              ) : null}
 
               <View style={styles.infoRow}>
                 <View style={styles.iconLabel}>
@@ -482,7 +569,23 @@ export default function ProfileScreen() {
                 <Ionicons name="close" size={22} color="#64748B" />
               </TouchableOpacity>
             </View>
-            <Text style={styles.photoOptionsSubtitle}>Select an option to update your photo:</Text>
+            <Text style={styles.photoOptionsSubtitle}>Select an option to update or view your photo:</Text>
+
+            {(Boolean(profile?.profilePhotoUrl) || Boolean(photoUrl)) && (
+              <TouchableOpacity
+                style={styles.photoOptionItem}
+                onPress={() => {
+                  setShowPhotoOptions(false);
+                  setShowFullPhoto(true);
+                }}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.photoOptionIconBox, { backgroundColor: '#EFF6FF' }]}>
+                  <Ionicons name="eye-outline" size={20} color="#2563EB" />
+                </View>
+                <Text style={styles.photoOptionText}>View Profile Photo</Text>
+              </TouchableOpacity>
+            )}
 
             <TouchableOpacity
               style={styles.photoOptionItem}
@@ -539,122 +642,247 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </Modal>
 
+      {/* Full Screen Image Preview Modal */}
+      <FullImageModal
+        visible={showFullPhoto}
+        onClose={() => setShowFullPhoto(false)}
+        imageUrl={resolvePhotoUrl(profile?.profilePhotoUrl || photoUrl)}
+        name={profile?.name}
+        subtitle={`${profile?.employeeId || ''}${profile?.department ? ` • ${profile.department}` : ''}`}
+        onEditPhoto={() => setShowPhotoOptions(true)}
+      />
+
       {/* Edit Profile Modal */}
       <Modal visible={showEdit} animationType="slide" transparent onRequestClose={() => setShowEdit(false)}>
         <View style={styles.modalBg}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeaderRow}>
-              <Text style={styles.modalTitle}>Edit Profile</Text>
-              <TouchableOpacity onPress={() => setShowEdit(false)}>
+          <View style={[styles.modalCard, { maxHeight: '88%', padding: 0, overflow: 'hidden' }]}>
+            <View style={[styles.modalHeaderRow, { paddingHorizontal: 20, paddingTop: 18, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', marginBottom: 0 }]}>
+              <View>
+                <Text style={styles.modalTitle}>Edit Profile</Text>
+                <Text style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>Update your personal & contact details</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowEdit(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                 <Ionicons name="close" size={22} color="#64748B" />
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.inputLabel}>Phone Number (10 digits)</Text>
-            <TextInput
-              style={styles.input}
-              value={phone}
-              onChangeText={(text) => setPhone(text.replace(/\D/g, '').slice(0, 10))}
-              keyboardType="number-pad"
-              maxLength={10}
-              placeholder="10-digit mobile number"
-              placeholderTextColor="#94A3B8"
-            />
-
-            <Text style={styles.inputLabel}>Profile Photo</Text>
-            <View style={styles.modalPhotoRow}>
-              <View style={styles.modalPhotoThumbContainer}>
-                {(() => {
-                  const currentPhotoUri = resolvePhotoUrl(photoUrl);
-                  if (currentPhotoUri && !modalImageError) {
-                    return (
-                      <Image
-                        source={{ uri: currentPhotoUri }}
-                        style={styles.modalPhotoThumb}
-                        onError={() => setModalImageError(true)}
-                      />
-                    );
-                  }
-                  return (
-                    <View style={styles.modalPhotoThumbPlaceholder}>
-                      <Text style={styles.modalPhotoThumbText}>
-                        {profile?.name?.[0]?.toUpperCase() || 'U'}
-                      </Text>
-                    </View>
-                  );
-                })()}
-                {photoUploading && (
-                  <View style={styles.modalPhotoLoadingOverlay}>
-                    <ActivityIndicator size="small" color="#FFFFFF" />
-                  </View>
-                )}
+            <ScrollView
+              style={{ paddingHorizontal: 20, paddingTop: 8 }}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
+              {/* Section 1: Contact & Address */}
+              <View style={[styles.editSectionDivider, { marginTop: 8, paddingTop: 0, borderTopWidth: 0 }]}>
+                <Ionicons name="call-outline" size={14} color="#2563EB" />
+                <Text style={styles.editSectionTitle}>Contact & Address</Text>
               </View>
 
-              <View style={styles.modalPhotoButtons}>
-                <TouchableOpacity
-                  style={styles.galleryBtn}
-                  onPress={pickFromGallery}
-                  disabled={photoUploading}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name="images" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-                  <Text style={styles.galleryBtnText}>Choose from Gallery</Text>
-                </TouchableOpacity>
+              <Text style={styles.inputLabel}>Mobile Number (10 digits)</Text>
+              <TextInput
+                style={styles.input}
+                value={phone}
+                onChangeText={(text) => setPhone(text.replace(/\D/g, '').slice(0, 10))}
+                keyboardType="number-pad"
+                maxLength={10}
+                placeholder="10-digit mobile number"
+                placeholderTextColor="#94A3B8"
+              />
 
-                <View style={styles.modalPhotoSubButtons}>
+              <Text style={styles.inputLabel}>Personal Email</Text>
+              <TextInput
+                style={styles.input}
+                value={personalEmail}
+                onChangeText={(text) => setPersonalEmail(text.trim().toLowerCase())}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                placeholder="e.g. name@gmail.com"
+                placeholderTextColor="#94A3B8"
+              />
+
+              <Text style={styles.inputLabel}>Current Residential Address</Text>
+              <TextInput
+                style={[styles.input, { height: 72, textAlignVertical: 'top' }]}
+                value={currentAddress}
+                onChangeText={setCurrentAddress}
+                multiline
+                numberOfLines={3}
+                placeholder="Enter current residential address"
+                placeholderTextColor="#94A3B8"
+              />
+
+              {/* Section 2: Emergency Contact */}
+              <View style={styles.editSectionDivider}>
+                <Ionicons name="medkit-outline" size={14} color="#DC2626" />
+                <Text style={[styles.editSectionTitle, { color: '#B91C1C' }]}>Emergency Contact</Text>
+              </View>
+
+              <Text style={styles.inputLabel}>Contact Person Name</Text>
+              <TextInput
+                style={styles.input}
+                value={emergencyContactName}
+                onChangeText={setEmergencyContactName}
+                placeholder="e.g. Relative or friend name"
+                placeholderTextColor="#94A3B8"
+              />
+
+              <Text style={styles.inputLabel}>Relationship</Text>
+              <View style={styles.chipContainer}>
+                {['Parent', 'Spouse', 'Sibling', 'Child', 'Friend', 'Other'].map((rel) => (
                   <TouchableOpacity
-                    style={styles.cameraBtn}
-                    onPress={takePhotoWithCamera}
+                    key={rel}
+                    style={[styles.chip, emergencyContactRelationship === rel && styles.chipSelected]}
+                    onPress={() => setEmergencyContactRelationship(rel)}
+                  >
+                    <Text style={[styles.chipText, emergencyContactRelationship === rel && styles.chipTextSelected]}>
+                      {rel}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <TextInput
+                style={[styles.input, { marginTop: 2 }]}
+                value={emergencyContactRelationship}
+                onChangeText={setEmergencyContactRelationship}
+                placeholder="Relationship (e.g. Mother, Father, Spouse)"
+                placeholderTextColor="#94A3B8"
+              />
+
+              <Text style={styles.inputLabel}>Emergency Phone Number (10 digits)</Text>
+              <TextInput
+                style={styles.input}
+                value={emergencyContactPhone}
+                onChangeText={(text) => setEmergencyContactPhone(text.replace(/\D/g, '').slice(0, 10))}
+                keyboardType="number-pad"
+                maxLength={10}
+                placeholder="10-digit emergency number"
+                placeholderTextColor="#94A3B8"
+              />
+
+              {/* Section 3: Family Details */}
+              <View style={styles.editSectionDivider}>
+                <Ionicons name="people-outline" size={14} color="#2563EB" />
+                <Text style={styles.editSectionTitle}>Family Details</Text>
+              </View>
+
+              <Text style={styles.inputLabel}>Father's Name</Text>
+              <TextInput
+                style={styles.input}
+                value={fatherName}
+                onChangeText={setFatherName}
+                placeholder="Father's full name"
+                placeholderTextColor="#94A3B8"
+              />
+
+              <Text style={styles.inputLabel}>Mother's Name</Text>
+              <TextInput
+                style={styles.input}
+                value={motherName}
+                onChangeText={setMotherName}
+                placeholder="Mother's full name"
+                placeholderTextColor="#94A3B8"
+              />
+
+              {/* Section 4: Profile Photo */}
+              <View style={styles.editSectionDivider}>
+                <Ionicons name="image-outline" size={14} color="#2563EB" />
+                <Text style={styles.editSectionTitle}>Profile Photo</Text>
+              </View>
+
+              <View style={styles.modalPhotoRow}>
+                <View style={styles.modalPhotoThumbContainer}>
+                  {(() => {
+                    const currentPhotoUri = resolvePhotoUrl(photoUrl);
+                    if (currentPhotoUri && !modalImageError) {
+                      return (
+                        <Image
+                          source={{ uri: currentPhotoUri }}
+                          style={styles.modalPhotoThumb}
+                          onError={() => setModalImageError(true)}
+                        />
+                      );
+                    }
+                    return (
+                      <View style={styles.modalPhotoThumbPlaceholder}>
+                        <Text style={styles.modalPhotoThumbText}>
+                          {profile?.name?.[0]?.toUpperCase() || 'U'}
+                        </Text>
+                      </View>
+                    );
+                  })()}
+                  {photoUploading && (
+                    <View style={styles.modalPhotoLoadingOverlay}>
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    </View>
+                  )}
+                </View>
+
+                <View style={styles.modalPhotoButtons}>
+                  <TouchableOpacity
+                    style={styles.galleryBtn}
+                    onPress={pickFromGallery}
                     disabled={photoUploading}
                     activeOpacity={0.7}
                   >
-                    <Ionicons name="camera-outline" size={14} color="#334155" style={{ marginRight: 4 }} />
-                    <Text style={styles.cameraBtnText}>Camera</Text>
+                    <Ionicons name="images" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                    <Text style={styles.galleryBtnText}>Choose from Gallery</Text>
                   </TouchableOpacity>
 
-                  {Boolean(photoUrl) && (
+                  <View style={styles.modalPhotoSubButtons}>
                     <TouchableOpacity
-                      style={styles.removePhotoBtn}
-                      onPress={handleRemovePhoto}
+                      style={styles.cameraBtn}
+                      onPress={takePhotoWithCamera}
                       disabled={photoUploading}
                       activeOpacity={0.7}
                     >
-                      <Ionicons name="trash-outline" size={14} color="#DC2626" style={{ marginRight: 4 }} />
-                      <Text style={styles.removePhotoBtnText}>Remove</Text>
+                      <Ionicons name="camera-outline" size={14} color="#334155" style={{ marginRight: 4 }} />
+                      <Text style={styles.cameraBtnText}>Camera</Text>
                     </TouchableOpacity>
-                  )}
+
+                    {Boolean(photoUrl) && (
+                      <TouchableOpacity
+                        style={styles.removePhotoBtn}
+                        onPress={handleRemovePhoto}
+                        disabled={photoUploading}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons name="trash-outline" size={14} color="#DC2626" style={{ marginRight: 4 }} />
+                        <Text style={styles.removePhotoBtnText}>Remove</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
                 </View>
               </View>
-            </View>
 
-            {photoUploading && (
-              <Text style={styles.uploadingNotice}>Uploading photo to server...</Text>
-            )}
+              {photoUploading && (
+                <Text style={styles.uploadingNotice}>Uploading photo to server...</Text>
+              )}
 
-            <TouchableOpacity
-              style={styles.toggleUrlBtn}
-              onPress={() => setShowUrlInput(!showUrlInput)}
-            >
-              <Text style={styles.toggleUrlText}>
-                {showUrlInput ? 'Hide URL input' : 'Or paste photo URL manually'}
-              </Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.toggleUrlBtn}
+                onPress={() => setShowUrlInput(!showUrlInput)}
+              >
+                <Text style={styles.toggleUrlText}>
+                  {showUrlInput ? 'Hide URL input' : 'Or paste photo URL manually'}
+                </Text>
+              </TouchableOpacity>
 
-            {showUrlInput && (
-              <TextInput
-                style={[styles.input, { marginTop: 4 }]}
-                value={photoUrl}
-                onChangeText={(t) => {
-                  setPhotoUrl(t);
-                  setModalImageError(false);
-                }}
-                autoCapitalize="none"
-                placeholder="https://..."
-                placeholderTextColor="#94A3B8"
-              />
-            )}
+              {showUrlInput && (
+                <TextInput
+                  style={[styles.input, { marginTop: 4, marginBottom: 20 }]}
+                  value={photoUrl}
+                  onChangeText={(t) => {
+                    setPhotoUrl(t);
+                    setModalImageError(false);
+                  }}
+                  autoCapitalize="none"
+                  placeholder="https://..."
+                  placeholderTextColor="#94A3B8"
+                />
+              )}
+              <View style={{ height: 20 }} />
+            </ScrollView>
 
-            <View style={styles.modalActions}>
+            <View style={[styles.modalActions, { paddingHorizontal: 20, paddingVertical: 14, borderTopWidth: 1, borderTopColor: '#F1F5F9', marginTop: 0 }]}>
               <TouchableOpacity onPress={() => setShowEdit(false)} style={styles.closeBtn}>
                 <Text style={styles.closeText}>Cancel</Text>
               </TouchableOpacity>
@@ -1375,6 +1603,50 @@ const styles = StyleSheet.create({
     fontSize: 14.5,
     fontWeight: '600',
     color: '#475569',
+  },
+  editSectionDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 16,
+    marginBottom: 10,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  editSectionTitle: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#1E40AF',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  chipContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 8,
+  },
+  chip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+  },
+  chipSelected: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#2563EB',
+  },
+  chipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  chipTextSelected: {
+    color: '#2563EB',
+    fontWeight: '700',
   },
 });
 

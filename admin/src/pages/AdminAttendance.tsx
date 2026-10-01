@@ -586,7 +586,7 @@ export default function AdminAttendance() {
                                 title={`Check-in GPS: ${r.checkInLat.toFixed(5)}, ${r.checkInLng.toFixed(5)}${r.checkOutLat ? ` | Check-out: ${r.checkOutLat.toFixed(5)}, ${r.checkOutLng.toFixed(5)}` : ''}`}
                               >
                                 <MapPin size={12} className="text-primary" />
-                                <span>Within 25m</span>
+                                <span>Within Geofence</span>
                               </span>
                               <a
                                 href={`https://www.google.com/maps?q=${r.checkInLat},${r.checkInLng}`}

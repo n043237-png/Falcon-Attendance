@@ -28,6 +28,11 @@ export interface TodayResponse {
       graceMinutes: number;
       lateAfter: string;
     } | null;
+    office?: {
+      id: number;
+      name: string;
+      radiusMeters: number;
+    } | null;
   };
   error?: {
     code: string;

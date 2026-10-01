@@ -47,7 +47,20 @@ export const getProfile = async (token: string) => {
   }
 };
 
-export const updateProfile = async (token: string, data: { phone?: string; profilePhotoUrl?: string }) => {
+export interface UpdateProfilePayload {
+  phone?: string;
+  personalEmail?: string | null;
+  currentAddress?: string | null;
+  emergencyContactName?: string | null;
+  emergencyContactRelationship?: string | null;
+  emergencyContactPhone?: string | null;
+  emergencyContactAltPhone?: string | null;
+  fatherName?: string | null;
+  motherName?: string | null;
+  profilePhotoUrl?: string | null;
+}
+
+export const updateProfile = async (token: string, data: UpdateProfilePayload) => {
   try {
     const res = await axios.patch(`${API_URL}/api/profile`, data, {
       headers: { Authorization: `Bearer ${token}` }

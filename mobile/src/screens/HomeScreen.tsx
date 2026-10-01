@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -24,6 +24,7 @@ import {
   cancelLateMarkReminder,
   cancelShiftEndReminder,
 } from '../services/pushNotificationService';
+import { FullImageModal } from '../components/FullImageModal';
 
 export default function HomeScreen() {
   const { user, token, logout, refreshUser } = useAuth();
@@ -31,15 +32,30 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [showFullPhoto, setShowFullPhoto] = useState(false);
   const [attendance, setAttendance] = useState<AttendanceRecord | null>(null);
   const [shiftInfo, setShiftInfo] = useState<{
     name?: string;
     startTime?: string;
     endTime?: string;
   } | null>(null);
+  const [officeInfo, setOfficeInfo] = useState<{
+    id?: number;
+    name?: string;
+    radiusMeters?: number;
+  } | null>(null);
   const [homeImageError, setHomeImageError] = useState(false);
+  const [currentTime, setCurrentTime] = useState<Date>(new Date());
 
-  const hour = new Date().getHours();
+  // Real-time ticking clock for live hours calculation
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const hour = currentTime.getHours();
   const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
 
   const loadAttendance = async (isRefresh = false) => {
@@ -53,6 +69,10 @@ export default function HomeScreen() {
         setAttendance(res.data.attendance);
       } else {
         setAttendance(null);
+      }
+
+      if (res.success && res.data?.office) {
+        setOfficeInfo(res.data.office);
       }
 
       const isCheckedIn = Boolean(res.data?.attendance?.checkIn);
@@ -111,11 +131,12 @@ export default function HomeScreen() {
         Alert.alert('Success', action === 'check-in' ? 'Attendance marked successfully!' : 'Checked out successfully!');
         loadAttendance();
       } else {
+        const configuredRadius = officeInfo?.radiusMeters || result.data?.allowedRadiusMeters || 20;
         const errorTitle = action === 'check-in' ? 'Check-In Outside Permitted Area' : 'Check-Out Outside Permitted Area';
         const errorMsg = result.error?.message || (
           result.data?.distanceMeters !== undefined
-            ? `You are outside the permitted office location (${result.data.distanceMeters}m away). Attendance is only allowed within ${result.data.allowedRadiusMeters || 25} metres of the office.`
-            : 'Verification failed. Please ensure you are physically within the 25-metre office radius.'
+            ? `You are outside the permitted office location (${result.data.distanceMeters}m away). Attendance is only allowed within ${result.data.allowedRadiusMeters || configuredRadius} metres of the office.`
+            : `Verification failed. Please ensure you are physically within the ${configuredRadius}-metre office radius.`
         );
         Alert.alert(errorTitle, errorMsg);
       }
@@ -205,12 +226,28 @@ export default function HomeScreen() {
     timeZone: 'Asia/Kolkata',
   });
 
-  const currentTimeFormatted = new Date().toLocaleTimeString('en-US', {
+  const currentTimeFormatted = currentTime.toLocaleTimeString('en-US', {
     hour: '2-digit',
     minute: '2-digit',
     hour12: true,
     timeZone: 'Asia/Kolkata',
   });
+
+  const getRealtimeWorkDuration = () => {
+    if (!attendance?.checkIn) {
+      return '0h 0m';
+    }
+    try {
+      const checkInMs = new Date(attendance.checkIn).getTime();
+      const endMs = attendance.checkOut
+        ? new Date(attendance.checkOut).getTime()
+        : currentTime.getTime();
+      const diffMinutes = Math.max(0, Math.floor((endMs - checkInMs) / (1000 * 60)));
+      return formatDuration(diffMinutes);
+    } catch {
+      return formatDuration(attendance?.workingMinutes || 0);
+    }
+  };
 
   const isAdmin = user?.role?.toLowerCase() === 'admin';
 
@@ -234,7 +271,11 @@ export default function HomeScreen() {
               const photoUri = resolvePhotoUrl(user?.profilePhotoUrl || (user as any)?.profile_photo_url);
               if (photoUri && !homeImageError) {
                 return (
-                  <View style={styles.avatarRing}>
+                  <TouchableOpacity
+                    style={styles.avatarRing}
+                    activeOpacity={0.8}
+                    onPress={() => setShowFullPhoto(true)}
+                  >
                     <Image
                       key={photoUri}
                       source={{ uri: photoUri }}
@@ -242,15 +283,19 @@ export default function HomeScreen() {
                       onError={() => setHomeImageError(true)}
                       resizeMode="cover"
                     />
-                  </View>
+                  </TouchableOpacity>
                 );
               }
               return (
-                <View style={styles.avatarRing}>
+                <TouchableOpacity
+                  style={styles.avatarRing}
+                  activeOpacity={0.8}
+                  onPress={() => navigation.navigate('Profile')}
+                >
                   <Text style={styles.avatarLetter}>
                     {user?.name?.charAt(0).toUpperCase() || (isAdmin ? 'A' : 'E')}
                   </Text>
-                </View>
+                </TouchableOpacity>
               );
             })()}
             <View>
@@ -328,7 +373,7 @@ export default function HomeScreen() {
               </View>
               <View style={styles.geoFenceBadge}>
                 <Ionicons name="navigate-outline" size={10} color="#1D4ED8" />
-                <Text style={styles.geoFenceBadgeText}>25m Radius</Text>
+                <Text style={styles.geoFenceBadgeText}>{officeInfo?.radiusMeters || 20}m Radius</Text>
               </View>
             </View>
           </View>
@@ -402,7 +447,7 @@ export default function HomeScreen() {
               )}
 
               <Text style={styles.geoFenceFootnote}>
-                📍 Attendance permitted within 25 metres of Falcon office
+                📍 Attendance permitted within {officeInfo?.radiusMeters || 20} metres of {officeInfo?.name || 'Falcon office'}
               </Text>
             </View>
           )}
@@ -441,8 +486,10 @@ export default function HomeScreen() {
               <Ionicons name="hourglass-outline" size={18} color="#059669" />
             </View>
             <Text style={styles.metricLabel}>WORK DURATION</Text>
-            <Text style={styles.metricValue}>{formatDuration(attendance?.workingMinutes || 0)}</Text>
-            <Text style={styles.metricSubtext}>Target: 9h</Text>
+            <Text style={styles.metricValue}>{getRealtimeWorkDuration()}</Text>
+            <Text style={styles.metricSubtext}>
+              {hasCheckedIn && !hasCheckedOut ? 'Live • Target: 9h' : 'Target: 9h'}
+            </Text>
           </View>
 
           {/* Shift Status */}
@@ -520,6 +567,16 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* Full Screen Image Preview Modal */}
+      <FullImageModal
+        visible={showFullPhoto}
+        onClose={() => setShowFullPhoto(false)}
+        imageUrl={resolvePhotoUrl(user?.profilePhotoUrl || (user as any)?.profile_photo_url)}
+        name={user?.name || (isAdmin ? 'Admin User' : 'Employee')}
+        subtitle={`${user?.employeeId || (user as any)?.employee_code || ''}${isAdmin ? ' • Administrator' : ''}`}
+        onEditPhoto={() => navigation.navigate('Profile')}
+      />
     </SafeAreaView>
   );
 }

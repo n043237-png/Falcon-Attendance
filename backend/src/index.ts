@@ -91,7 +91,7 @@ app.get('/privacy-policy', (req: Request, res: Response) => {
     <h2>2. Location Data & Geofencing (Prominent Disclosure)</h2>
     <div class="highlight-box">
       <strong>Important Notice Regarding Location Tracking:</strong><br>
-      Falcon Attendance collects GPS location data <strong>solely at the moment you press "Punch In" or "Punch Out"</strong> to verify that you are within the authorized 25-metre office geofence premises.
+      Falcon Attendance collects GPS location data <strong>solely at the moment you press "Punch In" or "Punch Out"</strong> to verify that you are within authorized office geofence premises.
     </div>
     <ul>
       <li><strong>No Continuous Background Tracking:</strong> Falcon Attendance does <em>not</em> track, log, or monitor your location continuously in the background when you are not actively using attendance features.</li>

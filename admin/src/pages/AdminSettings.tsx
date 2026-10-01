@@ -377,7 +377,7 @@ export default function AdminSettings() {
       });
       const data = await res.json();
       if (data.success) {
-        setMsg('Office location and 25-metre geo-fence radius updated successfully.');
+        setMsg(`Office location and ${data.data?.radiusMeters || officeSettings.radiusMeters}-metre geo-fence radius updated successfully.`);
         if (data.data) {
           setOfficeSettings({
             id: data.data.id,
@@ -595,7 +595,7 @@ export default function AdminSettings() {
                   required
                 />
                 <span className="text-muted mt-1 d-block" style={{ fontSize: '12px' }}>
-                  Required: <strong>25 metres</strong> (physical presence perimeter)
+                  Enforced perimeter: <strong>{officeSettings.radiusMeters} metres</strong> (physical presence perimeter)
                 </span>
               </Form.Group>
             </Col>
@@ -1155,30 +1155,30 @@ export default function AdminSettings() {
                 <div
                   className="p-3 mb-3 position-relative overflow-hidden"
                   style={{
-                    background: 'linear-gradient(135deg, #0F172A 0%, #1E293B 55%, #1E3A8A 100%)',
+                    background: 'linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 50%, #BFDBFE 100%)',
                     borderRadius: '16px',
-                    color: '#FFFFFF',
-                    boxShadow: '0 6px 20px -3px rgba(15, 23, 42, 0.25)',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    color: '#0F172A',
+                    boxShadow: '0 4px 16px -2px rgba(37, 99, 235, 0.12), inset 0 1px 2px rgba(255, 255, 255, 0.8)',
+                    border: '1.5px solid #BFDBFE',
                   }}
                 >
                   {/* Subtle Background Glow */}
                   <div
                     style={{
                       position: 'absolute',
-                      top: '-20px',
-                      right: '-20px',
-                      width: '100px',
-                      height: '100px',
+                      top: '-25px',
+                      right: '-25px',
+                      width: '120px',
+                      height: '120px',
                       borderRadius: '50%',
-                      background: 'radial-gradient(circle, rgba(59, 130, 246, 0.35) 0%, transparent 70%)',
+                      background: 'radial-gradient(circle, rgba(147, 197, 253, 0.5) 0%, transparent 70%)',
                       pointerEvents: 'none',
                     }}
                   />
 
                   <div className="d-flex align-items-center justify-content-between mb-2">
-                    <div className="d-flex align-items-center gap-1.5" style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '0.08em', color: '#93C5FD' }}>
-                      <Sparkles size={13} className="text-warning" />
+                    <div className="d-flex align-items-center gap-1.5" style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '0.08em', color: '#1E40AF' }}>
+                      <Sparkles size={13} className="text-primary" />
                       <span>UPCOMING SPOTLIGHT</span>
                     </div>
 
@@ -1186,16 +1186,24 @@ export default function AdminSettings() {
                       className="badge rounded-pill d-inline-flex align-items-center gap-1"
                       style={{
                         backgroundColor: nextUpcoming.isToday
-                          ? '#10B981'
+                          ? '#DCFCE7'
                           : nextUpcoming.daysAway === 1
-                          ? '#F59E0B'
-                          : 'rgba(59, 130, 246, 0.25)',
-                        color: '#FFFFFF',
-                        border: '1px solid rgba(255, 255, 255, 0.2)',
-                        backdropFilter: 'blur(6px)',
+                          ? '#FEF3C7'
+                          : '#EFF6FF',
+                        color: nextUpcoming.isToday
+                          ? '#15803D'
+                          : nextUpcoming.daysAway === 1
+                          ? '#B45309'
+                          : '#1D4ED8',
+                        border: nextUpcoming.isToday
+                          ? '1px solid #86EFAC'
+                          : nextUpcoming.daysAway === 1
+                          ? '1px solid #FDE68A'
+                          : '1px solid #BFDBFE',
                         fontSize: '11px',
                         fontWeight: 700,
                         padding: '4px 9px',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
                       }}
                     >
                       {nextUpcoming.isToday
@@ -1212,8 +1220,9 @@ export default function AdminSettings() {
                         width: '46px',
                         height: '46px',
                         borderRadius: '12px',
-                        background: 'rgba(255, 255, 255, 0.12)',
-                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        background: '#FFFFFF',
+                        border: '1.5px solid #BFDBFE',
+                        boxShadow: '0 2px 8px rgba(37, 99, 235, 0.1)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -1225,10 +1234,10 @@ export default function AdminSettings() {
                     </div>
 
                     <div style={{ minWidth: 0, flex: 1 }}>
-                      <div className="fw-bold text-white text-truncate" style={{ fontSize: '15px', letterSpacing: '-0.01em' }}>
+                      <div className="fw-bold text-truncate" style={{ fontSize: '15.5px', color: '#1E3A8A', letterSpacing: '-0.01em' }}>
                         {nextUpcoming.name}
                       </div>
-                      <div style={{ fontSize: '12px', color: '#CBD5E1', marginTop: '1px' }}>
+                      <div style={{ fontSize: '12px', color: '#475569', marginTop: '1px', fontWeight: 500 }}>
                         {formatDateDisplay(nextUpcoming.holidayDate)} ({nextUpcoming.day})
                         {nextUpcoming.description ? ` • ${nextUpcoming.description}` : ' • Official Paid Holiday'}
                       </div>

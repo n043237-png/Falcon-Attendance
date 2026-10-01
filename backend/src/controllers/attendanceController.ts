@@ -417,7 +417,7 @@ export const getToday = async (req: AuthRequest, res: Response): Promise<void> =
     const employeeId = req.user!.id;
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 
-    const [existRes, setRes, holRes, leaveRes] = await Promise.all([
+    const [existRes, setRes, holRes, leaveRes, officeRes] = await Promise.all([
       query(`
         SELECT id, attendance_date, check_in, check_out, working_minutes, status 
         FROM attendance WHERE employee_id = $1 AND attendance_date = $2
@@ -429,12 +429,24 @@ export const getToday = async (req: AuthRequest, res: Response): Promise<void> =
         FROM leave_requests lr
         WHERE lr.employee_id = $1 AND lr.status = 'APPROVED' AND lr.from_date <= $2 AND lr.to_date >= $2
         LIMIT 1
-      `, [employeeId, today])
+      `, [employeeId, today]),
+      query(`
+        SELECT id, name, radius_meters as "radiusMeters"
+        FROM offices
+        WHERE status = 'active'
+        ORDER BY id ASC
+        LIMIT 1
+      `)
     ]);
 
     const record = existRes.rows[0];
     const holiday = holRes.rows[0];
     const leave = leaveRes.rows[0];
+    const officeInfo = officeRes.rows[0] ? {
+      id: officeRes.rows[0].id,
+      name: officeRes.rows[0].name,
+      radiusMeters: officeRes.rows[0].radiusMeters
+    } : null;
 
     // Fetch employee shift details for local reminder sync
     const userShiftRes = await query(`
@@ -449,9 +461,16 @@ export const getToday = async (req: AuthRequest, res: Response): Promise<void> =
     const result = calculateStatus(today, record, setRes, holiday, leave, new Date());
 
     if (result.status === 'NOT_MARKED') {
-      res.json({ success: true, data: { attendance: null, shift: userShift } });
+      res.json({ success: true, data: { attendance: null, shift: userShift, office: officeInfo } });
       return;
     }
+
+    // Compute real-time working minutes (elapsed time if checked in but not yet checked out)
+    const liveWorkingMinutes = result.checkIn
+      ? (result.checkOut
+          ? Math.round(result.workingMinutes)
+          : Math.max(0, Math.round((new Date().getTime() - new Date(result.checkIn).getTime()) / (1000 * 60))))
+      : 0;
 
     res.json({
       success: true,
@@ -461,13 +480,14 @@ export const getToday = async (req: AuthRequest, res: Response): Promise<void> =
           date: today,
           checkIn: result.checkIn,
           checkOut: result.checkOut,
-          workingMinutes: Math.round(result.workingMinutes),
+          workingMinutes: liveWorkingMinutes,
           status: result.status,
           isLate: result.isLate,
           holidayName: holiday ? holiday.name : null,
           leaveType: leave ? leave.leave_type : null
         },
-        shift: userShift
+        shift: userShift,
+        office: officeInfo
       }
     });
   } catch (error) {
