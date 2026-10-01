@@ -560,16 +560,16 @@ export default function NotificationsPage() {
               <Search
                 size={16}
                 className="position-absolute text-muted"
-                style={{ top: '50%', transform: 'translateY(-50%)', left: '12px' }}
+                style={{ top: '50%', transform: 'translateY(-50%)', left: '12px', pointerEvents: 'none', zIndex: 2 }}
               />
               <input
                 type="text"
                 placeholder="Search title, content or details..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="form-control"
+                className="form-control input-with-search-icon"
                 style={{
-                  paddingLeft: '36px',
+                  paddingLeft: '38px',
                   fontSize: '13px',
                   borderRadius: '8px',
                   borderColor: '#E2E8F0'

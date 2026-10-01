@@ -283,12 +283,16 @@ p, span, div, label {
 .form-control, .form-select {
   border-radius: var(--radius-input) !important;
   border: 1px solid #E2E8F0 !important;
-  padding: 10px 14px !important;
+  padding: 10px 14px;
   font-size: 14.5px !important;
   background-color: #FFFFFF !important;
   color: var(--text-main) !important;
   font-weight: 400 !important;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.input-with-search-icon {
+  padding-left: 38px !important;
 }
 
 .form-control::placeholder {

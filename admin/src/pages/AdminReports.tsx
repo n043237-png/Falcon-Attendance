@@ -359,15 +359,41 @@ export default function AdminReports() {
             </Form.Group>
           </Col>
 
-          <Col md={3}>
+          <Col md={4} lg={4}>
             <Form.Group>
               <Form.Label>Search Employee</Form.Label>
-              <Form.Control
-                type="text"
-                placeholder="Employee ID, Name, Dept, or Email..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
+              <div className="position-relative">
+                <Search
+                  size={15}
+                  className="position-absolute text-muted"
+                  style={{
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    left: '12px',
+                    pointerEvents: 'none',
+                    zIndex: 2,
+                  }}
+                />
+                <Form.Control
+                  type="text"
+                  name="employeeSearchQuery"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  spellCheck="false"
+                  data-lpignore="true"
+                  data-1p-ignore="true"
+                  data-bwignore="true"
+                  data-form-type="other"
+                  className="input-with-search-icon"
+                  placeholder="Search by name, ID, or dept..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  style={{
+                    paddingLeft: '38px',
+                    fontSize: '13.5px',
+                  }}
+                />
+              </div>
             </Form.Group>
           </Col>
 

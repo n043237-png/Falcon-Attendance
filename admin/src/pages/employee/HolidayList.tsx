@@ -336,17 +336,29 @@ export default function HolidayList() {
           </div>
 
           {/* Search Box */}
-          <div className="position-relative" style={{ minWidth: '240px' }}>
-            <Search size={15} className="position-absolute text-muted" style={{ top: '10px', left: '12px' }} />
+          <div className="position-relative" style={{ minWidth: '260px' }}>
+            <Search
+              size={15}
+              className="position-absolute text-muted"
+              style={{
+                top: '50%',
+                transform: 'translateY(-50%)',
+                left: '12px',
+                pointerEvents: 'none',
+                zIndex: 2,
+              }}
+            />
             <input
               type="text"
-              className="form-control form-control-sm"
+              name="holidaySearch"
+              autoComplete="off"
+              className="form-control form-control-sm input-with-search-icon"
               placeholder="Search holiday or day..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               style={{
-                paddingLeft: '34px',
-                height: '36px',
+                paddingLeft: '38px',
+                height: '38px',
                 borderRadius: '8px',
                 fontSize: '13px',
                 borderColor: '#CBD5E1',
