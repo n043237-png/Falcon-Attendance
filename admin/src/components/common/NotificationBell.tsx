@@ -807,7 +807,7 @@ export default function NotificationBell() {
                       type="button"
                       onClick={() => {
                         setActiveToasts((prev) => prev.filter((t) => t.toastId !== toast.toastId));
-                        handleNotificationClick(toast);
+                        handleMarkAsRead(toast);
                       }}
                       className="btn btn-sm btn-link p-0 text-decoration-none fw-semibold d-inline-flex align-items-center gap-1 mt-2"
                       style={{ fontSize: '12.5px', color: toastStyle.actionColor }}

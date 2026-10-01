@@ -76,6 +76,15 @@ export default function AdminSettings() {
   const [showAddHoliday, setShowAddHoliday] = useState(false);
   const [holidayViewMode, setHolidayViewMode] = useState<'CARDS' | 'TABLE'>('CARDS');
 
+  const detectedNewHolDay = newHolDate ? (() => {
+    try {
+      const d = new Date(newHolDate + 'T12:00:00+05:30');
+      return d.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'Asia/Kolkata' });
+    } catch {
+      return null;
+    }
+  })() : null;
+
   const getMonthAbbr = (dateStr: string) => {
     try {
       const d = new Date(dateStr + 'T12:00:00+05:30');
