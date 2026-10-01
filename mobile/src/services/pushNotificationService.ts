@@ -16,12 +16,15 @@ Notifications.setNotificationHandler({
 });
 
 /**
- * Configure notification channel with MAX priority so alerts pop up over other apps
+ * Configure notification channels with MAX priority so alerts pop up over other apps
+ * Includes fcm_fallback_notification_channel used by Firebase Console by default.
  */
 export async function setupNotificationChannel() {
   if (Platform.OS === 'android') {
+    // 1. Primary Falcon App Channel
     await Notifications.setNotificationChannelAsync('falcon-default', {
       name: 'Falcon Attendance Alerts',
+      description: 'Heads-up pop-up alerts for attendance, shifts, and leaves',
       importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 250, 250, 250],
       lightColor: '#2563EB',
@@ -29,19 +32,71 @@ export async function setupNotificationChannel() {
       enableVibrate: true,
       showBadge: true,
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-      bypassDnd: false,
+      bypassDnd: true,
+    });
+
+    // 2. Fallback channel targeted by Firebase Console notifications
+    await Notifications.setNotificationChannelAsync('fcm_fallback_notification_channel', {
+      name: 'Firebase Console Notifications',
+      description: 'Pop-up broadcast messages sent from Firebase Console',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#2563EB',
+      sound: 'default',
+      enableVibrate: true,
+      showBadge: true,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      bypassDnd: true,
+    });
+
+    // 3. Generic default channel
+    await Notifications.setNotificationChannelAsync('default', {
+      name: 'General Alerts',
+      description: 'Standard pop-up alert notifications',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#2563EB',
+      sound: 'default',
+      enableVibrate: true,
+      showBadge: true,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      bypassDnd: true,
     });
   }
 }
 
-// Ensure channel is registered immediately on app launch
+// Ensure channels are registered immediately on app launch
 setupNotificationChannel().catch((err) => console.warn('[Push] Channel init error:', err));
+
+let cachedFcmToken: string | null = null;
+
+/**
+ * Retrieve native Firebase Device Registration Token (FCM token)
+ * for testing directly in Firebase Console > Cloud Messaging > Send test message
+ */
+export async function getNativeFcmToken(): Promise<string | null> {
+  if (cachedFcmToken) return cachedFcmToken;
+  try {
+    const deviceToken = await Notifications.getDevicePushTokenAsync();
+    if (deviceToken?.data) {
+      cachedFcmToken = typeof deviceToken.data === 'string' ? deviceToken.data : JSON.stringify(deviceToken.data);
+      console.log('[FCM] Native Firebase Registration Token for Firebase Console:', cachedFcmToken);
+      return cachedFcmToken;
+    }
+  } catch (err: any) {
+    console.warn('[FCM] Error fetching native device push token:', err?.message || err);
+  }
+  return null;
+}
 
 /**
  * Register device for Expo Push Notifications and save token to backend
  */
 export async function registerForPushNotificationsAsync(authToken: string): Promise<string | null> {
   if (!authToken) return null;
+
+  // Pre-fetch native FCM token in background
+  getNativeFcmToken().catch((e) => console.log('[FCM] Initial check:', e));
 
   try {
     // 1. Setup notification channel
