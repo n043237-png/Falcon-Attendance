@@ -186,7 +186,7 @@ export function startScheduler() {
       if (timeStr >= settings.absence_cutoff) {
         // Find active employees with no check-in today
         const absentRes = await query(`
-          SELECT u.id, u.role
+          SELECT u.id, u.name, u.employee_id as emp_code, u.role
           FROM users u
           WHERE u.status = 'active'
           AND NOT EXISTS (
@@ -197,6 +197,8 @@ export function startScheduler() {
         const absentCount = absentRes.rows.length;
 
         for (const user of absentRes.rows) {
+          const empCode = user.emp_code || `FISPL${String(user.id).padStart(3, '0')}`;
+
           // Check for approved leave
           const leaveRes = await query(`
             SELECT leave_type 
@@ -214,6 +216,7 @@ export function startScheduler() {
           }
 
           if (attendanceStatus === 'ABSENT') {
+            // Notify Employee
             try {
               const alreadyNotified = await query(
                 `SELECT id FROM notifications WHERE recipient_user_id = $1 AND title = 'Attendance Marked Absent' AND attendance_date = $2`,
@@ -232,6 +235,26 @@ export function startScheduler() {
             } catch (e: any) {
               console.error('Failed to insert absence notification:', e);
             }
+
+            // 1. Employee Marked Absent -> Notify Admins
+            try {
+              const alreadyAdminNotified = await query(
+                `SELECT id FROM notifications WHERE role = 'admin' AND title = 'Absent Alert' AND message LIKE $1 AND attendance_date = $2`,
+                [`%${empCode}%`, dateStr]
+              );
+              if (alreadyAdminNotified.rows.length === 0) {
+                await NotificationService.notifyAdmins({
+                  title: 'Absent Alert',
+                  message: `${user.name} (${empCode}) has not marked attendance and has been marked Absent for today.`,
+                  type: 'Attendance',
+                  priority: 'High',
+                  actionUrl: `/attendance?status=Absent&date=${dateStr}&search=${encodeURIComponent(user.name)}`,
+                  attendanceDate: dateStr,
+                });
+              }
+            } catch (e: any) {
+              console.error('Failed to insert admin absent alert:', e);
+            }
           }
           
           try {
@@ -247,28 +270,6 @@ export function startScheduler() {
           }
         }
 
-        // Admin Notification
-        if (absentCount > 0) {
-          try {
-            const alreadyNotified = await query(
-              `SELECT id FROM notifications WHERE role = 'admin' AND title = 'Daily Attendance Alert' AND attendance_date = $1`,
-              [dateStr]
-            );
-            if (alreadyNotified.rows.length === 0) {
-              await NotificationService.notifyAdmins({
-                title: 'Daily Attendance Alert',
-                message: `${absentCount} employee(s) have not marked attendance today.`,
-                type: 'Attendance',
-                priority: 'High',
-                actionUrl: `/attendance?status=Absent&date=${dateStr}`,
-                attendanceDate: dateStr,
-              });
-            }
-          } catch (e: any) {
-            console.error('Failed to insert admin absence notification:', e);
-          }
-        }
-
         // WhatsApp Late Attendance Alerts (Disabled per request)
         /*
         try {
@@ -279,11 +280,11 @@ export function startScheduler() {
         */
       }
 
-      // 2. CHECKOUT MISSING PROCESSING
+      // 3. CHECKOUT MISSING PROCESSING
       // If current time >= checkout_reminder_time
       if (timeStr >= settings.checkout_reminder_time) {
         const missingRes = await query(`
-          SELECT a.employee_id 
+          SELECT a.employee_id, u.name, u.employee_id as emp_code
           FROM attendance a
           JOIN users u ON a.employee_id = u.id
           WHERE u.status = 'active'
@@ -291,7 +292,17 @@ export function startScheduler() {
             AND a.check_out IS NULL
         `, [dateStr]);
 
+        const formattedDate = new Date(dateStr + 'T12:00:00+05:30').toLocaleDateString('en-GB', {
+          day: '2-digit',
+          month: 'long',
+          year: 'numeric',
+          timeZone: 'Asia/Kolkata',
+        });
+
         for (const att of missingRes.rows) {
+          const empCode = att.emp_code || `FISPL${String(att.employee_id).padStart(3, '0')}`;
+
+          // Notify Employee
           try {
             const alreadyNotified = await query(
               `SELECT id FROM notifications WHERE recipient_user_id = $1 AND title = 'Forgot to Check-Out' AND attendance_date = $2`,
@@ -309,6 +320,26 @@ export function startScheduler() {
             }
           } catch (e: any) {
             console.error('Failed to insert checkout notification:', e);
+          }
+
+          // 3. Missing Check-out -> Notify Admins
+          try {
+            const alreadyAdminNotified = await query(
+              `SELECT id FROM notifications WHERE role = 'admin' AND title = 'Missing Check-out' AND message LIKE $1 AND attendance_date = $2`,
+              [`%${empCode}%`, dateStr]
+            );
+            if (alreadyAdminNotified.rows.length === 0) {
+              await NotificationService.notifyAdmins({
+                title: 'Missing Check-out',
+                message: `${att.name} (${empCode}) did not mark check-out for ${formattedDate}.`,
+                type: 'Attendance',
+                priority: 'Medium',
+                actionUrl: `/attendance?date=${dateStr}&search=${encodeURIComponent(att.name)}`,
+                attendanceDate: dateStr,
+              });
+            }
+          } catch (e: any) {
+            console.error('Failed to insert admin missing check-out notification:', e);
           }
         }
       }

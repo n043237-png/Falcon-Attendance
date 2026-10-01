@@ -121,7 +121,8 @@ export default function NotificationsPage() {
 
       const params: any = {
         page,
-        limit
+        limit,
+        view: activeView,
       };
 
       if (debouncedSearch.trim()) params.search = debouncedSearch.trim();
@@ -131,7 +132,10 @@ export default function NotificationsPage() {
       if (typeFilter !== 'all') params.type = typeFilter;
 
       const res = await axios.get(`${API_BASE}/api/notifications`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'x-active-view': activeView 
+        },
         params
       });
 
@@ -147,7 +151,7 @@ export default function NotificationsPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [token, page, limit, debouncedSearch, timeframe, statusFilter, priorityFilter, typeFilter]);
+  }, [token, page, limit, debouncedSearch, timeframe, statusFilter, priorityFilter, typeFilter, activeView]);
 
   useEffect(() => {
     fetchNotifications();
@@ -218,7 +222,11 @@ export default function NotificationsPage() {
     if (!token) return;
     try {
       await axios.put(`${API_BASE}/api/notifications/read-all`, {}, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'x-active-view': activeView 
+        },
+        params: { view: activeView }
       });
       setUnreadCount(0);
       setNotifications((prev) =>
@@ -333,8 +341,24 @@ export default function NotificationsPage() {
     }
   };
 
+  // Double-layer role separation safeguard:
+  // Admin view -> Admin alerts & Announcements (never employee attendance alert)
+  // Employee view -> Personal employee alerts & Announcements (never admin alerts)
+  const displayedNotifications = notifications.filter((item) => {
+    const itemRole = (item as any).role?.toLowerCase();
+    if (activeView === 'admin') {
+      if (itemRole === 'employee') return false;
+      if (item.title === 'Attendance Marked Absent' && item.message?.includes('You have been marked absent')) return false;
+      return true;
+    } else {
+      if (itemRole === 'admin') return false;
+      if (item.title === 'Absent Alert') return false;
+      return true;
+    }
+  });
+
   // Stats calculation
-  const criticalOrHighCount = notifications.filter(
+  const criticalOrHighCount = displayedNotifications.filter(
     (n) => n.priority === 'Critical' || n.priority === 'High'
   ).length;
 
@@ -654,7 +678,7 @@ export default function NotificationsPage() {
             <Spinner animation="border" variant="primary" />
             <div className="text-muted mt-2 small">Loading notifications...</div>
           </div>
-        ) : notifications.length === 0 ? (
+        ) : displayedNotifications.length === 0 ? (
           <div className="text-center py-5 px-3">
             <div
               className="d-inline-flex p-3 rounded-circle mb-3"
@@ -688,7 +712,7 @@ export default function NotificationsPage() {
           </div>
         ) : (
           <div className="d-flex flex-column">
-            {notifications.map((item) => {
+            {displayedNotifications.map((item) => {
               const isRead = item.isRead || item.is_read;
               const dateStr = item.createdAt || item.created_at || '';
               const prioStyle = getPriorityBadgeStyle(item.priority);

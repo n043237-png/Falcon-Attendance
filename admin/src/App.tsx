@@ -42,6 +42,8 @@ import HolidayList from './pages/employee/HolidayList';
 
 import NotificationsPage from './pages/NotificationsPage';
 import MyProfile from './pages/MyProfile';
+import Avatar from './components/common/Avatar';
+import ImagePreviewModal from './components/common/ImagePreviewModal';
 
 
 // Enterprise Admin Dashboard View
@@ -49,6 +51,7 @@ function AdminDashboardView() {
   const { user, token } = useAuth();
   const [summary, setSummary] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [showImagePreview, setShowImagePreview] = useState(false);
 
   useEffect(() => {
     const fetchTodaySummary = async () => {
@@ -164,12 +167,29 @@ function AdminDashboardView() {
             </div>
           </div>
 
-          {/* Main Title & Action Buttons */}
+          {/* Main Title, Avatar & Action Buttons */}
           <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
-            <div>
-              <h1 className="hero-title">
-                {getGreeting()}, {user?.name || 'Admin User'} <span style={{ display: 'inline-block' }}>👋</span>
-              </h1>
+            <div className="d-flex align-items-center gap-3">
+              <Avatar
+                src={user?.profile_photo_url || user?.profilePhotoUrl}
+                name={user?.name}
+                size={62}
+                showBorder={true}
+                borderColor="rgba(255, 255, 255, 0.95)"
+                style={{ boxShadow: '0 4px 14px rgba(37, 99, 235, 0.18)', cursor: 'pointer' }}
+                onClick={() => setShowImagePreview(true)}
+                alt="Click to view full photo"
+              />
+              <div>
+                <h1 className="hero-title mb-1">
+                  {getGreeting()}, {user?.name || 'Admin User'} <span style={{ display: 'inline-block' }}>👋</span>
+                </h1>
+                <div className="d-flex flex-wrap align-items-center gap-2 text-muted" style={{ fontSize: '13px' }}>
+                  <span className="badge bg-light text-secondary border">
+                    ID: #{user?.employee_id || 'ADMIN001'}
+                  </span>
+                </div>
+              </div>
             </div>
 
             <div className="d-flex flex-wrap align-items-center gap-2.5 flex-shrink-0">
@@ -313,6 +333,18 @@ function AdminDashboardView() {
           })}
         </div>
       </div>
+
+      {showImagePreview && (
+        <ImagePreviewModal
+          show={showImagePreview}
+          onHide={() => setShowImagePreview(false)}
+          src={user?.profile_photo_url || user?.profilePhotoUrl}
+          name={user?.name}
+          employeeId={user?.employee_id}
+          role={user?.role}
+          department={user?.department}
+        />
+      )}
     </div>
   );
 }

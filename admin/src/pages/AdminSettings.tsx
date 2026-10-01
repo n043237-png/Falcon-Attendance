@@ -16,7 +16,14 @@ import {
   ExternalLink,
   Compass,
   Sparkles,
-  CalendarCheck
+  CalendarCheck,
+  CalendarDays,
+  Search,
+  PartyPopper,
+  LayoutGrid,
+  List,
+  X,
+  Tag
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -64,6 +71,182 @@ export default function AdminSettings() {
   const [newHolDate, setNewHolDate] = useState('');
   const [newHolName, setNewHolName] = useState('');
   const [newHolDesc, setNewHolDesc] = useState('');
+  const [holidaySearch, setHolidaySearch] = useState('');
+  const [holidayTab, setHolidayTab] = useState<'ALL' | 'UPCOMING' | 'PAST'>('ALL');
+  const [showAddHoliday, setShowAddHoliday] = useState(false);
+  const [holidayViewMode, setHolidayViewMode] = useState<'CARDS' | 'TABLE'>('CARDS');
+
+  const getMonthAbbr = (dateStr: string) => {
+    try {
+      const d = new Date(dateStr + 'T12:00:00+05:30');
+      return d.toLocaleDateString('en-US', { month: 'short', timeZone: 'Asia/Kolkata' }).toUpperCase();
+    } catch {
+      return '';
+    }
+  };
+
+  const getDayNumber = (dateStr: string) => {
+    try {
+      const parts = dateStr.split('-');
+      return parts[2] || '';
+    } catch {
+      return '';
+    }
+  };
+
+  const formatDateDisplay = (dateStr: string) => {
+    try {
+      const d = new Date(dateStr + 'T12:00:00+05:30');
+      return d.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        timeZone: 'Asia/Kolkata',
+      });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const getHolidayTheme = (name: string, isPast: boolean, isToday: boolean) => {
+    const lower = (name || '').toLowerCase();
+
+    if (isToday) {
+      return {
+        headerBg: 'linear-gradient(135deg, #10B981, #059669)',
+        headerSolid: '#059669',
+        border: '#86EFAC',
+        cardBg: '#F0FDF4',
+        badgeBg: '#DCFCE7',
+        badgeColor: '#15803D',
+        emoji: '🎉',
+        accentColor: '#059669',
+      };
+    }
+
+    if (isPast) {
+      return {
+        headerBg: 'linear-gradient(135deg, #94A3B8, #64748B)',
+        headerSolid: '#64748B',
+        border: '#E2E8F0',
+        cardBg: '#FAFAFA',
+        badgeBg: '#F1F5F9',
+        badgeColor: '#64748B',
+        emoji: '🗓️',
+        accentColor: '#64748B',
+      };
+    }
+
+    // National / Saffron-Navy theme
+    if (lower.includes('republic') || lower.includes('independence') || lower.includes('gandhi')) {
+      return {
+        headerBg: 'linear-gradient(135deg, #F59E0B, #D97706)',
+        headerSolid: '#D97706',
+        border: '#FDE68A',
+        cardBg: '#FFFDF5',
+        badgeBg: '#FEF3C7',
+        badgeColor: '#B45309',
+        emoji: '🇮🇳',
+        accentColor: '#D97706',
+      };
+    }
+
+    // Diwali / Dussehra / Janmashtami
+    if (lower.includes('diwali') || lower.includes('deepavali') || lower.includes('dussehra') || lower.includes('janmashtami')) {
+      return {
+        headerBg: 'linear-gradient(135deg, #F97316, #EA580C)',
+        headerSolid: '#EA580C',
+        border: '#FED7AA',
+        cardBg: '#FFF8F2',
+        badgeBg: '#FFEDD5',
+        badgeColor: '#C2410C',
+        emoji: '🪔',
+        accentColor: '#EA580C',
+      };
+    }
+
+    // Holi
+    if (lower.includes('holi')) {
+      return {
+        headerBg: 'linear-gradient(135deg, #EC4899, #A855F7)',
+        headerSolid: '#A855F7',
+        border: '#F5D0FE',
+        cardBg: '#FDF7FF',
+        badgeBg: '#FDF4FF',
+        badgeColor: '#9333EA',
+        emoji: '🎨',
+        accentColor: '#9333EA',
+      };
+    }
+
+    // Eid
+    if (lower.includes('eid') || lower.includes('ramadan')) {
+      return {
+        headerBg: 'linear-gradient(135deg, #10B981, #047857)',
+        headerSolid: '#047857',
+        border: '#A7F3D0',
+        cardBg: '#F5FEF9',
+        badgeBg: '#D1FAE5',
+        badgeColor: '#047857',
+        emoji: '🌙',
+        accentColor: '#047857',
+      };
+    }
+
+    // Christmas
+    if (lower.includes('christmas')) {
+      return {
+        headerBg: 'linear-gradient(135deg, #EF4444, #DC2626)',
+        headerSolid: '#DC2626',
+        border: '#FECACA',
+        cardBg: '#FFF5F5',
+        badgeBg: '#FEE2E2',
+        badgeColor: '#B91C1C',
+        emoji: '🎄',
+        accentColor: '#DC2626',
+      };
+    }
+
+    // New Year
+    if (lower.includes('new year')) {
+      return {
+        headerBg: 'linear-gradient(135deg, #6366F1, #4F46E5)',
+        headerSolid: '#4F46E5',
+        border: '#C7D2FE',
+        cardBg: '#F7F8FF',
+        badgeBg: '#E0E7FF',
+        badgeColor: '#4338CA',
+        emoji: '✨',
+        accentColor: '#4F46E5',
+      };
+    }
+
+    // Raksha Bandhan
+    if (lower.includes('raksha') || lower.includes('bandhan')) {
+      return {
+        headerBg: 'linear-gradient(135deg, #F43F5E, #E11D48)',
+        headerSolid: '#E11D48',
+        border: '#FECDD3',
+        cardBg: '#FFF1F2',
+        badgeBg: '#FFE4E6',
+        badgeColor: '#BE123C',
+        emoji: '🎁',
+        accentColor: '#E11D48',
+      };
+    }
+
+    // Default Upcoming: Sapphire Blue
+    return {
+      headerBg: 'linear-gradient(135deg, #3B82F6, #2563EB)',
+      headerSolid: '#2563EB',
+      border: '#BFDBFE',
+      cardBg: '#F8FAFC',
+      badgeBg: '#EFF6FF',
+      badgeColor: '#1D4ED8',
+      emoji: '🌟',
+      accentColor: '#2563EB',
+    };
+  };
 
   const loadData = async () => {
     try {
@@ -870,130 +1053,786 @@ export default function AdminSettings() {
 
         {/* Holidays Card */}
         <Col lg={5}>
-          <div className="card p-4 border-0" style={{ boxShadow: '0 4px 20px -2px rgba(15, 23, 42, 0.05), 0 1px 3px rgba(15, 23, 42, 0.03)', borderRadius: '20px' }}>
-            <div className="d-flex align-items-center justify-content-between pb-3 mb-4 border-bottom" style={{ borderColor: '#F1F5F9' }}>
+          <div
+            className="card p-4 border-0 h-100"
+            style={{
+              boxShadow: '0 8px 30px -4px rgba(15, 23, 42, 0.07), 0 2px 6px rgba(15, 23, 42, 0.04)',
+              borderRadius: '24px',
+              background: '#FFFFFF',
+              border: '1px solid #EEF2F6',
+            }}
+          >
+            {/* Header */}
+            <div className="d-flex align-items-center justify-content-between pb-3 mb-3 border-bottom" style={{ borderColor: '#F1F5F9' }}>
               <div className="d-flex align-items-center gap-2.5">
                 <div
                   style={{
-                    width: '36px',
-                    height: '36px',
-                    borderRadius: '10px',
-                    background: '#EFF6FF',
-                    color: '#2563EB',
+                    width: '42px',
+                    height: '42px',
+                    borderRadius: '14px',
+                    background: 'linear-gradient(135deg, #1E40AF 0%, #3B82F6 100%)',
+                    color: '#FFFFFF',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    border: '1px solid #DBEAFE',
+                    boxShadow: '0 4px 12px rgba(37, 99, 235, 0.28)',
                   }}
                 >
-                  <Calendar size={18} />
+                  <CalendarDays size={20} />
                 </div>
                 <div>
-                  <h3 style={{ fontSize: '16.5px', fontWeight: 600, color: '#0F172A', margin: 0 }}>Official Holidays</h3>
-                  <p className="text-muted mb-0" style={{ fontSize: '13px' }}>Manage paid annual holidays</p>
+                  <div className="d-flex align-items-center gap-2">
+                    <h3 style={{ fontSize: '17px', fontWeight: 800, color: '#0F172A', margin: 0, letterSpacing: '-0.02em' }}>
+                      Official Holidays
+                    </h3>
+                    <span
+                      className="badge rounded-pill"
+                      style={{
+                        backgroundColor: '#EFF6FF',
+                        color: '#1D4ED8',
+                        border: '1px solid #BFDBFE',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        padding: '3px 8px',
+                      }}
+                    >
+                      {holidays.length} Total
+                    </span>
+                  </div>
+                  <p className="text-muted mb-0" style={{ fontSize: '12.5px', marginTop: '1px' }}>
+                    Corporate calendar & paid official leaves
+                  </p>
                 </div>
               </div>
-              <span className="badge" style={{ backgroundColor: '#F1F5F9', color: '#475569', fontSize: '11px', fontWeight: 600 }}>
-                {holidays.length} configured
-              </span>
+
+              {/* Add Toggle Button */}
+              <button
+                type="button"
+                onClick={() => setShowAddHoliday(!showAddHoliday)}
+                className="btn btn-sm d-flex align-items-center gap-1.5"
+                style={{
+                  borderRadius: '12px',
+                  padding: '7px 14px',
+                  fontSize: '12.5px',
+                  fontWeight: 700,
+                  background: showAddHoliday ? '#F1F5F9' : 'linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)',
+                  color: showAddHoliday ? '#475569' : '#FFFFFF',
+                  border: showAddHoliday ? '1px solid #CBD5E1' : 'none',
+                  boxShadow: showAddHoliday ? 'none' : '0 4px 14px rgba(37, 99, 235, 0.3)',
+                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                }}
+              >
+                {showAddHoliday ? (
+                  <>
+                    <X size={14} />
+                    <span>Close</span>
+                  </>
+                ) : (
+                  <>
+                    <Plus size={15} />
+                    <span>+ Add Holiday</span>
+                  </>
+                )}
+              </button>
             </div>
 
-            {/* Add Holiday Form */}
-            <div className="p-3 mb-4 rounded-3" style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
-              <span className="fw-semibold text-dark d-block mb-2.5" style={{ fontSize: '13px' }}>
-                Add New Holiday
-              </span>
-              <Form onSubmit={handleAddHoliday}>
-                <Row className="g-2">
-                  <Col sm={6}>
-                    <Form.Control
-                      type="date"
-                      value={newHolDate}
-                      onChange={(e) => setNewHolDate(e.target.value)}
-                      style={{ height: '38px', fontSize: '13px', borderRadius: '8px' }}
-                      required
-                    />
-                  </Col>
-                  <Col sm={6}>
-                    <Form.Control
-                      type="text"
-                      placeholder="e.g. Diwali, Christmas"
-                      value={newHolName}
-                      onChange={(e) => setNewHolName(e.target.value)}
-                      style={{ height: '38px', fontSize: '13px', borderRadius: '8px' }}
-                      required
-                    />
-                  </Col>
-                  <Col sm={12}>
-                    <Form.Control
-                      type="text"
-                      placeholder="Optional description (e.g. Festival of Lights)..."
-                      value={newHolDesc}
-                      onChange={(e) => setNewHolDesc(e.target.value)}
-                      style={{ height: '38px', fontSize: '13px', borderRadius: '8px' }}
-                    />
-                  </Col>
-                  <Col sm={12}>
-                    <button type="submit" className="btn btn-primary w-100" style={{ height: '38px', fontSize: '13px', borderRadius: '8px' }}>
-                      <Plus size={15} />
-                      <span>Add to Calendar</span>
-                    </button>
-                  </Col>
-                </Row>
-              </Form>
-            </div>
+            {/* Spotlight Banner: Next Immediate Holiday */}
+            {(() => {
+              const nextUpcoming = holidays.find((h) => !h.isPast);
+              if (!nextUpcoming) return null;
+              const nextTheme = getHolidayTheme(nextUpcoming.name, false, nextUpcoming.isToday);
 
-            {/* Holidays List */}
-            <div className="table-responsive" style={{ maxHeight: '360px', overflowY: 'auto', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
-              <table className="table table-hover mb-0">
-                <thead style={{ background: '#F8FAFC' }}>
-                  <tr>
-                    <th style={{ fontSize: '11.5px', padding: '12px 14px' }}>Date</th>
-                    <th style={{ fontSize: '11.5px', padding: '12px 14px' }}>Day</th>
-                    <th style={{ fontSize: '11.5px', padding: '12px 14px' }}>Holiday Name & Description</th>
-                    <th className="text-end" style={{ fontSize: '11.5px', padding: '12px 14px' }}>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {holidays.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="text-center py-4 text-muted" style={{ fontSize: '13.5px' }}>
-                        No official holidays configured yet.
-                      </td>
-                    </tr>
-                  ) : (
-                    holidays.map((h) => (
-                      <tr key={h.id}>
-                        <td style={{ padding: '12px 14px' }}>
-                          <span className="badge" style={{ backgroundColor: '#F1F5F9', color: '#1E293B', fontFamily: 'monospace', fontSize: '12px', fontWeight: 600 }}>
-                            {h.holidayDate}
-                          </span>
-                        </td>
-                        <td style={{ padding: '12px 14px' }}>
-                          <span className="text-muted small fw-medium">{h.day || '-'}</span>
-                        </td>
-                        <td style={{ padding: '12px 14px' }}>
-                          <div className="fw-medium text-dark" style={{ fontSize: '13.5px' }}>{h.name}</div>
-                          {h.description && (
-                            <div className="text-muted" style={{ fontSize: '11.5px', marginTop: '2px' }}>{h.description}</div>
-                          )}
-                        </td>
-                        <td className="text-end" style={{ padding: '12px 14px' }}>
-                          <button
-                            className="btn btn-outline-danger btn-sm p-1"
-                            onClick={() => handleDeleteHoliday(h.id)}
-                            title="Delete holiday"
-                            style={{ width: '28px', height: '28px', borderRadius: '6px' }}
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        </td>
-                      </tr>
-                    ))
+              return (
+                <div
+                  className="p-3 mb-3 position-relative overflow-hidden"
+                  style={{
+                    background: 'linear-gradient(135deg, #0F172A 0%, #1E293B 55%, #1E3A8A 100%)',
+                    borderRadius: '16px',
+                    color: '#FFFFFF',
+                    boxShadow: '0 6px 20px -3px rgba(15, 23, 42, 0.25)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                  }}
+                >
+                  {/* Subtle Background Glow */}
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: '-20px',
+                      right: '-20px',
+                      width: '100px',
+                      height: '100px',
+                      borderRadius: '50%',
+                      background: 'radial-gradient(circle, rgba(59, 130, 246, 0.35) 0%, transparent 70%)',
+                      pointerEvents: 'none',
+                    }}
+                  />
+
+                  <div className="d-flex align-items-center justify-content-between mb-2">
+                    <div className="d-flex align-items-center gap-1.5" style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '0.08em', color: '#93C5FD' }}>
+                      <Sparkles size={13} className="text-warning" />
+                      <span>UPCOMING SPOTLIGHT</span>
+                    </div>
+
+                    <span
+                      className="badge rounded-pill d-inline-flex align-items-center gap-1"
+                      style={{
+                        backgroundColor: nextUpcoming.isToday
+                          ? '#10B981'
+                          : nextUpcoming.daysAway === 1
+                          ? '#F59E0B'
+                          : 'rgba(59, 130, 246, 0.25)',
+                        color: '#FFFFFF',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        backdropFilter: 'blur(6px)',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        padding: '4px 9px',
+                      }}
+                    >
+                      {nextUpcoming.isToday
+                        ? '🎉 TODAY!'
+                        : nextUpcoming.daysAway === 1
+                        ? '⚡ TOMORROW'
+                        : `IN ${nextUpcoming.daysAway} DAYS`}
+                    </span>
+                  </div>
+
+                  <div className="d-flex align-items-center gap-3">
+                    <div
+                      style={{
+                        width: '46px',
+                        height: '46px',
+                        borderRadius: '12px',
+                        background: 'rgba(255, 255, 255, 0.12)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '22px',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {nextTheme.emoji}
+                    </div>
+
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div className="fw-bold text-white text-truncate" style={{ fontSize: '15px', letterSpacing: '-0.01em' }}>
+                        {nextUpcoming.name}
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#CBD5E1', marginTop: '1px' }}>
+                        {formatDateDisplay(nextUpcoming.holidayDate)} ({nextUpcoming.day})
+                        {nextUpcoming.description ? ` • ${nextUpcoming.description}` : ' • Official Paid Holiday'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Add Holiday Form (Collapsible Card) */}
+            {showAddHoliday && (
+              <div
+                className="p-3 mb-3 rounded-3"
+                style={{
+                  background: '#F8FAFC',
+                  border: '1.5px solid #BFDBFE',
+                  borderRadius: '16px',
+                  boxShadow: '0 4px 16px -2px rgba(37, 99, 235, 0.08)',
+                }}
+              >
+                <div className="d-flex align-items-center justify-content-between mb-2.5">
+                  <span className="fw-bold text-dark d-flex align-items-center gap-1.5" style={{ fontSize: '13.5px' }}>
+                    <Sparkles size={14} className="text-primary" />
+                    <span>Create New Official Holiday</span>
+                  </span>
+                  {detectedNewHolDay && (
+                    <span
+                      className="badge rounded-pill"
+                      style={{ backgroundColor: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE', fontSize: '11px', fontWeight: 700 }}
+                    >
+                      🗓️ {detectedNewHolDay}
+                    </span>
                   )}
-                </tbody>
-              </table>
+                </div>
+
+                {/* Popular Quick Presets */}
+                <div className="mb-2.5">
+                  <div className="text-muted small fw-semibold mb-1.5" style={{ fontSize: '11.5px' }}>
+                    Quick Presets (1-Click Auto Fill):
+                  </div>
+                  <div className="d-flex flex-wrap gap-1.5">
+                    {[
+                      { emoji: '🎊', name: 'New Year', desc: 'First day of the Gregorian calendar' },
+                      { emoji: '🇮🇳', name: 'Republic Day', desc: 'Constitution of India came into effect' },
+                      { emoji: '🎨', name: 'Holi', desc: 'Festival of Colours and spring' },
+                      { emoji: '🇮🇳', name: 'Independence Day', desc: 'National Independence Day celebration' },
+                      { emoji: '🇮🇳', name: 'Gandhi Jayanti', desc: 'Mahatma Gandhi Jayanti' },
+                      { emoji: '🪔', name: 'Diwali', desc: 'Festival of Lights' },
+                      { emoji: '🎄', name: 'Christmas', desc: 'Christmas Day Celebration' },
+                    ].map((preset) => (
+                      <button
+                        key={preset.name}
+                        type="button"
+                        onClick={() => {
+                          setNewHolName(preset.name);
+                          setNewHolDesc(preset.desc);
+                        }}
+                        className="btn btn-sm py-1 px-2.5 d-inline-flex align-items-center gap-1"
+                        style={{
+                          fontSize: '11.5px',
+                          borderRadius: '8px',
+                          fontWeight: 600,
+                          backgroundColor: newHolName === preset.name ? '#EFF6FF' : '#FFFFFF',
+                          color: newHolName === preset.name ? '#1D4ED8' : '#334155',
+                          border: newHolName === preset.name ? '1px solid #93C5FD' : '1px solid #E2E8F0',
+                          boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+                        }}
+                      >
+                        <span>{preset.emoji}</span>
+                        <span>{preset.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <Form onSubmit={handleAddHoliday}>
+                  <Row className="g-2">
+                    <Col sm={6}>
+                      <Form.Label className="text-muted small fw-bold mb-1" style={{ fontSize: '11.5px' }}>
+                        Holiday Date *
+                      </Form.Label>
+                      <Form.Control
+                        type="date"
+                        value={newHolDate}
+                        onChange={(e) => setNewHolDate(e.target.value)}
+                        style={{ height: '38px', fontSize: '13px', borderRadius: '10px', border: '1px solid #CBD5E1' }}
+                        required
+                      />
+                    </Col>
+                    <Col sm={6}>
+                      <Form.Label className="text-muted small fw-bold mb-1" style={{ fontSize: '11.5px' }}>
+                        Holiday Name *
+                      </Form.Label>
+                      <Form.Control
+                        type="text"
+                        placeholder="e.g. Diwali, Holi"
+                        value={newHolName}
+                        onChange={(e) => setNewHolName(e.target.value)}
+                        style={{ height: '38px', fontSize: '13px', borderRadius: '10px', border: '1px solid #CBD5E1' }}
+                        required
+                      />
+                    </Col>
+                    <Col sm={12}>
+                      <Form.Label className="text-muted small fw-bold mb-1" style={{ fontSize: '11.5px' }}>
+                        Description (Optional)
+                      </Form.Label>
+                      <Form.Control
+                        type="text"
+                        placeholder="Optional description (e.g. Festival of Lights)..."
+                        value={newHolDesc}
+                        onChange={(e) => setNewHolDesc(e.target.value)}
+                        style={{ height: '38px', fontSize: '13px', borderRadius: '10px', border: '1px solid #CBD5E1' }}
+                      />
+                    </Col>
+                    <Col sm={12}>
+                      <button
+                        type="submit"
+                        className="btn btn-primary w-100 d-flex align-items-center justify-content-center gap-1.5"
+                        style={{
+                          height: '40px',
+                          fontSize: '13px',
+                          borderRadius: '10px',
+                          fontWeight: 700,
+                          marginTop: '4px',
+                          background: 'linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)',
+                          boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)',
+                        }}
+                      >
+                        <Plus size={16} />
+                        <span>Save to Company Calendar</span>
+                      </button>
+                    </Col>
+                  </Row>
+                </Form>
+              </div>
+            )}
+
+            {/* Filter & Search Bar */}
+            <div className="d-flex flex-column gap-2 mb-3">
+              <div className="d-flex align-items-center justify-content-between gap-2">
+                {/* Search Box with Non-Overlapping Padding */}
+                <div className="position-relative flex-grow-1">
+                  <Search
+                    size={15}
+                    className="position-absolute text-muted"
+                    style={{ top: '11px', left: '13px', pointerEvents: 'none', color: '#94A3B8' }}
+                  />
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="Search holiday, day, date..."
+                    value={holidaySearch}
+                    onChange={(e) => setHolidaySearch(e.target.value)}
+                    style={{
+                      paddingLeft: '38px',
+                      paddingRight: holidaySearch ? '32px' : '12px',
+                      height: '38px',
+                      borderRadius: '12px',
+                      fontSize: '13px',
+                      borderColor: '#E2E8F0',
+                      backgroundColor: '#F8FAFC',
+                      transition: 'all 0.15s ease',
+                    }}
+                  />
+                  {holidaySearch && (
+                    <button
+                      type="button"
+                      onClick={() => setHolidaySearch('')}
+                      className="btn btn-sm position-absolute border-0 p-0 text-muted"
+                      style={{ top: '9px', right: '12px' }}
+                    >
+                      <X size={15} />
+                    </button>
+                  )}
+                </div>
+
+                {/* View Mode Toggle */}
+                <div
+                  className="d-flex align-items-center p-1 rounded-3"
+                  style={{ backgroundColor: '#F1F5F9', border: '1px solid #E2E8F0' }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setHolidayViewMode('CARDS')}
+                    className="btn btn-sm p-1.5"
+                    style={{
+                      borderRadius: '8px',
+                      backgroundColor: holidayViewMode === 'CARDS' ? '#FFFFFF' : 'transparent',
+                      color: holidayViewMode === 'CARDS' ? '#1D4ED8' : '#64748B',
+                      boxShadow: holidayViewMode === 'CARDS' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                      lineHeight: 1,
+                    }}
+                    title="Card feed view"
+                  >
+                    <LayoutGrid size={15} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setHolidayViewMode('TABLE')}
+                    className="btn btn-sm p-1.5"
+                    style={{
+                      borderRadius: '8px',
+                      backgroundColor: holidayViewMode === 'TABLE' ? '#FFFFFF' : 'transparent',
+                      color: holidayViewMode === 'TABLE' ? '#1D4ED8' : '#64748B',
+                      boxShadow: holidayViewMode === 'TABLE' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                      lineHeight: 1,
+                    }}
+                    title="Table view"
+                  >
+                    <List size={15} />
+                  </button>
+                </div>
+              </div>
+
+              {/* iOS-Style Segmented Status Tabs */}
+              <div
+                className="d-flex align-items-center p-1 rounded-3"
+                style={{ backgroundColor: '#F1F5F9', border: '1px solid #E2E8F0' }}
+              >
+                {[
+                  { id: 'ALL', label: 'All Holidays', count: holidays.length },
+                  { id: 'UPCOMING', label: 'Upcoming', count: holidays.filter((h) => !h.isPast).length },
+                  { id: 'PAST', label: 'Past', count: holidays.filter((h) => h.isPast).length },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setHolidayTab(tab.id as any)}
+                    className="btn btn-sm flex-fill d-flex align-items-center justify-content-center gap-1.5"
+                    style={{
+                      borderRadius: '8px',
+                      padding: '5px 10px',
+                      fontSize: '12.5px',
+                      fontWeight: holidayTab === tab.id ? 700 : 500,
+                      backgroundColor: holidayTab === tab.id ? '#FFFFFF' : 'transparent',
+                      color: holidayTab === tab.id ? '#0F172A' : '#64748B',
+                      boxShadow: holidayTab === tab.id ? '0 1px 3px rgba(15, 23, 42, 0.08)' : 'none',
+                      transition: 'all 0.15s ease',
+                      border: 'none',
+                    }}
+                  >
+                    <span>{tab.label}</span>
+                    <span
+                      className="badge rounded-pill"
+                      style={{
+                        backgroundColor: holidayTab === tab.id ? '#EFF6FF' : '#E2E8F0',
+                        color: holidayTab === tab.id ? '#1D4ED8' : '#475569',
+                        fontSize: '10.5px',
+                        fontWeight: 700,
+                        padding: '2px 6px',
+                      }}
+                    >
+                      {tab.count}
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
+
+            {/* Holidays List / Content */}
+            {(() => {
+              const filteredList = holidays.filter((h) => {
+                if (holidayTab === 'UPCOMING' && h.isPast) return false;
+                if (holidayTab === 'PAST' && !h.isPast) return false;
+                if (holidaySearch.trim()) {
+                  const q = holidaySearch.toLowerCase().trim();
+                  const matchName = h.name?.toLowerCase().includes(q);
+                  const matchDesc = h.description?.toLowerCase().includes(q);
+                  const matchDay = h.day?.toLowerCase().includes(q);
+                  const matchDate = h.holidayDate?.includes(q);
+                  if (!matchName && !matchDesc && !matchDay && !matchDate) return false;
+                }
+                return true;
+              });
+
+              if (filteredList.length === 0) {
+                return (
+                  <div
+                    className="text-center py-5 px-3 rounded-4"
+                    style={{ background: '#F8FAFC', border: '1.5px dashed #CBD5E1' }}
+                  >
+                    <CalendarDays size={36} className="text-muted mb-2 opacity-50" />
+                    <div className="fw-bold text-dark" style={{ fontSize: '14.5px' }}>
+                      No holidays found
+                    </div>
+                    <div className="text-muted small mt-1" style={{ fontSize: '12.5px' }}>
+                      {holidaySearch
+                        ? `No holidays match "${holidaySearch}"`
+                        : holidayTab === 'UPCOMING'
+                        ? 'No upcoming holidays left for this calendar year.'
+                        : 'No official company holidays configured.'}
+                    </div>
+                    {holidaySearch && (
+                      <button
+                        type="button"
+                        className="btn btn-link btn-sm text-primary p-0 mt-2"
+                        onClick={() => setHolidaySearch('')}
+                        style={{ fontSize: '12.5px', textDecoration: 'none', fontWeight: 600 }}
+                      >
+                        Clear search filter
+                      </button>
+                    )}
+                  </div>
+                );
+              }
+
+              if (holidayViewMode === 'CARDS') {
+                return (
+                  <div
+                    style={{
+                      maxHeight: '420px',
+                      overflowY: 'auto',
+                      overflowX: 'hidden',
+                      paddingRight: '2px',
+                    }}
+                  >
+                    <div className="d-flex flex-column gap-2.5">
+                      {filteredList.map((h) => {
+                        const theme = getHolidayTheme(h.name, h.isPast, h.isToday);
+
+                        return (
+                          <div
+                            key={h.id}
+                            className="d-flex align-items-center justify-content-between p-3 rounded-3"
+                            style={{
+                              background: theme.cardBg,
+                              border: `1.5px solid ${theme.border}`,
+                              boxShadow: h.isPast ? 'none' : '0 2px 8px -2px rgba(15, 23, 42, 0.05)',
+                              borderRadius: '16px',
+                              opacity: h.isPast ? 0.78 : 1,
+                              transition: 'all 0.18s cubic-bezier(0.4, 0, 0.2, 1)',
+                            }}
+                          >
+                            {/* Left: Physical Style Calendar Leaf + Info */}
+                            <div className="d-flex align-items-center gap-3" style={{ minWidth: 0, flex: 1 }}>
+                              {/* Apple/Physical Luxury Calendar Tile */}
+                              <div
+                                style={{
+                                  width: '48px',
+                                  height: '52px',
+                                  borderRadius: '12px',
+                                  overflow: 'hidden',
+                                  boxShadow: '0 3px 8px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04)',
+                                  border: `1px solid ${theme.border}`,
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  flexShrink: 0,
+                                  background: '#FFFFFF',
+                                }}
+                              >
+                                {/* Saturated Month Header Strip */}
+                                <div
+                                  style={{
+                                    background: theme.headerBg,
+                                    color: '#FFFFFF',
+                                    fontSize: '9.5px',
+                                    fontWeight: 800,
+                                    letterSpacing: '0.08em',
+                                    textAlign: 'center',
+                                    padding: '2.5px 0',
+                                    lineHeight: 1,
+                                    textTransform: 'uppercase',
+                                  }}
+                                >
+                                  {getMonthAbbr(h.holidayDate)}
+                                </div>
+                                {/* Clean White Day Number Body */}
+                                <div
+                                  style={{
+                                    flex: 1,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontSize: '17px',
+                                    fontWeight: 800,
+                                    color: h.isPast ? '#64748B' : '#0F172A',
+                                    lineHeight: 1,
+                                    background: '#FFFFFF',
+                                  }}
+                                >
+                                  {getDayNumber(h.holidayDate)}
+                                </div>
+                              </div>
+
+                              {/* Holiday Information */}
+                              <div style={{ minWidth: 0, flex: 1 }}>
+                                <div className="d-flex align-items-center gap-2 flex-wrap">
+                                  <span style={{ fontSize: '15px' }}>{theme.emoji}</span>
+                                  <span
+                                    className="fw-bold text-dark text-truncate"
+                                    style={{ fontSize: '14px', letterSpacing: '-0.01em' }}
+                                  >
+                                    {h.name}
+                                  </span>
+
+                                  {/* Vibrant Status Tag */}
+                                  {h.isToday ? (
+                                    <span
+                                      className="badge d-inline-flex align-items-center gap-1"
+                                      style={{
+                                        backgroundColor: '#DCFCE7',
+                                        color: '#15803D',
+                                        border: '1px solid #86EFAC',
+                                        fontSize: '10.5px',
+                                        fontWeight: 800,
+                                        padding: '2.5px 7px',
+                                        borderRadius: '6px',
+                                      }}
+                                    >
+                                      <PartyPopper size={11} />
+                                      <span>TODAY</span>
+                                    </span>
+                                  ) : h.daysAway !== undefined && h.daysAway >= 0 && !h.isPast ? (
+                                    <span
+                                      className="badge"
+                                      style={{
+                                        backgroundColor: h.daysAway === 1 ? '#FEF3C7' : '#EFF6FF',
+                                        color: h.daysAway === 1 ? '#B45309' : '#1D4ED8',
+                                        border: `1px solid ${h.daysAway === 1 ? '#FDE68A' : '#BFDBFE'}`,
+                                        fontSize: '10.5px',
+                                        fontWeight: 700,
+                                        padding: '2.5px 7px',
+                                        borderRadius: '6px',
+                                      }}
+                                    >
+                                      {h.daysAway === 1 ? '⚡ Tomorrow' : `In ${h.daysAway}d`}
+                                    </span>
+                                  ) : h.isPast ? (
+                                    <span
+                                      className="badge"
+                                      style={{
+                                        backgroundColor: '#F1F5F9',
+                                        color: '#64748B',
+                                        fontSize: '10px',
+                                        fontWeight: 600,
+                                        padding: '2px 6px',
+                                        borderRadius: '6px',
+                                      }}
+                                    >
+                                      Past
+                                    </span>
+                                  ) : null}
+                                </div>
+
+                                <div
+                                  className="d-flex align-items-center gap-2 text-muted mt-1"
+                                  style={{ fontSize: '12px' }}
+                                >
+                                  <span className="fw-semibold text-secondary">{h.day}</span>
+                                  <span style={{ color: '#CBD5E1' }}>&bull;</span>
+                                  <span className="text-truncate" style={{ maxWidth: '220px', color: '#64748B' }}>
+                                    {h.description || 'Official Paid Holiday'}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Action Button: Refined Delete */}
+                            <button
+                              type="button"
+                              className="btn btn-sm border-0 p-0"
+                              onClick={() => handleDeleteHoliday(h.id)}
+                              title="Delete holiday"
+                              style={{
+                                width: '32px',
+                                height: '32px',
+                                borderRadius: '10px',
+                                color: '#94A3B8',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                flexShrink: 0,
+                                transition: 'all 0.15s ease',
+                                backgroundColor: 'transparent',
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.color = '#EF4444';
+                                e.currentTarget.style.backgroundColor = '#FEE2E2';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.color = '#94A3B8';
+                                e.currentTarget.style.backgroundColor = 'transparent';
+                              }}
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              }
+
+              // Clean Table View
+              return (
+                <div
+                  style={{
+                    maxHeight: '420px',
+                    overflowY: 'auto',
+                    overflowX: 'hidden',
+                    borderRadius: '16px',
+                    border: '1px solid #E2E8F0',
+                  }}
+                >
+                  <table className="table table-hover align-middle mb-0" style={{ tableLayout: 'auto' }}>
+                    <thead style={{ background: '#F8FAFC' }}>
+                      <tr>
+                        <th style={{ fontSize: '11px', padding: '12px 14px', fontWeight: 700, color: '#475569' }}>DATE</th>
+                        <th style={{ fontSize: '11px', padding: '12px 14px', fontWeight: 700, color: '#475569' }}>HOLIDAY NAME</th>
+                        <th className="text-end" style={{ fontSize: '11px', padding: '12px 14px', fontWeight: 700, color: '#475569' }}>ACTION</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredList.map((h) => {
+                        const theme = getHolidayTheme(h.name, h.isPast, h.isToday);
+
+                        return (
+                          <tr key={h.id} style={{ opacity: h.isPast ? 0.75 : 1 }}>
+                            <td style={{ padding: '12px 14px', width: '120px' }}>
+                              <div className="d-flex align-items-center gap-2.5">
+                                <div
+                                  style={{
+                                    width: '38px',
+                                    height: '42px',
+                                    borderRadius: '8px',
+                                    overflow: 'hidden',
+                                    border: `1px solid ${theme.border}`,
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    flexShrink: 0,
+                                    background: '#FFFFFF',
+                                    boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      background: theme.headerBg,
+                                      color: '#FFFFFF',
+                                      fontSize: '9px',
+                                      fontWeight: 800,
+                                      textAlign: 'center',
+                                      padding: '1.5px 0',
+                                      lineHeight: 1,
+                                    }}
+                                  >
+                                    {getMonthAbbr(h.holidayDate)}
+                                  </div>
+                                  <div
+                                    style={{
+                                      flex: 1,
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      fontSize: '14px',
+                                      fontWeight: 800,
+                                      color: '#0F172A',
+                                      lineHeight: 1,
+                                    }}
+                                  >
+                                    {getDayNumber(h.holidayDate)}
+                                  </div>
+                                </div>
+                                <div className="text-muted fw-semibold" style={{ fontSize: '11.5px' }}>
+                                  {h.day}
+                                </div>
+                              </div>
+                            </td>
+                            <td style={{ padding: '12px 14px' }}>
+                              <div className="d-flex align-items-center gap-1.5">
+                                <span>{theme.emoji}</span>
+                                <span className="fw-bold text-dark" style={{ fontSize: '13.5px' }}>
+                                  {h.name}
+                                </span>
+                                {h.isToday && (
+                                  <span className="badge" style={{ backgroundColor: '#DCFCE7', color: '#15803D', fontSize: '10px', padding: '2px 6px' }}>
+                                    Today
+                                  </span>
+                                )}
+                              </div>
+                              {h.description && (
+                                <div className="text-muted text-truncate" style={{ fontSize: '11.5px', maxWidth: '200px', marginTop: '2px' }}>
+                                  {h.description}
+                                </div>
+                              )}
+                            </td>
+                            <td className="text-end" style={{ padding: '12px 14px' }}>
+                              <button
+                                type="button"
+                                className="btn btn-sm border-0 p-1"
+                                onClick={() => handleDeleteHoliday(h.id)}
+                                title="Delete holiday"
+                                style={{ width: '30px', height: '30px', borderRadius: '8px', color: '#94A3B8' }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.color = '#EF4444';
+                                  e.currentTarget.style.backgroundColor = '#FEE2E2';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.color = '#94A3B8';
+                                  e.currentTarget.style.backgroundColor = 'transparent';
+                                }}
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
           </div>
         </Col>
       </Row>

@@ -99,13 +99,13 @@ export class NotificationService {
       if (payload.recipientUserId) {
         targetUserIds = [payload.recipientUserId];
       } else if (role === 'admin') {
-        const adminsRes = await query(`SELECT id FROM users WHERE (role = 'admin' OR 'admin' = ANY(roles)) AND status = 'active'`);
+        const adminsRes = await query(`SELECT id FROM users WHERE (role = 'admin' OR (roles IS NOT NULL AND roles @> '["admin"]'::jsonb)) AND status = 'active'`);
         targetUserIds = adminsRes.rows.map((r) => r.id);
       } else if (role === 'all') {
         const usersRes = await query(`SELECT id FROM users WHERE status = 'active'`);
         targetUserIds = usersRes.rows.map((r) => r.id);
       } else if (role === 'employee') {
-        const empsRes = await query(`SELECT id FROM users WHERE (role = 'employee' OR 'employee' = ANY(roles) OR roles IS NULL) AND status = 'active'`);
+        const empsRes = await query(`SELECT id FROM users WHERE (role = 'employee' OR (roles IS NOT NULL AND roles @> '["employee"]'::jsonb) OR roles IS NULL) AND status = 'active'`);
         targetUserIds = empsRes.rows.map((r) => r.id);
       }
 
@@ -174,6 +174,7 @@ export class NotificationService {
         // 4. Send Real-Time SSE Event
         SSEManager.sendToUser(userId, {
           event: 'notification',
+          type: 'new_notification',
           notification: record,
         });
 

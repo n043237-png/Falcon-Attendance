@@ -192,20 +192,41 @@ export const applyLeave = async (req: AuthRequest, res: Response): Promise<void>
 
     // Trigger Smart Notifications
     try {
+      const empName = req.user!.name || 'An employee';
+      const empCode = req.user!.employee_id || `FISPL${String(employeeId).padStart(3, '0')}`;
+
+      const formatLeaveDate = (dStr: string) => {
+        try {
+          const d = new Date(dStr + 'T12:00:00+05:30');
+          return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' });
+        } catch {
+          return dStr;
+        }
+      };
+
+      const fromFormatted = formatLeaveDate(startDate);
+      const toFormatted = formatLeaveDate(endDate);
+      const leaveTypeStr = req.body.leaveType || (paidLeaveRequired === 0 ? 'Paid Leave' : (availableBalance >= paidLeaveRequired ? 'Paid Leave' : 'Paid Leave'));
+      const daysCount = totalDays;
+      const leaveUnitStr = daysCount === 1 ? '1 day' : `${daysCount} days`;
+
+      // 4. New Leave Request -> Notify Admins
+      const adminLeaveMsg = `${empName} (${empCode}) has requested ${leaveUnitStr} of ${leaveTypeStr} from ${fromFormatted} to ${toFormatted}.`;
+
+      await NotificationService.notifyAdmins({
+        title: 'New Leave Request',
+        message: adminLeaveMsg,
+        type: 'Leave',
+        priority: 'High',
+        actionUrl: '/leave',
+      });
+
       if (targetAdminId) {
         await NotificationService.notifyUser(targetAdminId, {
-          title: 'Leave Request Assigned to You',
-          message: `${req.user!.name || 'An employee'} applied for leave from ${startDate} to ${endDate} and assigned you as approver.`,
+          title: 'New Leave Request',
+          message: adminLeaveMsg,
           type: 'Leave',
           priority: 'High',
-          actionUrl: '/leave',
-        });
-      } else {
-        await NotificationService.notifyAdmins({
-          title: 'New Leave Request',
-          message: `${req.user!.name || 'An employee'} applied for leave from ${startDate} to ${endDate}.`,
-          type: 'Leave',
-          priority: 'Medium',
           actionUrl: '/leave',
         });
       }
@@ -368,7 +389,7 @@ export const getLeaveAdmins = async (req: AuthRequest, res: Response): Promise<v
     const result = await query(`
       SELECT id, name, email, employee_id
       FROM users
-      WHERE (role = 'admin' OR 'admin' = ANY(roles)) AND status = 'active'
+      WHERE (role = 'admin' OR (roles IS NOT NULL AND roles @> '["admin"]'::jsonb)) AND status = 'active'
       ORDER BY name ASC
     `);
     res.json({ success: true, data: result.rows });

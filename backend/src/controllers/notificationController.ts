@@ -36,6 +36,9 @@ export const getNotifications = async (req: AuthRequest, res: Response): Promise
   try {
     const userId = req.user!.id;
     const userRole = req.user!.role?.toLowerCase();
+    const rawRoles = (req.user as any)?.roles;
+    const userRoles: string[] = Array.isArray(rawRoles) ? rawRoles.map((r: any) => String(r).toLowerCase()) : (userRole ? [userRole] : []);
+    const hasAdmin = userRoles.includes('admin') || userRole === 'admin';
 
     const page = parseInt(req.query.page as string) || 1;
     let limit = parseInt(req.query.limit as string) || 20;
@@ -49,11 +52,30 @@ export const getNotifications = async (req: AuthRequest, res: Response): Promise
     const priority = req.query.priority as string; // 'Low', 'Medium', 'High', 'Critical'
     const timeframe = (req.query.timeframe as string)?.toLowerCase(); // 'today', 'week', 'month', 'all'
 
-    // Role-based recipient restriction:
-    // Employees ONLY see notifications directed to them or their role.
-    // Admins see notifications directed to them or admin role.
-    let filterQuery = `WHERE deleted_at IS NULL AND created_at >= (NOW() - INTERVAL '30 days') AND (COALESCE(recipient_user_id, employee_id) = $1 OR (role = $2 AND recipient_user_id IS NULL AND employee_id IS NULL))`;
-    const queryParams: any[] = [userId, userRole];
+    // Determine requested view ('admin' vs 'employee')
+    const requestedView = (req.query.view as string || req.headers['x-active-view'] as string)?.toLowerCase();
+    const view = hasAdmin ? (requestedView === 'employee' ? 'employee' : 'admin') : 'employee';
+
+    // Strict role separation:
+    // In Admin view: Only Admin alerts & Announcements (NEVER individual employee attendance alerts like "Attendance Marked Absent")
+    // In Employee view: Only personal Employee alerts & Announcements (NEVER administrative alerts)
+    let roleFilterClause: string;
+    if (view === 'admin' && hasAdmin) {
+      roleFilterClause = `(
+        (role = 'admin' AND (recipient_user_id = $1 OR recipient_user_id IS NULL))
+        OR
+        (role = 'all' AND (recipient_user_id = $1 OR recipient_user_id IS NULL))
+      ) AND role != 'employee'`;
+    } else {
+      roleFilterClause = `(
+        (role = 'employee' AND (COALESCE(recipient_user_id, employee_id) = $1))
+        OR
+        (role = 'all' AND (COALESCE(recipient_user_id, employee_id) = $1 OR recipient_user_id IS NULL))
+      ) AND role != 'admin'`;
+    }
+
+    let filterQuery = `WHERE deleted_at IS NULL AND created_at >= (NOW() - INTERVAL '30 days') AND ${roleFilterClause}`;
+    const queryParams: any[] = [userId];
 
     if (search) {
       queryParams.push(`%${search}%`);
@@ -88,15 +110,15 @@ export const getNotifications = async (req: AuthRequest, res: Response): Promise
     const countRes = await query(`SELECT COUNT(*) as total FROM notifications ${filterQuery}`, queryParams);
     const total = parseInt(countRes.rows[0].total) || 0;
 
-    // Unread count for current user
+    // Unread count for current user and current view
     const unreadCountRes = await query(
       `SELECT COUNT(*) as unread_count 
        FROM notifications 
        WHERE deleted_at IS NULL 
          AND is_read = FALSE 
          AND created_at >= (NOW() - INTERVAL '30 days')
-         AND (COALESCE(recipient_user_id, employee_id) = $1 OR (role = $2 AND recipient_user_id IS NULL AND employee_id IS NULL))`,
-      [userId, userRole]
+         AND ${roleFilterClause}`,
+      [userId]
     );
     const unreadCount = parseInt(unreadCountRes.rows[0].unread_count) || 0;
 
@@ -139,6 +161,27 @@ export const getUnreadNotifications = async (req: AuthRequest, res: Response): P
   try {
     const userId = req.user!.id;
     const userRole = req.user!.role?.toLowerCase();
+    const rawRoles = (req.user as any)?.roles;
+    const userRoles: string[] = Array.isArray(rawRoles) ? rawRoles.map((r: any) => String(r).toLowerCase()) : (userRole ? [userRole] : []);
+    const hasAdmin = userRoles.includes('admin') || userRole === 'admin';
+
+    const requestedView = (req.query.view as string || req.headers['x-active-view'] as string)?.toLowerCase();
+    const view = hasAdmin ? (requestedView === 'employee' ? 'employee' : 'admin') : 'employee';
+
+    let roleFilterClause: string;
+    if (view === 'admin' && hasAdmin) {
+      roleFilterClause = `(
+        (role = 'admin' AND (recipient_user_id = $1 OR recipient_user_id IS NULL))
+        OR
+        (role = 'all' AND (recipient_user_id = $1 OR recipient_user_id IS NULL))
+      ) AND role != 'employee'`;
+    } else {
+      roleFilterClause = `(
+        (role = 'employee' AND (COALESCE(recipient_user_id, employee_id) = $1))
+        OR
+        (role = 'all' AND (COALESCE(recipient_user_id, employee_id) = $1 OR recipient_user_id IS NULL))
+      ) AND role != 'admin'`;
+    }
 
     // Unread count
     const countRes = await query(
@@ -147,8 +190,8 @@ export const getUnreadNotifications = async (req: AuthRequest, res: Response): P
        WHERE deleted_at IS NULL 
          AND is_read = FALSE 
          AND created_at >= (NOW() - INTERVAL '30 days')
-         AND (COALESCE(recipient_user_id, employee_id) = $1 OR (role = $2 AND recipient_user_id IS NULL AND employee_id IS NULL))`,
-      [userId, userRole]
+         AND ${roleFilterClause}`,
+      [userId]
     );
     const count = parseInt(countRes.rows[0].unread_count) || 0;
 
@@ -160,10 +203,10 @@ export const getUnreadNotifications = async (req: AuthRequest, res: Response): P
        FROM notifications
        WHERE deleted_at IS NULL 
          AND created_at >= (NOW() - INTERVAL '30 days')
-         AND (COALESCE(recipient_user_id, employee_id) = $1 OR (role = $2 AND recipient_user_id IS NULL AND employee_id IS NULL))
+         AND ${roleFilterClause}
        ORDER BY created_at DESC
        LIMIT 10`,
-      [userId, userRole]
+      [userId]
     );
 
     res.json({
@@ -218,13 +261,34 @@ export const markAllAsRead = async (req: AuthRequest, res: Response): Promise<vo
   try {
     const userId = req.user!.id;
     const userRole = req.user!.role?.toLowerCase();
+    const rawRoles = (req.user as any)?.roles;
+    const userRoles: string[] = Array.isArray(rawRoles) ? rawRoles.map((r: any) => String(r).toLowerCase()) : (userRole ? [userRole] : []);
+    const hasAdmin = userRoles.includes('admin') || userRole === 'admin';
+
+    const requestedView = (req.query.view as string || req.body?.view as string || req.headers['x-active-view'] as string)?.toLowerCase();
+    const view = hasAdmin ? (requestedView === 'employee' ? 'employee' : 'admin') : 'employee';
+
+    let roleFilterClause: string;
+    if (view === 'admin' && hasAdmin) {
+      roleFilterClause = `(
+        (role = 'admin' AND (recipient_user_id = $1 OR recipient_user_id IS NULL))
+        OR
+        (role = 'all' AND (recipient_user_id = $1 OR recipient_user_id IS NULL))
+      ) AND role != 'employee'`;
+    } else {
+      roleFilterClause = `(
+        (role = 'employee' AND (COALESCE(recipient_user_id, employee_id) = $1))
+        OR
+        (role = 'all' AND (COALESCE(recipient_user_id, employee_id) = $1 OR recipient_user_id IS NULL))
+      ) AND role != 'admin'`;
+    }
 
     await query(
       `UPDATE notifications 
        SET is_read = TRUE, read_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP 
        WHERE is_read = FALSE 
-         AND (COALESCE(recipient_user_id, employee_id) = $1 OR (role = $2 AND recipient_user_id IS NULL AND employee_id IS NULL))`,
-      [userId, userRole]
+         AND ${roleFilterClause}`,
+      [userId]
     );
 
     res.json({ success: true, message: 'All notifications marked as read' });

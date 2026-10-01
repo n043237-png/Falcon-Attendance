@@ -40,9 +40,13 @@ router.get('/dashboard', async (req: AuthRequest, res) => {
       ];
     }
 
-    // Recent Notifications
+    // Recent Notifications (Employee role only, never admin alerts)
     const notifRes = await query(
-      `SELECT * FROM notifications WHERE employee_id = $1 ORDER BY sent_at DESC LIMIT 5`,
+      `SELECT * FROM notifications 
+       WHERE (COALESCE(recipient_user_id, employee_id) = $1)
+         AND (role = 'employee' OR role = 'all')
+         AND role != 'admin'
+       ORDER BY sent_at DESC LIMIT 5`,
       [userId]
     );
 
@@ -232,7 +236,7 @@ router.get('/admins', async (req: AuthRequest, res) => {
     const result = await query(`
       SELECT id, name, email, employee_id
       FROM users
-      WHERE (role = 'admin' OR 'admin' = ANY(roles)) AND status = 'active'
+      WHERE (role = 'admin' OR (roles IS NOT NULL AND roles @> '["admin"]'::jsonb)) AND status = 'active'
       ORDER BY name ASC
     `);
     res.json({ success: true, data: result.rows });

@@ -14,7 +14,8 @@ import {
   FileText,
   User,
   Settings,
-  ChevronRight
+  ChevronRight,
+  X
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import NotificationPreferencesModal from './NotificationPreferencesModal';
@@ -36,15 +37,85 @@ export interface NotificationItem {
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 export default function NotificationBell() {
-  const { token } = useAuth();
+  const { token, activeView } = useAuth();
   const navigate = useNavigate();
   const [unreadCount, setUnreadCount] = useState<number>(0);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [dropdownOpen, setDropdownOpen] = useState<boolean>(false);
   const [showPrefModal, setShowPrefModal] = useState<boolean>(false);
+  const [activeToasts, setActiveToasts] = useState<(NotificationItem & { toastId: string })[]>([]);
+  const seenNotificationIdsRef = useRef<Set<number>>(new Set());
   const eventSourceRef = useRef<EventSource | null>(null);
   const pollingTimerRef = useRef<any>(null);
+
+  // Helper: Play gentle notification audio chime
+  const playNotificationChime = () => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+      osc.frequency.setValueAtTime(880, ctx.currentTime + 0.08); // A5
+      gain.gain.setValueAtTime(0.2, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.45);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.5);
+    } catch {
+      // Quiet fail if audio blocked by browser policy
+    }
+  };
+
+  // Helper: Pop up real-time floating message banner
+  const triggerPopUpMessage = useCallback((item: NotificationItem) => {
+    if (!item || !item.id) return;
+
+    // Strict role/view separation:
+    const itemRole = (item as any).role?.toLowerCase();
+    if (activeView === 'admin') {
+      if (itemRole === 'employee') return;
+      if (item.title === 'Attendance Marked Absent' && item.message?.includes('You have been marked absent')) return;
+    } else {
+      if (itemRole === 'admin') return;
+      if (item.title === 'Absent Alert') return;
+    }
+
+    if (seenNotificationIdsRef.current.has(item.id)) return;
+    seenNotificationIdsRef.current.add(item.id);
+
+    playNotificationChime();
+
+    const toastId = `toast-${item.id}-${Date.now()}`;
+    const toastObj = { ...item, toastId };
+
+    setActiveToasts((prev) => [toastObj, ...prev.slice(0, 2)]);
+
+    // Auto dismiss after 8 seconds
+    setTimeout(() => {
+      setActiveToasts((prev) => prev.filter((t) => t.toastId !== toastId));
+    }, 8000);
+
+    // Native browser desktop notification if granted
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission === 'granted') {
+        try {
+          new Notification(item.title, {
+            body: item.message,
+            icon: '/favicon.ico',
+          });
+        } catch {
+          // Quiet fail
+        }
+      } else if (Notification.permission === 'default') {
+        Notification.requestPermission();
+      }
+    }
+  }, [activeView]);
 
   // Helper: Format relative time
   const formatTimeAgo = (dateStr: string) => {
@@ -116,17 +187,31 @@ export default function NotificationBell() {
     if (!token) return;
     try {
       const res = await axios.get(`${API_BASE}/api/notifications/unread`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'x-active-view': activeView 
+        },
+        params: { view: activeView }
       });
       if (res.data?.success && res.data?.data) {
         setUnreadCount(res.data.data.unreadCount ?? 0);
-        const list = res.data.data.items || res.data.data.latest || [];
+        const list: NotificationItem[] = res.data.data.items || res.data.data.latest || [];
         setNotifications(list);
+
+        // Check if there is an unread attendance / late alert in the latest items that we haven't popped up yet
+        list.forEach((item) => {
+          const createdAt = new Date(item.createdAt || item.created_at || 0).getTime();
+          const isRecent = Date.now() - createdAt < 30 * 60 * 1000; // within last 30 minutes
+          const isLateOrAttendance = item.title?.toLowerCase().includes('late') || item.type?.toLowerCase() === 'attendance';
+          if (!item.isRead && !item.is_read && isRecent && isLateOrAttendance && !seenNotificationIdsRef.current.has(item.id)) {
+            triggerPopUpMessage(item);
+          }
+        });
       }
     } catch (err) {
       // Quiet fail
     }
-  }, [token]);
+  }, [token, activeView, triggerPopUpMessage]);
 
   // Setup SSE stream with fallback polling
   useEffect(() => {
@@ -142,11 +227,26 @@ export default function NotificationBell() {
       es.onmessage = (e) => {
         try {
           const data = JSON.parse(e.data);
-          if (data.type === 'new_notification' && data.notification) {
-            setUnreadCount((prev) => prev + 1);
-            setNotifications((prev) => [data.notification, ...prev.slice(0, 9)]);
+          const notif = data.notification || (data.event === 'notification' ? data.data : null);
+
+          if (notif && (data.type === 'new_notification' || data.event === 'notification')) {
+            const notifRole = (notif.role || '').toLowerCase();
+            const matchesView = activeView === 'admin'
+              ? (notifRole === 'admin' || notifRole === 'all')
+              : (notifRole === 'employee' || notifRole === 'all');
+
+            // Explicit safeguard: never show employee attendance alerts in admin view
+            if (activeView === 'admin' && (notifRole === 'employee' || notif.title === 'Attendance Marked Absent')) {
+              return;
+            }
+
+            if (matchesView) {
+              setUnreadCount((prev) => prev + 1);
+              setNotifications((prev) => [notif, ...prev.filter((n) => n.id !== notif.id).slice(0, 9)]);
+              triggerPopUpMessage(notif);
+            }
           } else if (data.type === 'unread_count_updated') {
-            setUnreadCount(data.count);
+            fetchUnread();
           }
         } catch (parseErr) {
           console.error('Failed to parse SSE payload', parseErr);
@@ -162,9 +262,10 @@ export default function NotificationBell() {
       console.warn('SSE error, fallback to polling:', sseErr);
     }
 
+    // Active polling fallback
     pollingTimerRef.current = setInterval(() => {
       fetchUnread();
-    }, 30000);
+    }, 15000);
 
     return () => {
       if (eventSourceRef.current) {
@@ -175,7 +276,7 @@ export default function NotificationBell() {
         clearInterval(pollingTimerRef.current);
       }
     };
-  }, [token, fetchUnread]);
+  }, [token, activeView, fetchUnread, triggerPopUpMessage]);
 
   // Mark single notification as read
   const handleMarkAsRead = async (item: NotificationItem, e?: React.MouseEvent) => {
@@ -213,7 +314,11 @@ export default function NotificationBell() {
     try {
       setLoading(true);
       await axios.put(`${API_BASE}/api/notifications/read-all`, {}, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'x-active-view': activeView 
+        },
+        params: { view: activeView }
       });
       setUnreadCount(0);
       setNotifications((prev) =>
@@ -225,6 +330,20 @@ export default function NotificationBell() {
       setLoading(false);
     }
   };
+
+  // Double-layer role separation safeguard
+  const displayedNotifications = notifications.filter((item) => {
+    const itemRole = (item as any).role?.toLowerCase();
+    if (activeView === 'admin') {
+      if (itemRole === 'employee') return false;
+      if (item.title === 'Attendance Marked Absent' && item.message?.includes('You have been marked absent')) return false;
+      return true;
+    } else {
+      if (itemRole === 'admin') return false;
+      if (item.title === 'Absent Alert') return false;
+      return true;
+    }
+  });
 
   return (
     <>
@@ -340,7 +459,7 @@ export default function NotificationBell() {
             overscrollBehavior: 'contain'
           }}
         >
-          {notifications.length === 0 ? (
+          {displayedNotifications.length === 0 ? (
             <div className="text-center py-5 px-3">
               <div
                 className="d-inline-flex p-3 rounded-circle mb-2"
@@ -356,7 +475,7 @@ export default function NotificationBell() {
               </div>
             </div>
           ) : (
-            notifications.map((item) => {
+            displayedNotifications.map((item) => {
               const isRead = item.isRead || item.is_read;
               const dateStr = item.createdAt || item.created_at || '';
               return (
@@ -509,6 +628,214 @@ export default function NotificationBell() {
       show={showPrefModal}
       onHide={() => setShowPrefModal(false)}
     />
+
+    {/* Floating Real-Time Pop-Up Messages (Toasts) */}
+    {activeToasts.length > 0 && (
+      <div
+        style={{
+          position: 'fixed',
+          top: '20px',
+          right: '24px',
+          zIndex: 999999,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '12px',
+          maxWidth: '420px',
+          width: 'calc(100vw - 32px)',
+          pointerEvents: 'none',
+        }}
+      >
+        {activeToasts.map((toast) => {
+          const action = toast.actionUrl || toast.action_url;
+          const tTitle = (toast.title || '').toLowerCase();
+          
+          let toastStyle = {
+            badge: '🔔 REAL-TIME NOTIFICATION',
+            badgeBg: '#EFF6FF',
+            badgeColor: '#1D4ED8',
+            badgeBorder: '#BFDBFE',
+            border: '1.5px solid #E2E8F0',
+            shadow: '0 12px 32px -4px rgba(15, 23, 42, 0.16)',
+            iconBg: '#EFF6FF',
+            iconColor: '#2563EB',
+            progressBg: '#2563EB',
+            icon: <Bell size={19} />,
+            actionText: 'View Details',
+            actionColor: '#2563EB',
+          };
+
+          if (tTitle.includes('absent')) {
+            toastStyle = {
+              badge: '🚨 ABSENT ALERT',
+              badgeBg: '#FEE2E2',
+              badgeColor: '#B91C1C',
+              badgeBorder: '#FECACA',
+              border: '2px solid #EF4444',
+              shadow: '0 12px 36px -4px rgba(239, 68, 68, 0.3), 0 4px 16px rgba(15, 23, 42, 0.1)',
+              iconBg: '#FEF2F2',
+              iconColor: '#DC2626',
+              progressBg: '#EF4444',
+              icon: <AlertCircle size={19} />,
+              actionText: 'Review in Attendance',
+              actionColor: '#DC2626',
+            };
+          } else if (tTitle.includes('late')) {
+            toastStyle = {
+              badge: '⚠️ LATE CHECK-IN',
+              badgeBg: '#FEF3C7',
+              badgeColor: '#B45309',
+              badgeBorder: '#FDE68A',
+              border: '2px solid #F59E0B',
+              shadow: '0 12px 36px -4px rgba(245, 158, 11, 0.3), 0 4px 16px rgba(15, 23, 42, 0.1)',
+              iconBg: '#FFFBEB',
+              iconColor: '#D97706',
+              progressBg: '#F59E0B',
+              icon: <Clock size={19} />,
+              actionText: 'Review in Attendance',
+              actionColor: '#D97706',
+            };
+          } else if (tTitle.includes('missing') || tTitle.includes('check-out')) {
+            toastStyle = {
+              badge: '⏰ MISSING CHECK-OUT',
+              badgeBg: '#FFEDD5',
+              badgeColor: '#C2410C',
+              badgeBorder: '#FED7AA',
+              border: '2px solid #EA580C',
+              shadow: '0 12px 36px -4px rgba(234, 88, 12, 0.3), 0 4px 16px rgba(15, 23, 42, 0.1)',
+              iconBg: '#FFF7ED',
+              iconColor: '#EA580C',
+              progressBg: '#EA580C',
+              icon: <AlertTriangle size={19} />,
+              actionText: 'Review in Attendance',
+              actionColor: '#EA580C',
+            };
+          } else if (tTitle.includes('leave')) {
+            toastStyle = {
+              badge: '📅 NEW LEAVE REQUEST',
+              badgeBg: '#EEF2FF',
+              badgeColor: '#4338CA',
+              badgeBorder: '#C7D2FE',
+              border: '2px solid #6366F1',
+              shadow: '0 12px 36px -4px rgba(99, 102, 241, 0.3), 0 4px 16px rgba(15, 23, 42, 0.1)',
+              iconBg: '#EEF2FF',
+              iconColor: '#4F46E5',
+              progressBg: '#6366F1',
+              icon: <Calendar size={19} />,
+              actionText: 'Review Leave Request',
+              actionColor: '#4F46E5',
+            };
+          }
+
+          return (
+            <div
+              key={toast.toastId}
+              className="toast-popup-card"
+              style={{
+                pointerEvents: 'auto',
+                background: '#FFFFFF',
+                borderRadius: '16px',
+                border: toastStyle.border,
+                boxShadow: toastStyle.shadow,
+                padding: '16px',
+                animation: 'slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                position: 'relative',
+                overflow: 'hidden',
+              }}
+            >
+              {/* Header */}
+              <div className="d-flex align-items-center justify-content-between mb-2">
+                <div className="d-flex align-items-center gap-2">
+                  <span
+                    className="badge rounded-pill d-inline-flex align-items-center gap-1"
+                    style={{
+                      backgroundColor: toastStyle.badgeBg,
+                      color: toastStyle.badgeColor,
+                      border: `1px solid ${toastStyle.badgeBorder}`,
+                      fontSize: '11px',
+                      fontWeight: 800,
+                      padding: '3px 8px',
+                      letterSpacing: '0.04em',
+                    }}
+                  >
+                    {toastStyle.badge}
+                  </span>
+                  <span className="text-muted" style={{ fontSize: '11px' }}>
+                    Just now
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveToasts((prev) => prev.filter((t) => t.toastId !== toast.toastId))}
+                  className="btn btn-sm border-0 p-0 text-muted"
+                  style={{ width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <X size={15} />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="d-flex align-items-start gap-3">
+                <div
+                  style={{
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '10px',
+                    backgroundColor: toastStyle.iconBg,
+                    color: toastStyle.iconColor,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                    border: `1px solid ${toastStyle.badgeBorder}`,
+                  }}
+                >
+                  {toastStyle.icon}
+                </div>
+
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="fw-bold text-dark" style={{ fontSize: '13.5px', lineHeight: 1.3 }}>
+                    {toast.title}
+                  </div>
+                  <div className="text-secondary mt-1" style={{ fontSize: '12.5px', lineHeight: 1.45 }}>
+                    {toast.message}
+                  </div>
+
+                  {/* Action Link */}
+                  {action && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveToasts((prev) => prev.filter((t) => t.toastId !== toast.toastId));
+                        handleNotificationClick(toast);
+                      }}
+                      className="btn btn-sm btn-link p-0 text-decoration-none fw-semibold d-inline-flex align-items-center gap-1 mt-2"
+                      style={{ fontSize: '12.5px', color: toastStyle.actionColor }}
+                    >
+                      <span>{toastStyle.actionText}</span>
+                      <ChevronRight size={14} />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Progress bar counting down */}
+              <div
+                style={{
+                  position: 'absolute',
+                  bottom: 0,
+                  left: 0,
+                  height: '3px',
+                  backgroundColor: toastStyle.progressBg,
+                  width: '100%',
+                  animation: 'toastProgress 8s linear forwards',
+                }}
+              />
+            </div>
+          );
+        })}
+      </div>
+    )}
     </>
   );
 }

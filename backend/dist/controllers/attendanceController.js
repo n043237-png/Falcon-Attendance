@@ -150,12 +150,16 @@ const checkIn = async (req, res) => {
                     actionUrl: '/my-attendance',
                     attendanceDate: attendanceDate,
                 });
+                const empName = req.user.name || 'An employee';
+                const empCode = req.user.employee_id || `FISPL${String(employeeId).padStart(3, '0')}`;
+                const lateMinutes = Math.round(evalResult.lateMinutes);
+                // 2. Employee Checked In Late -> Notify Admins
                 await notificationService_1.NotificationService.notifyAdmins({
-                    title: 'Employee Checked In Late',
-                    message: `${req.user.name || 'An employee'} checked in late today for ${shift.name} at ${timeStr12} (${evalResult.lateMinutes} mins late).`,
+                    title: 'Late Check-in',
+                    message: `${empName} (${empCode}) checked in at ${timeStr12}, which is ${lateMinutes} minutes late.`,
                     type: 'Attendance',
                     priority: 'Medium',
-                    actionUrl: `/attendance?status=Late&date=${attendanceDate}&search=${encodeURIComponent(req.user.name || '')}`,
+                    actionUrl: `/attendance?status=Late&date=${attendanceDate}&search=${encodeURIComponent(empName)}`,
                     attendanceDate: attendanceDate,
                 });
             }
