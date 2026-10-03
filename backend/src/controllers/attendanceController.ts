@@ -221,11 +221,21 @@ export const checkIn = async (req: AuthRequest, res: Response): Promise<void> =>
         const empName = req.user!.name || 'An employee';
         const empCode = req.user!.employee_id || `FISPL${String(employeeId).padStart(3, '0')}`;
         const lateMinutes = Math.round(evalResult.lateMinutes);
+        const lateH = Math.floor(lateMinutes / 60);
+        const lateM = lateMinutes % 60;
+        let lateDurationStr = `${lateMinutes} minutes`;
+        if (lateH > 0 && lateM > 0) {
+          lateDurationStr = `${lateH}h ${lateM}m (${lateH} hour${lateH > 1 ? 's' : ''} ${lateM} mins)`;
+        } else if (lateH > 0) {
+          lateDurationStr = `${lateH} hour${lateH > 1 ? 's' : ''} (${lateH}h)`;
+        } else {
+          lateDurationStr = `${lateM} minute${lateM !== 1 ? 's' : ''}`;
+        }
 
         // 2. Employee Checked In Late -> Notify Admins
         await NotificationService.notifyAdmins({
           title: 'Late Check-in',
-          message: `${empName} (${empCode}) checked in at ${timeStr12}, which is ${lateMinutes} minutes late.`,
+          message: `${empName} (${empCode}) checked in at ${timeStr12}, which is ${lateDurationStr} late.`,
           type: 'Attendance',
           priority: 'Medium',
           actionUrl: `/attendance?status=Late&date=${attendanceDate}&search=${encodeURIComponent(empName)}`,
