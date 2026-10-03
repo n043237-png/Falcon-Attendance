@@ -10,7 +10,6 @@ import {
   Globe,
   Phone,
   Calendar,
-  HeartPulse,
   ExternalLink,
   CheckCircle2,
   Copy,
@@ -30,7 +29,7 @@ export interface IdCardEmployeeData {
   department: string;
   designation: string;
   attendanceMode: string;
-  bloodGroup: string;
+  bloodGroup?: string;
   joiningDate: string;
   profilePhotoUrl: string | null;
   emergencyContactPhone?: string;
@@ -228,7 +227,7 @@ export default function DigitalIdCard({
         style={{
           perspective: '1200px',
           width: '320px',
-          height: '500px',
+          height: '530px',
           position: 'relative'
         }}
       >
@@ -449,10 +448,15 @@ export default function DigitalIdCard({
                   border: '1px solid #E2E8F0'
                 }}
               >
-                <div className="row g-1.5" style={{ fontSize: '11.5px' }}>
+                <div className="row g-1.5" style={{ fontSize: '11px', lineHeight: 1.4 }}>
                   <div className="col-5 text-muted fw-semibold">Employee ID</div>
                   <div className="col-7 text-dark fw-bold text-end" style={{ letterSpacing: '0.3px' }}>
                     {employee.employeeId || `EMP${employee.id}`}
+                  </div>
+
+                  <div className="col-5 text-muted fw-semibold">Designation</div>
+                  <div className="col-7 text-dark fw-semibold text-end text-truncate" title={employee.designation}>
+                    {employee.designation || 'Staff'}
                   </div>
 
                   <div className="col-5 text-muted fw-semibold">Department</div>
@@ -460,10 +464,14 @@ export default function DigitalIdCard({
                     {employee.department || 'General'}
                   </div>
 
-                  <div className="col-5 text-muted fw-semibold">Blood Group</div>
-                  <div className="col-7 fw-bold text-end" style={{ color: '#DC2626' }}>
-                    <HeartPulse size={12} className="me-1 inline" style={{ display: 'inline', verticalAlign: '-1px' }} />
-                    {employee.bloodGroup && employee.bloodGroup !== 'Not Specified' ? employee.bloodGroup : 'N/A'}
+                  <div className="col-5 text-muted fw-semibold">Mobile No.</div>
+                  <div className="col-7 text-dark fw-semibold text-end">
+                    {employee.phone || 'N/A'}
+                  </div>
+
+                  <div className="col-5 text-muted fw-semibold">Company Email</div>
+                  <div className="col-7 text-dark fw-semibold text-end text-truncate" title={employee.email}>
+                    {employee.email || 'N/A'}
                   </div>
 
                   <div className="col-5 text-muted fw-semibold">Joining Date</div>

@@ -194,14 +194,20 @@ export const DigitalIdCardModal: React.FC<DigitalIdCardModalProps> = ({
                           <Text style={styles.detailValueBold}>{employee.employeeId}</Text>
                         </View>
                         <View style={styles.detailRow}>
+                          <Text style={styles.detailLabel}>DESIGNATION</Text>
+                          <Text style={styles.detailValue}>{employee.designation || 'Staff'}</Text>
+                        </View>
+                        <View style={styles.detailRow}>
                           <Text style={styles.detailLabel}>DEPARTMENT</Text>
                           <Text style={styles.detailValue}>{employee.department || 'General'}</Text>
                         </View>
                         <View style={styles.detailRow}>
-                          <Text style={styles.detailLabel}>BLOOD GROUP</Text>
-                          <Text style={[styles.detailValue, { color: '#DC2626', fontWeight: '700' }]}>
-                            {employee.bloodGroup && employee.bloodGroup !== 'Not Specified' ? employee.bloodGroup : 'N/A'}
-                          </Text>
+                          <Text style={styles.detailLabel}>MOBILE NO.</Text>
+                          <Text style={styles.detailValue}>{employee.phone || 'N/A'}</Text>
+                        </View>
+                        <View style={styles.detailRow}>
+                          <Text style={styles.detailLabel}>COMPANY EMAIL</Text>
+                          <Text style={[styles.detailValue, { fontSize: 9.5 }]} numberOfLines={1}>{employee.email || 'N/A'}</Text>
                         </View>
                         <View style={[styles.detailRow, { borderBottomWidth: 0 }]}>
                           <Text style={styles.detailLabel}>JOINING DATE</Text>
@@ -519,7 +525,7 @@ const styles = StyleSheet.create({
   detailRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 3,
+    paddingVertical: 2.5,
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
   },

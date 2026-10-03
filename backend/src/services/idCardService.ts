@@ -20,7 +20,7 @@ export interface IdCardData {
     department: string;
     designation: string;
     attendanceMode: string;
-    bloodGroup: string;
+    bloodGroup?: string;
     joiningDate: string;
     profilePhotoUrl: string | null;
     emergencyContactPhone: string;
@@ -382,35 +382,32 @@ export class IdCardService {
             .font('Helvetica-Bold')
             .text(card.employee.designation, 10, nameY + 15, { width: cardW - 20, align: 'center' });
 
-          // Department & Attendance Mode Badge
-          const modeColor = card.employee.attendanceMode === 'Field' ? '#D97706' : '#16A34A';
-          const modeBg = card.employee.attendanceMode === 'Field' ? '#FEF3C7' : '#DCFCE7';
-
           // Details Table Area
           const tableY = nameY + 34;
-          const leftX = 18;
-          const valueX = 90;
-          const rowH = 14;
+          const leftX = 16;
+          const valueX = 82;
+          const rowH = 13.5;
 
           const rows = [
             { label: 'EMP ID', val: card.employee.employeeId, bold: true },
-            { label: 'Department', val: card.employee.department, bold: false },
-            { label: 'Mode', val: card.employee.attendanceMode, bold: true, color: modeColor },
-            { label: 'Blood Group', val: card.employee.bloodGroup, bold: false },
-            { label: 'Joining Date', val: card.employee.joiningDate, bold: false },
+            { label: 'Designation', val: card.employee.designation || 'Staff', bold: false },
+            { label: 'Department', val: card.employee.department || 'General', bold: false },
+            { label: 'Mobile No.', val: card.employee.phone || 'N/A', bold: false },
+            { label: 'Company Email', val: card.employee.email || 'N/A', bold: false },
+            { label: 'Joining Date', val: card.employee.joiningDate || 'N/A', bold: false },
           ];
 
           rows.forEach((r, idx) => {
             const currentY = tableY + (idx * rowH);
             doc.fillColor('#64748B')
-              .fontSize(7)
+              .fontSize(6.8)
               .font('Helvetica-Bold')
               .text(r.label.toUpperCase(), leftX, currentY);
 
-            doc.fillColor(r.color || '#0F172A')
-              .fontSize(7.5)
+            doc.fillColor('#0F172A')
+              .fontSize(7.2)
               .font(r.bold ? 'Helvetica-Bold' : 'Helvetica')
-              .text(r.val, valueX, currentY, { width: cardW - valueX - 18, ellipsis: true });
+              .text(r.val, valueX, currentY, { width: cardW - valueX - 14, ellipsis: true });
           });
 
           // Footer Navy Banner
