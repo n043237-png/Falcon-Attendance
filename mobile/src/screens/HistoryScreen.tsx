@@ -714,6 +714,13 @@ export default function HistoryScreen() {
                       <Text style={[styles.chipVal, { color: '#334155' }]}>{summary.late}</Text>
                       <Text style={[styles.chipLabel, { color: '#475569' }]}>Late</Text>
                     </View>
+
+                    {summary.checkoutMissing > 0 && (
+                      <View style={[styles.statChip, { backgroundColor: '#FFF7ED', borderColor: '#FED7AA' }]}>
+                        <Text style={[styles.chipVal, { color: '#C2410C' }]}>{summary.checkoutMissing}</Text>
+                        <Text style={[styles.chipLabel, { color: '#EA580C' }]}>Missing Out</Text>
+                      </View>
+                    )}
                   </View>
                 </View>
               ) : null}

@@ -821,10 +821,9 @@ export const getSummary = async (req: AuthRequest, res: Response): Promise<void>
         current.setDate(current.getDate() + 1);
       }
       
-      // Calculate attendance percentage: (Present + (Half Days * 0.5) + (Half Day Leave * 0.5) + Checkout Missing) / (Working Days - Leaves)
-      // Actually simpler: (Present + CheckoutMissing + HalfDay/2 + HalfDayLeave/2) / (TotalWorkingDays - FullDayLeaves)
-      // The user just requested a logical percentage.
-      const attended = summary.present + summary.checkoutMissing + (summary.halfDays * 0.5) + (summary.halfDayLeave * 0.5);
+      // Calculate attendance percentage: (Present + (Half Days * 0.5) + (Half Day Leave * 0.5)) / (Working Days - Leaves)
+      // Note: CheckoutMissing has indeterminate / 0 working hours and cannot be counted as attended until regularized
+      const attended = summary.present + (summary.halfDays * 0.5) + (summary.halfDayLeave * 0.5);
       const required = summary.totalWorkingDays - summary.onLeave;
       if (required > 0) {
         summary.attendancePercentage = Math.round((attended / required) * 100);
