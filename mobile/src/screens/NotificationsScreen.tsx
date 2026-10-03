@@ -46,33 +46,35 @@ const parseNotificationEmployees = (
   const rawType = (type || '').toLowerCase();
   const rawMsg = message.toLowerCase();
 
-  // 1. Identify if this is a consolidated broadcast roster
-  const isAbsentRoster =
-    rawTitle.includes('absent notification') ||
-    rawTitle.includes('absence') ||
-    rawType.includes('absence') ||
-    rawType === 'admin_daily_absence' ||
-    rawMsg.includes('considered absent:');
-
-  const isMissingCheckoutRoster =
-    rawTitle.includes('missing check-out') ||
-    rawTitle.includes('missing checkout') ||
-    rawMsg.includes('have not marked check-out');
-
-  if (!isAbsentRoster && !isMissingCheckoutRoster) {
-    return { isRoster: false, rosterType: 'GENERIC', intro: message, employees: [] };
-  }
-
-  // 2. Personal alerts that might contain the word absence/checkout (extra safety)
+  // 1. Immediately exclude non-roster / personal / leave / announcement notifications
   if (
     rawTitle.includes('late check-in') ||
+    rawTitle.includes('leave') ||
+    rawTitle.includes('announcement') ||
     rawTitle.includes('check-in successful') ||
     rawTitle.includes('check-out successful') ||
     rawTitle.includes('reminder') ||
     rawTitle.includes('profile updated') ||
+    rawType.includes('leave') ||
+    rawType.includes('announcement') ||
     rawMsg.startsWith('your attendance has been marked') ||
-    rawMsg.startsWith('checkout recorded for')
+    rawMsg.startsWith('checkout recorded for') ||
+    rawMsg.includes('has requested') ||
+    rawMsg.includes('applied for') ||
+    rawMsg.includes('checked in at')
   ) {
+    return { isRoster: false, rosterType: 'GENERIC', intro: message, employees: [] };
+  }
+
+  // 2. Identify if this is a true consolidated broadcast roster
+  const isAbsentRoster =
+    rawMsg.includes('considered absent:') ||
+    ((rawTitle.includes('absent notification') || rawType === 'admin_daily_absence') && rawMsg.includes(':'));
+
+  const isMissingCheckoutRoster =
+    rawMsg.includes('have not marked check-out') && rawMsg.includes(':');
+
+  if (!isAbsentRoster && !isMissingCheckoutRoster) {
     return { isRoster: false, rosterType: 'GENERIC', intro: message, employees: [] };
   }
 
@@ -768,18 +770,49 @@ export default function NotificationsScreen() {
 
             {/* Modal Actions */}
             <View style={styles.modalFooter}>
-              {(isAdmin || selectedNotification?.actionUrl) && (
-                <TouchableOpacity
-                  style={styles.actionPrimaryBtn}
-                  onPress={() => selectedNotification && handleModalNavigateToAttendance(selectedNotification)}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons name="calendar-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-                  <Text style={styles.actionPrimaryText}>
-                    {isAdmin ? 'View Admin Attendance' : 'View Attendance History'}
-                  </Text>
-                </TouchableOpacity>
-              )}
+              {(() => {
+                const notifType = (selectedNotification?.type || '').toLowerCase();
+                const notifTitle = (selectedNotification?.title || '').toLowerCase();
+                const isLeaveNotif = notifType === 'leave' || notifTitle.includes('leave');
+                const isAnnouncement = notifType === 'announcement' || notifTitle.includes('announcement');
+
+                if (isAnnouncement) return null;
+
+                if (isLeaveNotif) {
+                  return (
+                    <TouchableOpacity
+                      style={styles.actionPrimaryBtn}
+                      onPress={() => {
+                        setSelectedNotification(null);
+                        navigation.navigate('Leave' as never);
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="document-text-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                      <Text style={styles.actionPrimaryText}>
+                        {isAdmin ? 'View Leave Requests' : 'View My Leaves'}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                }
+
+                if (isAdmin || selectedNotification?.actionUrl) {
+                  return (
+                    <TouchableOpacity
+                      style={styles.actionPrimaryBtn}
+                      onPress={() => selectedNotification && handleModalNavigateToAttendance(selectedNotification)}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="calendar-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                      <Text style={styles.actionPrimaryText}>
+                        {isAdmin ? 'View Admin Attendance' : 'View Attendance History'}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                }
+
+                return null;
+              })()}
 
               <TouchableOpacity
                 style={styles.actionCloseBtn}
