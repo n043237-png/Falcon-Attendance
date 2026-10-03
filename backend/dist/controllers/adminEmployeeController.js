@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.adminGetEmployeeProfileActivity = exports.adminDeleteEmployeeDocument = exports.adminUploadEmployeeDocument = exports.updateAdminEmployeeProfile = exports.getAdminEmployeeProfile = exports.exportEmployees = exports.updateJobStatus = exports.deleteEmployee = exports.resetPassword = exports.updateEmployeeStatus = exports.deleteEmployeePhoto = exports.uploadEmployeePhoto = exports.editEmployee = exports.createEmployee = exports.getEmployeeDetail = exports.getEmployees = exports.validateEmployeeIdHandler = exports.getNextEmployeeIdHandler = void 0;
+exports.getDesignations = exports.adminGetEmployeeProfileActivity = exports.adminDeleteEmployeeDocument = exports.adminUploadEmployeeDocument = exports.updateAdminEmployeeProfile = exports.getAdminEmployeeProfile = exports.exportEmployees = exports.updateJobStatus = exports.deleteEmployee = exports.resetPassword = exports.updateEmployeeStatus = exports.deleteEmployeePhoto = exports.uploadEmployeePhoto = exports.editEmployee = exports.createEmployee = exports.getEmployeeDetail = exports.getEmployees = exports.validateEmployeeIdHandler = exports.getNextEmployeeIdHandler = void 0;
 const zod_1 = require("zod");
 const bcrypt_1 = __importDefault(require("bcrypt"));
 const crypto_1 = __importDefault(require("crypto"));
@@ -121,6 +121,7 @@ const getEmployees = async (req, res) => {
         const offset = (page - 1) * limit;
         const search = req.query.search;
         const department = req.query.department;
+        const designation = req.query.designation;
         const status = req.query.status;
         const role = req.query.role;
         const jobStatus = req.query.jobStatus;
@@ -134,6 +135,10 @@ const getEmployees = async (req, res) => {
         if (department) {
             queryParams.push(department);
             filterQuery += ` AND u.department = $${queryParams.length}`;
+        }
+        if (designation && designation !== 'All') {
+            queryParams.push(designation);
+            filterQuery += ` AND u.designation = $${queryParams.length}`;
         }
         if (status && status !== 'All') {
             queryParams.push(status.toLowerCase());
@@ -833,6 +838,7 @@ const exportEmployees = async (req, res) => {
     try {
         const search = req.query.search;
         const department = req.query.department;
+        const designation = req.query.designation;
         const status = req.query.status;
         const role = req.query.role;
         const jobStatus = req.query.jobStatus;
@@ -845,6 +851,10 @@ const exportEmployees = async (req, res) => {
         if (department) {
             queryParams.push(department);
             filterQuery += ` AND department = $${queryParams.length}`;
+        }
+        if (designation && designation !== 'All') {
+            queryParams.push(designation);
+            filterQuery += ` AND designation = $${queryParams.length}`;
         }
         if (status && status !== 'All') {
             queryParams.push(status.toLowerCase());
@@ -1149,3 +1159,20 @@ const adminGetEmployeeProfileActivity = async (req, res) => {
     }
 };
 exports.adminGetEmployeeProfileActivity = adminGetEmployeeProfileActivity;
+const getDesignations = async (req, res) => {
+    try {
+        const result = await (0, db_1.query)(`
+      SELECT DISTINCT designation 
+      FROM users 
+      WHERE designation IS NOT NULL AND TRIM(designation) != ''
+      ORDER BY designation ASC
+    `);
+        const designations = result.rows.map(r => r.designation);
+        res.json({ success: true, data: designations });
+    }
+    catch (error) {
+        console.error('getDesignations error:', error);
+        res.status(500).json({ success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'Failed to fetch designations' } });
+    }
+};
+exports.getDesignations = getDesignations;

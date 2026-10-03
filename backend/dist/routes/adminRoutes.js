@@ -104,6 +104,7 @@ router.get('/employees', adminEmployeeController_1.getEmployees);
 router.get('/employees/next-id', adminEmployeeController_1.getNextEmployeeIdHandler);
 router.get('/employees/validate-id', adminEmployeeController_1.validateEmployeeIdHandler);
 router.get('/employees/export', adminEmployeeController_1.exportEmployees);
+router.get('/employees/designations', adminEmployeeController_1.getDesignations);
 router.get('/employees/:id/profile', adminEmployeeController_1.getAdminEmployeeProfile);
 router.patch('/employees/:id/profile', adminEmployeeController_1.updateAdminEmployeeProfile);
 router.post('/employees/:id/documents', documentService_1.uploadDocumentMiddleware.single('file'), adminEmployeeController_1.adminUploadEmployeeDocument);

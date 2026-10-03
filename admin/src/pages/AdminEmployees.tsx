@@ -16,6 +16,7 @@ import {
   Filter,
   Shield,
   Briefcase,
+  Award,
   Mail,
   Phone,
   Calendar,
@@ -87,7 +88,9 @@ export default function AdminEmployees() {
   const [role, setRole] = useState('All');
   const [jobStatusFilter, setJobStatusFilter] = useState('All');
   const [shiftFilter, setShiftFilter] = useState('All');
+  const [designationFilter, setDesignationFilter] = useState('All');
   const [availableShifts, setAvailableShifts] = useState<any[]>([]);
+  const [availableDesignations, setAvailableDesignations] = useState<string[]>([]);
 
   const [records, setRecords] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -213,6 +216,17 @@ export default function AdminEmployees() {
           if (d.success) setAvailableShifts(d.data);
         })
         .catch((err) => console.error('Failed to load shifts', err));
+
+      fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/admin/employees/designations`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+        .then((res) => res.json())
+        .then((d) => {
+          if (d.success && Array.isArray(d.data)) {
+            setAvailableDesignations(d.data);
+          }
+        })
+        .catch((err) => console.error('Failed to load designations', err));
     }
   }, [token]);
 
@@ -226,6 +240,7 @@ export default function AdminEmployees() {
       if (role !== 'All') url += `&role=${role}`;
       if (jobStatusFilter !== 'All') url += `&jobStatus=${jobStatusFilter}`;
       if (shiftFilter !== 'All') url += `&shiftId=${shiftFilter}`;
+      if (designationFilter !== 'All') url += `&designation=${encodeURIComponent(designationFilter)}`;
 
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
       const data = await res.json();
@@ -249,7 +264,7 @@ export default function AdminEmployees() {
       fetchRecords(1);
     }, 400);
     return () => clearTimeout(delayDebounceFn);
-  }, [search, status, role, jobStatusFilter, shiftFilter, token]);
+  }, [search, status, role, jobStatusFilter, shiftFilter, designationFilter, token]);
 
   const handlePageChange = (newPage: number) => {
     if (newPage >= 1 && newPage <= totalPages) fetchRecords(newPage);
@@ -262,6 +277,7 @@ export default function AdminEmployees() {
       if (status !== 'All') url += `&status=${status}`;
       if (role !== 'All') url += `&role=${role}`;
       if (jobStatusFilter !== 'All') url += `&jobStatus=${jobStatusFilter}`;
+      if (designationFilter !== 'All') url += `&designation=${encodeURIComponent(designationFilter)}`;
 
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` }
@@ -906,7 +922,7 @@ export default function AdminEmployees() {
       {/* Filter Card */}
       <div className="card p-4 mb-4">
         <Row className="g-3 align-items-end">
-          <Col md={3}>
+          <Col xs={12} sm={6} md={4} lg={2}>
             <Form.Group>
               <Form.Label className="d-flex align-items-center gap-2">
                 <Search size={14} className="text-muted" />
@@ -921,7 +937,25 @@ export default function AdminEmployees() {
             </Form.Group>
           </Col>
 
-          <Col md={2}>
+          <Col xs={12} sm={6} md={4} lg={2}>
+            <Form.Group>
+              <Form.Label className="d-flex align-items-center gap-2">
+                <Award size={14} className="text-muted" />
+                <span>Designation</span>
+              </Form.Label>
+              <Form.Select
+                value={designationFilter}
+                onChange={(e) => setDesignationFilter(e.target.value)}
+              >
+                <option value="All">All Designations</option>
+                {availableDesignations.map((d) => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </Form.Select>
+            </Form.Group>
+          </Col>
+
+          <Col xs={12} sm={6} md={4} lg={2}>
             <Form.Group>
               <Form.Label className="d-flex align-items-center gap-2">
                 <Briefcase size={14} className="text-muted" />
@@ -935,7 +969,7 @@ export default function AdminEmployees() {
             </Form.Group>
           </Col>
 
-          <Col md={3}>
+          <Col xs={12} sm={6} md={4} lg={2}>
             <Form.Group>
               <Form.Label className="d-flex align-items-center gap-2">
                 <Clock size={14} className="text-muted" />
@@ -950,7 +984,7 @@ export default function AdminEmployees() {
             </Form.Group>
           </Col>
 
-          <Col md={2}>
+          <Col xs={12} sm={6} md={4} lg={2}>
             <Form.Group>
               <Form.Label className="d-flex align-items-center gap-2">
                 <Filter size={14} className="text-muted" />
@@ -964,7 +998,7 @@ export default function AdminEmployees() {
             </Form.Group>
           </Col>
 
-          <Col md={2}>
+          <Col xs={12} sm={6} md={4} lg={2}>
             <Form.Group>
               <Form.Label className="d-flex align-items-center gap-2">
                 <Shield size={14} className="text-muted" />
@@ -1001,6 +1035,7 @@ export default function AdminEmployees() {
                   <tr>
                     <th>Employee</th>
                     <th>Employee ID</th>
+                    <th>Designation</th>
                     <th>Department</th>
                     <th>Shift</th>
                     <th>Role</th>
@@ -1047,6 +1082,9 @@ export default function AdminEmployees() {
                           <span className="badge bg-secondary font-monospace" style={{ fontSize: '12px' }}>
                             {r.employeeId || r.employee_id}
                           </span>
+                        </td>
+                        <td style={{ color: '#0F172A', fontSize: '13px', fontWeight: 600 }}>
+                          {r.designation || 'Staff'}
                         </td>
                         <td style={{ color: '#475569', fontSize: '13.5px' }}>
                           {r.department || 'General'}
@@ -1253,7 +1291,7 @@ export default function AdminEmployees() {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={8} className="text-center py-5 text-muted">
+                      <td colSpan={10} className="text-center py-5 text-muted">
                         No employees found matching the filters.
                       </td>
                     </tr>

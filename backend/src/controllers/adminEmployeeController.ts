@@ -111,6 +111,7 @@ export const getEmployees = async (req: AuthRequest, res: Response): Promise<voi
 
     const search = req.query.search as string;
     const department = req.query.department as string;
+    const designation = req.query.designation as string;
     const status = req.query.status as string;
     const role = req.query.role as string;
     const jobStatus = req.query.jobStatus as string;
@@ -127,6 +128,10 @@ export const getEmployees = async (req: AuthRequest, res: Response): Promise<voi
     if (department) {
       queryParams.push(department);
       filterQuery += ` AND u.department = $${queryParams.length}`;
+    }
+    if (designation && designation !== 'All') {
+      queryParams.push(designation);
+      filterQuery += ` AND u.designation = $${queryParams.length}`;
     }
     if (status && status !== 'All') {
       queryParams.push(status.toLowerCase());
@@ -886,6 +891,7 @@ export const exportEmployees = async (req: AuthRequest, res: Response): Promise<
   try {
     const search = req.query.search as string;
     const department = req.query.department as string;
+    const designation = req.query.designation as string;
     const status = req.query.status as string;
     const role = req.query.role as string;
     const jobStatus = req.query.jobStatus as string;
@@ -900,6 +906,10 @@ export const exportEmployees = async (req: AuthRequest, res: Response): Promise<
     if (department) {
       queryParams.push(department);
       filterQuery += ` AND department = $${queryParams.length}`;
+    }
+    if (designation && designation !== 'All') {
+      queryParams.push(designation);
+      filterQuery += ` AND designation = $${queryParams.length}`;
     }
     if (status && status !== 'All') {
       queryParams.push(status.toLowerCase());
@@ -1223,6 +1233,22 @@ export const adminGetEmployeeProfileActivity = async (req: AuthRequest, res: Res
   } catch (error: any) {
     console.error('adminGetEmployeeProfileActivity error:', error);
     res.status(500).json({ success: false, error: { message: error.message || 'Failed to fetch profile activities' } });
+  }
+};
+
+export const getDesignations = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const result = await query(`
+      SELECT DISTINCT designation 
+      FROM users 
+      WHERE designation IS NOT NULL AND TRIM(designation) != ''
+      ORDER BY designation ASC
+    `);
+    const designations = result.rows.map(r => r.designation);
+    res.json({ success: true, data: designations });
+  } catch (error) {
+    console.error('getDesignations error:', error);
+    res.status(500).json({ success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'Failed to fetch designations' } });
   }
 };
 

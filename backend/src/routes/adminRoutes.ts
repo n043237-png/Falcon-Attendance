@@ -20,7 +20,8 @@ import {
   updateAdminEmployeeProfile,
   adminUploadEmployeeDocument,
   adminDeleteEmployeeDocument,
-  adminGetEmployeeProfileActivity
+  adminGetEmployeeProfileActivity,
+  getDesignations
 } from '../controllers/adminEmployeeController';
 import { getSettings, updateSettings, getHolidays, addHoliday, deleteHoliday, getOfficeSettings, updateOfficeSettings, getLeaveSettings, updateLeaveSettings } from '../controllers/settingsController';
 import { 
@@ -110,6 +111,7 @@ router.get('/employees', getEmployees);
 router.get('/employees/next-id', getNextEmployeeIdHandler);
 router.get('/employees/validate-id', validateEmployeeIdHandler);
 router.get('/employees/export', exportEmployees);
+router.get('/employees/designations', getDesignations);
 router.get('/employees/:id/profile', getAdminEmployeeProfile);
 router.patch('/employees/:id/profile', updateAdminEmployeeProfile);
 router.post('/employees/:id/documents', uploadDocumentMiddleware.single('file'), adminUploadEmployeeDocument);
