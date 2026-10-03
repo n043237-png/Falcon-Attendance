@@ -31,6 +31,7 @@ import {
   getAdminLeaves,
   approveLeaveRequest,
   rejectLeaveRequest,
+  revokeLeaveRequest,
   getAdmins,
   LeaveBalance,
   LeaveRequest,
@@ -295,6 +296,37 @@ export default function LeaveScreen() {
     );
   };
 
+  const handleRevokeLeave = (id: number, name?: string) => {
+    Alert.alert(
+      'Revoke Approved Leave',
+      `Revoke approved leave for ${name || 'this employee'}? This will cancel the approved leave, restore their leave balance, and allow them to mark attendance for the leave date(s).`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Revoke Leave',
+          style: 'destructive',
+          onPress: async () => {
+            if (!token) return;
+            setActionLoading(id);
+            try {
+              const res = await revokeLeaveRequest(token, id);
+              if (res.success) {
+                Alert.alert('Revoked', res.message || 'Leave revoked successfully.');
+                fetchData(true);
+              } else {
+                Alert.alert('Error', res.error?.message || res.message || 'Failed to revoke leave.');
+              }
+            } catch (err: any) {
+              Alert.alert('Error', err.message || 'Error revoking leave.');
+            } finally {
+              setActionLoading(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleOpenRejectModal = (id: number, name?: string) => {
     setRejectingItem({ id, employeeName: name });
     setRejectReason('');
@@ -520,6 +552,27 @@ export default function LeaveScreen() {
               </TouchableOpacity>
             </View>
           )
+        )}
+
+        {/* Revoke action for Admin on APPROVED leaves (matching Web Panel) */}
+        {isAdmin && activeTab === 'ALL_REQUESTS' && item.status?.toUpperCase() === 'APPROVED' && (
+          <View style={styles.cardFooterRow}>
+            <TouchableOpacity
+              style={styles.revokeButton}
+              onPress={() => handleRevokeLeave(item.id, item.employeeName)}
+              disabled={actionLoading === item.id}
+              activeOpacity={0.8}
+            >
+              {actionLoading === item.id ? (
+                <ActivityIndicator size="small" color="#D97706" />
+              ) : (
+                <>
+                  <Ionicons name="refresh-circle" size={17} color="#D97706" style={{ marginRight: 6 }} />
+                  <Text style={styles.revokeButtonText}>Revoke</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
         )}
       </View>
     );
@@ -1422,7 +1475,7 @@ export default function LeaveScreen() {
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.modalCloseBtn}
+                style={styles.modalDismissBtn}
                 onPress={() => setShowBalanceInfoModal(false)}
                 activeOpacity={0.8}
               >
@@ -1490,7 +1543,7 @@ export default function LeaveScreen() {
                       placeholder="e.g. Critical project deadline, lack of coverage..."
                       placeholderTextColor="#94A3B8"
                       value={rejectReason}
-                      onChangeText={(text) => {
+                      onChangeText={(text: string) => {
                         setRejectReason(text);
                         if (rejectError) setRejectError(null);
                       }}
@@ -1744,7 +1797,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
-  modalCloseBtn: {
+  modalDismissBtn: {
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderRadius: 12,
@@ -2060,6 +2113,23 @@ const styles = StyleSheet.create({
   },
   rejectButtonText: {
     color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  revokeButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  revokeButtonText: {
+    color: '#B45309',
     fontSize: 13,
     fontWeight: '700',
   },
@@ -2668,6 +2738,19 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.16,
     shadowRadius: 16,
     elevation: 10,
+  },
+  modalStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  modalStatusText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   rejectNoticeText: {
     fontSize: 13.5,

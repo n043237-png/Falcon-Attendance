@@ -208,4 +208,17 @@ export const rejectLeaveRequest = async (token: string, id: number, comments?: s
   }
 };
 
+export const revokeLeaveRequest = async (token: string, id: number) => {
+  try {
+    const res = await axios.patch(
+      `${API_URL}/api/admin/leave/${id}/revoke`,
+      {},
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    return res.data;
+  } catch (error: any) {
+    return error.response?.data || { success: false, error: { message: 'Failed to revoke leave request' } };
+  }
+};
+
 
