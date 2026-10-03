@@ -61,6 +61,13 @@ class NotificationSyncService {
   }
 
   /**
+   * Mark a notification ID as seen so polling will not trigger a duplicate alert
+   */
+  public markSeen(id: number) {
+    this.seenIds.add(id);
+  }
+
+  /**
    * Sync notifications from backend and trigger device notifications
    */
   public async sync(isFirstRun = false) {
@@ -84,9 +91,9 @@ class NotificationSyncService {
         if (!this.seenIds.has(item.id)) {
           this.seenIds.add(item.id);
 
-          // Only alert for unread items
+          // Only alert for unread items and when the user is not actively inside the app
           const isUnread = item.isRead === false || (!item.read_at && item.isRead !== true);
-          if (isUnread) {
+          if (isUnread && AppState.currentState !== 'active') {
             await this.displaySystemNotification(item);
           }
         }

@@ -7,6 +7,7 @@ import crypto from 'crypto';
 import { query } from '../db';
 import { EmployeeProfileService } from './employeeProfileService';
 import { getCompanyLogoPath } from '../utils/logoHelper';
+import sharp from 'sharp';
 
 export interface IdCardData {
   employee: {
@@ -157,26 +158,46 @@ export class IdCardService {
    */
   static async generateBulkCardsPdf(userIds?: number[]): Promise<Buffer> {
     let usersList: any[] = [];
+    const orderClause = `
+      ORDER BY 
+        CASE 
+          WHEN employee_id ILIKE 'ADMIN%' THEN 0 
+          WHEN employee_id ILIKE 'FISPL%' THEN 1 
+          ELSE 2 
+        END, 
+        NULLIF(substring(employee_id from '[0-9]+'), '')::bigint ASC NULLS LAST, 
+        employee_id ASC
+    `;
+
     if (userIds && userIds.length > 0) {
       const res = await query(
-        `SELECT id FROM users WHERE id = ANY($1::int[]) AND status = 'active' ORDER BY name ASC`,
+        `SELECT id FROM users WHERE id = ANY($1::int[]) AND status = 'active' ${orderClause}`,
         [userIds]
       );
       usersList = res.rows;
     } else {
       const res = await query(
-        `SELECT id FROM users WHERE status = 'active' ORDER BY name ASC`
+        `SELECT id FROM users WHERE status = 'active' ${orderClause}`
       );
       usersList = res.rows;
     }
 
     const cardsData: IdCardData[] = [];
-    for (const u of usersList) {
-      try {
-        const card = await this.getEmployeeCardData(u.id);
-        cardsData.push(card);
-      } catch (e) {
-        console.warn(`Skipping ID card for user ${u.id}:`, e);
+    const chunkSize = 5;
+    for (let i = 0; i < usersList.length; i += chunkSize) {
+      const chunk = usersList.slice(i, i + chunkSize);
+      const chunkResults = await Promise.all(
+        chunk.map(async (u) => {
+          try {
+            return await this.getEmployeeCardData(u.id);
+          } catch (e) {
+            console.warn(`Skipping ID card for user ${u.id}:`, e);
+            return null;
+          }
+        })
+      );
+      for (const card of chunkResults) {
+        if (card) cardsData.push(card);
       }
     }
 
@@ -188,31 +209,47 @@ export class IdCardService {
    */
   static async generateBulkCardsZip(userIds?: number[]): Promise<Buffer> {
     let usersList: any[] = [];
+    const orderClause = `
+      ORDER BY 
+        CASE 
+          WHEN employee_id ILIKE 'ADMIN%' THEN 0 
+          WHEN employee_id ILIKE 'FISPL%' THEN 1 
+          ELSE 2 
+        END, 
+        NULLIF(substring(employee_id from '[0-9]+'), '')::bigint ASC NULLS LAST, 
+        employee_id ASC
+    `;
+
     if (userIds && userIds.length > 0) {
       const res = await query(
-        `SELECT id FROM users WHERE id = ANY($1::int[]) AND status = 'active' ORDER BY name ASC`,
+        `SELECT id FROM users WHERE id = ANY($1::int[]) AND status = 'active' ${orderClause}`,
         [userIds]
       );
       usersList = res.rows;
     } else {
       const res = await query(
-        `SELECT id FROM users WHERE status = 'active' ORDER BY name ASC`
+        `SELECT id FROM users WHERE status = 'active' ${orderClause}`
       );
       usersList = res.rows;
     }
 
     const zip = new JSZip();
-
-    for (const u of usersList) {
-      try {
-        const card = await this.getEmployeeCardData(u.id);
-        const pdfBuf = await this.createPdfDocument([card]);
-        const safeName = card.employee.name.replace(/[^a-zA-Z0-9_-]/g, '_');
-        const filename = `ID_Card_${card.employee.employeeId}_${safeName}.pdf`;
-        zip.file(filename, pdfBuf);
-      } catch (e) {
-        console.warn(`Error generating zip entry for user ${u.id}:`, e);
-      }
+    const chunkSize = 5;
+    for (let i = 0; i < usersList.length; i += chunkSize) {
+      const chunk = usersList.slice(i, i + chunkSize);
+      await Promise.all(
+        chunk.map(async (u) => {
+          try {
+            const card = await this.getEmployeeCardData(u.id);
+            const pdfBuf = await this.createPdfDocument([card]);
+            const safeName = card.employee.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+            const filename = `ID_Card_${card.employee.employeeId}_${safeName}.pdf`;
+            zip.file(filename, pdfBuf);
+          } catch (e) {
+            console.warn(`Error generating zip entry for user ${u.id}:`, e);
+          }
+        })
+      );
     }
 
     return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
@@ -287,16 +324,40 @@ export class IdCardService {
 
           let photoRendered = false;
           if (card.employee.profilePhotoUrl) {
-            const diskPhotoPath = path.join(process.cwd(), card.employee.profilePhotoUrl.replace(/^\//, ''));
-            if (fs.existsSync(diskPhotoPath)) {
+            if (card.employee.profilePhotoUrl.startsWith('data:image/')) {
               try {
-                doc.save();
-                doc.roundedRect(photoX, photoY, photoSize, photoSize, 6).clip();
-                doc.image(diskPhotoPath, photoX, photoY, { width: photoSize, height: photoSize, fit: [photoSize, photoSize] });
-                doc.restore();
-                photoRendered = true;
+                const base64Data = card.employee.profilePhotoUrl.split(',')[1];
+                if (base64Data) {
+                  let imgBuffer: Buffer = Buffer.from(base64Data, 'base64');
+                  if (card.employee.profilePhotoUrl.includes('webp') || card.employee.profilePhotoUrl.includes('svg')) {
+                    try {
+                      imgBuffer = await sharp(imgBuffer).png().toBuffer();
+                    } catch (convErr) {
+                      console.warn('[IdCardService] Sharp conversion error:', convErr);
+                    }
+                  }
+                  doc.save();
+                  doc.roundedRect(photoX, photoY, photoSize, photoSize, 6).clip();
+                  doc.image(imgBuffer, photoX, photoY, { width: photoSize, height: photoSize, fit: [photoSize, photoSize] });
+                  doc.restore();
+                  photoRendered = true;
+                }
               } catch (e) {
+                console.warn('[IdCardService] Failed to render base64 photo in PDF:', e);
                 photoRendered = false;
+              }
+            } else {
+              const diskPhotoPath = path.join(process.cwd(), card.employee.profilePhotoUrl.replace(/^\//, ''));
+              if (fs.existsSync(diskPhotoPath)) {
+                try {
+                  doc.save();
+                  doc.roundedRect(photoX, photoY, photoSize, photoSize, 6).clip();
+                  doc.image(diskPhotoPath, photoX, photoY, { width: photoSize, height: photoSize, fit: [photoSize, photoSize] });
+                  doc.restore();
+                  photoRendered = true;
+                } catch (e) {
+                  photoRendered = false;
+                }
               }
             }
           }

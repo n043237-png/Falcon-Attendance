@@ -333,6 +333,136 @@ export const rejectLeave = async (req: AuthRequest, res: Response): Promise<void
   }
 };
 
+/**
+ * Revoke an APPROVED leave request.
+ * - Sets leave status to CANCELLED
+ * - Restores leave balance (if Paid Leave / Leave Without Pay)
+ * - Removes any ON_LEAVE / ABSENT attendance stubs for the affected dates
+ *   so the employee can check in normally
+ */
+export const revokeLeave = async (req: AuthRequest, res: Response): Promise<void> => {
+  const client = await require('pg').Pool.prototype.connect.bind(require('../db').pool)();
+  try {
+    const adminId = req.user!.id;
+    const leaveId = parseInt(req.params.id as string);
+
+    if (isNaN(leaveId)) {
+      res.status(400).json({ success: false, error: { code: 'INVALID_ID', message: 'Invalid leave ID.' } });
+      return;
+    }
+
+    await client.query('BEGIN');
+
+    const lrRes = await client.query(`
+      SELECT lr.id, lr.employee_id, lr.leave_type, lr.from_date, lr.to_date, lr.days, lr.status,
+             u.name as employee_name
+      FROM leave_requests lr
+      JOIN users u ON lr.employee_id = u.id
+      WHERE lr.id = $1
+      FOR UPDATE OF lr
+    `, [leaveId]);
+
+    if (lrRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      res.status(404).json({ success: false, error: { code: 'LEAVE_NOT_FOUND', message: 'Leave request not found.' } });
+      return;
+    }
+
+    const lr = lrRes.rows[0];
+    if (lr.status !== 'APPROVED') {
+      await client.query('ROLLBACK');
+      res.status(400).json({ success: false, error: { code: 'LEAVE_NOT_APPROVED', message: 'Only APPROVED leave requests can be revoked.' } });
+      return;
+    }
+
+    // 1. Mark leave as CANCELLED
+    await client.query(`
+      UPDATE leave_requests
+      SET status = 'CANCELLED',
+          remarks = COALESCE(remarks, '') || ' [Revoked by admin on ' || NOW()::date || ']',
+          approved_by = $1,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2
+    `, [adminId, leaveId]);
+
+    // 2. Restore leave balance
+    const year = new Date(lr.from_date).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }).substring(0, 4);
+    if (lr.leave_type === 'Paid Leave') {
+      const balRes = await client.query(`
+        SELECT id, used_paid_leave, current_balance FROM leave_balances
+        WHERE employee_id = $1 AND year = $2 FOR UPDATE
+      `, [lr.employee_id, year]);
+
+      if (balRes.rows.length > 0) {
+        const newUsed = Math.max(0, parseFloat(balRes.rows[0].used_paid_leave) - parseFloat(lr.days));
+        const newBalance = parseFloat(balRes.rows[0].current_balance) + parseFloat(lr.days);
+        await client.query(`
+          UPDATE leave_balances
+          SET used_paid_leave = $1, current_balance = $2, updated_at = CURRENT_TIMESTAMP
+          WHERE id = $3
+        `, [newUsed, newBalance, balRes.rows[0].id]);
+      }
+    } else if (lr.leave_type === 'Leave Without Pay') {
+      const balRes = await client.query(`
+        SELECT id, leave_without_pay FROM leave_balances
+        WHERE employee_id = $1 AND year = $2 FOR UPDATE
+      `, [lr.employee_id, year]);
+
+      if (balRes.rows.length > 0) {
+        const newLWP = Math.max(0, parseFloat(balRes.rows[0].leave_without_pay) - parseFloat(lr.days));
+        await client.query(`
+          UPDATE leave_balances
+          SET leave_without_pay = $1, updated_at = CURRENT_TIMESTAMP
+          WHERE id = $2
+        `, [newLWP, balRes.rows[0].id]);
+      }
+    }
+
+    // 3. Remove ON_LEAVE / ABSENT attendance stubs (no check-in) for the leave dates
+    //    This allows the employee to check in normally today
+    await client.query(`
+      DELETE FROM attendance
+      WHERE employee_id = $1
+        AND attendance_date BETWEEN $2::date AND $3::date
+        AND status IN ('ON_LEAVE', 'ABSENT')
+        AND check_in IS NULL
+    `, [lr.employee_id, lr.from_date, lr.to_date || lr.from_date]);
+
+    await client.query('COMMIT');
+
+    // 4. Notify the employee
+    try {
+      const fromDateObj = new Date(lr.from_date);
+      const formattedDate = !isNaN(fromDateObj.getTime())
+        ? fromDateObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' })
+        : lr.from_date;
+
+      const adminLabel = req.user?.name
+        ? `${req.user.name} (${req.user.employee_id})`
+        : (req.user?.employee_id || 'an administrator');
+
+      await NotificationService.notifyUser(lr.employee_id, {
+        title: '📋 Leave Revoked by Admin',
+        message: `Your approved leave for ${formattedDate} has been revoked by admin ${adminLabel}. You are expected to attend work as normal. Please mark your attendance.`,
+        type: 'Leave',
+        priority: 'High',
+        actionUrl: '/leave',
+        senderUserId: req.user?.id,
+      });
+    } catch (notifErr) {
+      console.warn('Revoke leave notification error:', notifErr);
+    }
+
+    res.json({ success: true, message: `Leave revoked. ${lr.employee_name} can now mark attendance for the leave date(s).` });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('revokeLeave error:', error);
+    res.status(500).json({ success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'Failed to revoke leave.' } });
+  } finally {
+    client.release();
+  }
+};
+
 const adjustLeaveSchema = z.object({
   employeeId: z.number().int().positive(),
   actionType: z.enum(['ADD', 'DEDUCT']),
@@ -433,12 +563,17 @@ export const adjustEmployeeLeaveBalance = async (req: AuthRequest, res: Response
     // Notify employee of adjustment
     try {
       const sign = actionType === 'ADD' ? '+' : '-';
+      const adminLabel = req.user?.name
+        ? `${req.user.name} (${req.user.employee_id})`
+        : (req.user?.employee_id || 'an administrator');
+
       await NotificationService.notifyUser(employeeId, {
         title: 'Leave Balance Adjusted',
-        message: `Your leave balance was adjusted by admin: ${sign}${days} day(s). New balance: ${newBalance} days. Reason: ${reason}`,
+        message: `Your leave balance was adjusted by admin ${adminLabel}: ${sign}${days} day(s). New balance: ${newBalance} days. Reason: ${reason}`,
         type: 'Leave',
         priority: 'Medium',
         actionUrl: '/my-leave',
+        senderUserId: req.user?.id,
       });
     } catch (notifErr) {
       console.warn('Adjust leave balance notification error:', notifErr);

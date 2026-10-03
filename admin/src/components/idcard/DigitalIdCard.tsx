@@ -92,7 +92,9 @@ export default function DigitalIdCard({
 
   // Image source resolution
   const photoUrl = employee.profilePhotoUrl
-    ? employee.profilePhotoUrl.startsWith('http')
+    ? employee.profilePhotoUrl.startsWith('data:') ||
+      employee.profilePhotoUrl.startsWith('http://') ||
+      employee.profilePhotoUrl.startsWith('https://')
       ? employee.profilePhotoUrl
       : `${apiBaseUrl}${employee.profilePhotoUrl.startsWith('/') ? '' : '/'}${employee.profilePhotoUrl}`
     : null;

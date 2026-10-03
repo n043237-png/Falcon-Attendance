@@ -109,7 +109,14 @@ export class PayrollController {
         FROM users u
         LEFT JOIN employee_salary_profiles p ON u.id = p.employee_id
         WHERE u.status = 'active'
-        ORDER BY u.name ASC
+        ORDER BY 
+          CASE 
+            WHEN u.employee_id ILIKE 'ADMIN%' THEN 0 
+            WHEN u.employee_id ILIKE 'FISPL%' THEN 1 
+            ELSE 2 
+          END, 
+          NULLIF(substring(u.employee_id from '[0-9]+'), '')::bigint ASC NULLS LAST, 
+          u.employee_id ASC
       `);
 
       res.json({ success: true, data: result.rows });
@@ -293,7 +300,14 @@ export class PayrollController {
         JOIN users u ON pi.employee_id = u.id
         LEFT JOIN employee_salary_profiles p ON u.id = p.employee_id
         WHERE pi.cycle_id = $1
-        ORDER BY u.name ASC
+        ORDER BY 
+          CASE 
+            WHEN u.employee_id ILIKE 'ADMIN%' THEN 0 
+            WHEN u.employee_id ILIKE 'FISPL%' THEN 1 
+            ELSE 2 
+          END, 
+          NULLIF(substring(u.employee_id from '[0-9]+'), '')::bigint ASC NULLS LAST, 
+          u.employee_id ASC
       `, [cycle.id]);
 
       // Check sync status

@@ -389,6 +389,24 @@ p, span, div, label {
   border: 1px solid #E2E8F0;
 }
 
+.badge.bg-primary, .badge-primary {
+  background-color: #EEF2FF !important;
+  color: #4338CA !important;
+  border: 1px solid #C7D2FE !important;
+}
+
+.badge-neutral {
+  background-color: #F1F5F9 !important;
+  color: #475569 !important;
+  border: 1px solid #CBD5E1 !important;
+}
+
+.badge-holiday {
+  background-color: #EEF2FF !important;
+  color: #4338CA !important;
+  border: 1px solid #C7D2FE !important;
+}
+
 /* Pagination */
 .pagination {
   gap: 4px;

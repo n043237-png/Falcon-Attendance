@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -9,20 +9,93 @@ import {
   RefreshControl,
   Platform,
   StatusBar,
+  Modal,
+  ScrollView,
+  TextInput,
 } from 'react-native';
-import { CustomAlert as Alert } from '../components/CustomAlert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { getNotifications, markAsRead, markAllAsRead, Notification } from '../api/notificationApi';
 
+interface ParsedEmployee {
+  name: string;
+  code: string;
+}
+
+/**
+ * Extracts individual employees and employee codes from absent/attendance notifications.
+ * Matches patterns like: "Sufyan khan (FISPL0004), Mangesh B (FISPL0012)"
+ */
+const parseNotificationEmployees = (message?: string): { intro: string; employees: ParsedEmployee[] } => {
+  if (!message) return { intro: '', employees: [] };
+
+  const colonIndex = message.indexOf(':');
+  if (colonIndex !== -1) {
+    const intro = message.substring(0, colonIndex + 1).trim();
+    const listPart = message.substring(colonIndex + 1).trim();
+
+    const regex = /([^,()]+?)\s*\(([^)]+)\)/g;
+    const employees: ParsedEmployee[] = [];
+    let match;
+    while ((match = regex.exec(listPart)) !== null) {
+      const name = match[1]
+        .replace(/^\s*and\s+/i, '')
+        .replace(/^[.\s]+|[.\s]+$/g, '')
+        .trim();
+      const code = match[2].trim();
+      if (name && code) {
+        employees.push({ name, code });
+      }
+    }
+
+    if (employees.length > 0) {
+      return { intro, employees };
+    }
+  }
+
+  // Fallback anywhere in message
+  const regex = /([A-Za-z0-9\s.'-]+?)\s*\(([A-Za-z0-9_-]+)\)/g;
+  const employees: ParsedEmployee[] = [];
+  let match;
+  while ((match = regex.exec(message)) !== null) {
+    const name = match[1]
+      .replace(/^\s*and\s+/i, '')
+      .replace(/^[.\s]+|[.\s]+$/g, '')
+      .trim();
+    const code = match[2].trim();
+    if (name && code && name.length > 1) {
+      employees.push({ name, code });
+    }
+  }
+
+  return { intro: message, employees };
+};
+
+const getInitials = (name: string): string => {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) {
+    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  }
+  return (name.slice(0, 2) || 'EM').toUpperCase();
+};
+
 export default function NotificationsScreen() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const navigation = useNavigation();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Card expansion state per notification ID
+  const [expandedIds, setExpandedIds] = useState<Record<number, boolean>>({});
+
+  // Full detail modal state
+  const [selectedNotification, setSelectedNotification] = useState<Notification | null>(null);
+  const [modalSearch, setModalSearch] = useState('');
+
+  const isAdmin = user?.role?.toLowerCase() === 'admin';
 
   const fetchNotifications = async (isRefresh = false) => {
     if (!token) return;
@@ -32,7 +105,6 @@ export default function NotificationsScreen() {
     try {
       const res = await getNotifications(token);
       if (res && res.success) {
-        // Support both { items: [...] } structure and direct array
         const rawItems = res.data?.items ?? (Array.isArray(res.data) ? res.data : []);
         setNotifications(Array.isArray(rawItems) ? rawItems : []);
       } else {
@@ -89,25 +161,60 @@ export default function NotificationsScreen() {
     }
   };
 
+  const toggleExpand = (id: number) => {
+    setExpandedIds(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const handleNotificationPress = async (item: Notification) => {
+    if (checkIsUnread(item)) {
+      await handleMarkAsRead(item.id);
+    }
+    setSelectedNotification(item);
+    setModalSearch('');
+  };
+
+  const handleModalNavigateToAttendance = (item: Notification) => {
+    setSelectedNotification(null);
+    if (isAdmin) {
+      navigation.navigate('Admin' as never, { screen: 'AdvancedAttendance' } as never);
+    } else {
+      navigation.navigate('History' as never);
+    }
+  };
+
   const formatNotificationDate = (dateStr?: string | null) => {
     if (!dateStr) return '';
     try {
       const d = new Date(dateStr);
       if (isNaN(d.getTime())) return '';
       const now = new Date();
+
       const diffMs = now.getTime() - d.getTime();
       const diffMins = Math.floor(diffMs / 60000);
       const diffHours = Math.floor(diffMins / 60);
-      const diffDays = Math.floor(diffHours / 24);
 
-      if (diffMins < 1) return 'Just now';
-      if (diffMins < 60) return `${diffMins}m ago`;
-      if (diffHours < 24) return `${diffHours}h ago`;
-      if (diffDays === 1) return 'Yesterday';
-      if (diffDays < 7) return `${diffDays}d ago`;
+      // Calculate calendar days difference (midnight-to-midnight)
+      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+      const startOfItemDay = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+      const calendarDaysDiff = Math.round((startOfToday - startOfItemDay) / (1000 * 60 * 60 * 24));
 
       const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      return `${months[d.getMonth()]} ${d.getDate()}`;
+      const dateDisplay = `${months[d.getMonth()]} ${d.getDate()}`;
+
+      // Today
+      if (calendarDaysDiff <= 0) {
+        if (diffMins < 1) return 'Just now';
+        if (diffMins < 60) return `${diffMins}m ago`;
+        return `${diffHours}h ago`;
+      }
+
+      // Yesterday
+      if (calendarDaysDiff === 1) {
+        return 'Yesterday';
+      }
+
+      // 2 or more days ago: show exact date (e.g. "Oct 1")
+      return dateDisplay;
     } catch {
       return '';
     }
@@ -139,29 +246,36 @@ export default function NotificationsScreen() {
     }
   };
 
-  const handleNotificationPress = async (item: Notification) => {
-    if (checkIsUnread(item)) {
-      await handleMarkAsRead(item.id);
-    }
-
-    const t = (item.type || '').toUpperCase();
-    if (t === 'MISSING_CHECKOUT' || t === 'CHECK_IN' || t === 'ATTENDANCE') {
-      navigation.navigate('Home' as never);
-    } else if (t === 'ABSENT' || t === 'ADMIN_DAILY_ABSENCE') {
-      navigation.navigate('History' as never);
-    }
-  };
-
   const unreadCount = notifications.filter(checkIsUnread).length;
+
+  // Filtered employees for selected notification modal
+  const selectedParsed = useMemo(() => {
+    if (!selectedNotification) return { intro: '', employees: [] };
+    return parseNotificationEmployees(selectedNotification.message);
+  }, [selectedNotification]);
+
+  const filteredModalEmployees = useMemo(() => {
+    if (!selectedParsed.employees.length) return [];
+    if (!modalSearch.trim()) return selectedParsed.employees;
+    const q = modalSearch.toLowerCase().trim();
+    return selectedParsed.employees.filter(
+      emp => emp.name.toLowerCase().includes(q) || emp.code.toLowerCase().includes(q)
+    );
+  }, [selectedParsed, modalSearch]);
 
   const renderItem = ({ item }: { item: Notification }) => {
     const isUnread = checkIsUnread(item);
     const theme = getTypeTheme(item.type, item.priority);
     const dateText = formatNotificationDate(item.sentAt || item.sent_at || item.createdAt || item.created_at);
 
+    const { intro, employees } = parseNotificationEmployees(item.message);
+    const isExpanded = !!expandedIds[item.id];
+    const hasEmployees = employees.length > 0;
+    const isLongText = (item.message || '').length > 90 || (item.message || '').includes('\n');
+
     return (
       <TouchableOpacity
-        activeOpacity={0.8}
+        activeOpacity={0.85}
         style={[styles.card, isUnread && styles.unreadCard]}
         onPress={() => handleNotificationPress(item)}
       >
@@ -177,9 +291,94 @@ export default function NotificationsScreen() {
             {dateText ? <Text style={styles.timeText}>{dateText}</Text> : null}
           </View>
 
-          <Text style={[styles.messageText, isUnread && styles.unreadMessage]} numberOfLines={3}>
-            {item.message}
-          </Text>
+          {hasEmployees ? (
+            <View style={styles.employeeNotificationBlock}>
+              <Text style={[styles.messageText, isUnread && styles.unreadMessage]}>
+                {intro}
+              </Text>
+
+              {/* Renders employee chips */}
+              <View style={styles.chipsContainer}>
+                {(isExpanded ? employees : employees.slice(0, 3)).map((emp, idx) => (
+                  <View key={idx} style={styles.employeeChip}>
+                    <Ionicons name="person-circle" size={15} color="#DC2626" style={{ marginRight: 4 }} />
+                    <Text style={styles.chipEmpName} numberOfLines={1}>{emp.name}</Text>
+                    <Text style={styles.chipEmpCode}>({emp.code})</Text>
+                  </View>
+                ))}
+
+                {!isExpanded && employees.length > 3 && (
+                  <View style={styles.moreCountChip}>
+                    <Text style={styles.moreCountText}>+{employees.length - 3} more</Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Expand / Collapse Action */}
+              <View style={styles.actionRow}>
+                <TouchableOpacity
+                  style={styles.expandToggleBtn}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    toggleExpand(item.id);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.expandToggleText}>
+                    {isExpanded ? 'Show less' : `Show all ${employees.length} employees`}
+                  </Text>
+                  <Ionicons
+                    name={isExpanded ? 'chevron-up' : 'chevron-down'}
+                    size={14}
+                    color="#2563EB"
+                    style={{ marginLeft: 3 }}
+                  />
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.viewDetailBtn}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    handleNotificationPress(item);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.viewDetailText}>Full Roster</Text>
+                  <Ionicons name="open-outline" size={13} color="#475569" style={{ marginLeft: 2 }} />
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            <View>
+              <Text
+                style={[styles.messageText, isUnread && styles.unreadMessage]}
+                numberOfLines={isExpanded ? undefined : 3}
+              >
+                {item.message}
+              </Text>
+
+              {isLongText && (
+                <TouchableOpacity
+                  style={styles.expandToggleBtn}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    toggleExpand(item.id);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.expandToggleText}>
+                    {isExpanded ? 'Show less' : 'Read more'}
+                  </Text>
+                  <Ionicons
+                    name={isExpanded ? 'chevron-up' : 'chevron-down'}
+                    size={14}
+                    color="#2563EB"
+                    style={{ marginLeft: 3 }}
+                  />
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
 
           {item.priority && (
             <View style={styles.cardFooter}>
@@ -246,6 +445,160 @@ export default function NotificationsScreen() {
           }
         />
       )}
+
+      {/* Notification Full Detail Modal */}
+      <Modal
+        visible={!!selectedNotification}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setSelectedNotification(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            {/* Modal Header */}
+            <View style={styles.modalHeader}>
+              <View style={styles.modalHeaderLeft}>
+                {selectedNotification && (
+                  <View
+                    style={[
+                      styles.modalIconBox,
+                      { backgroundColor: getTypeTheme(selectedNotification.type, selectedNotification.priority).bg },
+                    ]}
+                  >
+                    <Ionicons
+                      name={getTypeTheme(selectedNotification.type, selectedNotification.priority).icon}
+                      size={20}
+                      color={getTypeTheme(selectedNotification.type, selectedNotification.priority).color}
+                    />
+                  </View>
+                )}
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.modalTitle} numberOfLines={1}>
+                    {selectedNotification?.title || selectedNotification?.type || 'Notification'}
+                  </Text>
+                  <Text style={styles.modalTimeText}>
+                    {formatNotificationDate(
+                      selectedNotification?.sentAt ||
+                        selectedNotification?.sent_at ||
+                        selectedNotification?.createdAt ||
+                        selectedNotification?.created_at
+                    )}
+                  </Text>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={styles.modalCloseBtn}
+                onPress={() => setSelectedNotification(null)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons name="close" size={22} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Modal Body */}
+            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={true}>
+              {selectedParsed.employees.length > 0 ? (
+                <View>
+                  {/* Summary Banner */}
+                  <View style={styles.summaryBanner}>
+                    <View style={styles.bannerTopRow}>
+                      <View style={styles.bannerBadge}>
+                        <Ionicons name="warning" size={14} color="#DC2626" style={{ marginRight: 4 }} />
+                        <Text style={styles.bannerBadgeText}>
+                          {selectedParsed.employees.length} Employees Absent
+                        </Text>
+                      </View>
+                      {selectedNotification?.priority && (
+                        <View style={styles.modalPriorityPill}>
+                          <Text style={styles.modalPriorityText}>{selectedNotification.priority}</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={styles.bannerIntroText}>{selectedParsed.intro}</Text>
+                  </View>
+
+                  {/* Search Bar for List */}
+                  {selectedParsed.employees.length > 4 && (
+                    <View style={styles.modalSearchRow}>
+                      <Ionicons name="search" size={16} color="#94A3B8" style={{ marginRight: 8 }} />
+                      <TextInput
+                        style={styles.modalSearchInput}
+                        placeholder="Search employee by name or ID..."
+                        placeholderTextColor="#94A3B8"
+                        value={modalSearch}
+                        onChangeText={setModalSearch}
+                        autoCapitalize="none"
+                      />
+                      {modalSearch.length > 0 && (
+                        <TouchableOpacity onPress={() => setModalSearch('')}>
+                          <Ionicons name="close-circle" size={16} color="#94A3B8" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  )}
+
+                  {/* Employee List */}
+                  <View style={styles.employeeListContainer}>
+                    <Text style={styles.sectionHeading}>
+                      Absent Roster ({filteredModalEmployees.length} of {selectedParsed.employees.length})
+                    </Text>
+
+                    {filteredModalEmployees.map((emp, index) => (
+                      <View key={index} style={styles.employeeCardRow}>
+                        <View style={styles.empAvatarCircle}>
+                          <Text style={styles.empAvatarText}>{getInitials(emp.name)}</Text>
+                        </View>
+                        <View style={styles.empDetails}>
+                          <Text style={styles.empFullName}>{emp.name}</Text>
+                          <Text style={styles.empCodeBadge}>{emp.code}</Text>
+                        </View>
+                        <View style={styles.absentPill}>
+                          <Text style={styles.absentPillText}>ABSENT</Text>
+                        </View>
+                      </View>
+                    ))}
+
+                    {filteredModalEmployees.length === 0 && (
+                      <View style={styles.noMatchBox}>
+                        <Text style={styles.noMatchText}>No employees matching "{modalSearch}"</Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.standardMessageContainer}>
+                  <Text style={styles.standardMessageText}>{selectedNotification?.message}</Text>
+                </View>
+              )}
+            </ScrollView>
+
+            {/* Modal Actions */}
+            <View style={styles.modalFooter}>
+              {(isAdmin || selectedNotification?.actionUrl) && (
+                <TouchableOpacity
+                  style={styles.actionPrimaryBtn}
+                  onPress={() => selectedNotification && handleModalNavigateToAttendance(selectedNotification)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="calendar-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                  <Text style={styles.actionPrimaryText}>
+                    {isAdmin ? 'View Admin Attendance' : 'View Attendance History'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              <TouchableOpacity
+                style={styles.actionCloseBtn}
+                onPress={() => setSelectedNotification(null)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.actionCloseText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -393,6 +746,85 @@ const styles = StyleSheet.create({
   unreadMessage: {
     color: '#1E293B',
   },
+
+  // Chip-based employee display
+  employeeNotificationBlock: {
+    marginTop: 2,
+  },
+  chipsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 8,
+  },
+  employeeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 8,
+    paddingVertical: 3,
+    paddingHorizontal: 7,
+  },
+  chipEmpName: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#991B1B',
+    maxWidth: 130,
+  },
+  chipEmpCode: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: '#DC2626',
+    marginLeft: 3,
+  },
+  moreCountChip: {
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 8,
+    paddingVertical: 3,
+    paddingHorizontal: 7,
+    justifyContent: 'center',
+  },
+  moreCountText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#475569',
+  },
+
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 10,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  expandToggleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  expandToggleText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#2563EB',
+  },
+  viewDetailBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 6,
+  },
+  viewDetailText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#475569',
+  },
+
   cardFooter: {
     marginTop: 8,
     flexDirection: 'row',
@@ -416,5 +848,237 @@ const styles = StyleSheet.create({
     marginTop: 6,
     marginLeft: 6,
   },
-});
 
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    justifyContent: 'flex-end',
+  },
+  modalContainer: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '88%',
+    minHeight: '40%',
+    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  modalHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 10,
+  },
+  modalIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  modalTimeText: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginTop: 1,
+  },
+  modalCloseBtn: {
+    padding: 6,
+    borderRadius: 18,
+    backgroundColor: '#F1F5F9',
+  },
+  modalBody: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+  },
+  summaryBanner: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 14,
+  },
+  bannerTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  bannerBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEE2E2',
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+  },
+  bannerBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#B91C1C',
+  },
+  modalPriorityPill: {
+    backgroundColor: '#FFEDD5',
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 4,
+  },
+  modalPriorityText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#C2410C',
+    textTransform: 'uppercase',
+  },
+  bannerIntroText: {
+    fontSize: 13.5,
+    color: '#7F1D1D',
+    lineHeight: 19,
+    fontWeight: '500',
+  },
+  modalSearchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 14,
+  },
+  modalSearchInput: {
+    flex: 1,
+    fontSize: 13.5,
+    color: '#0F172A',
+    padding: 0,
+  },
+  employeeListContainer: {
+    marginBottom: 20,
+  },
+  sectionHeading: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#475569',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 10,
+  },
+  employeeCardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  empAvatarCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FEE2E2',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  empAvatarText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#B91C1C',
+  },
+  empDetails: {
+    flex: 1,
+  },
+  empFullName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#0F172A',
+  },
+  empCodeBadge: {
+    fontSize: 11.5,
+    color: '#64748B',
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  absentPill: {
+    backgroundColor: '#FEE2E2',
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+  },
+  absentPillText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#B91C1C',
+  },
+  noMatchBox: {
+    paddingVertical: 20,
+    alignItems: 'center',
+  },
+  noMatchText: {
+    fontSize: 13,
+    color: '#94A3B8',
+  },
+  standardMessageContainer: {
+    paddingVertical: 12,
+  },
+  standardMessageText: {
+    fontSize: 14.5,
+    color: '#334155',
+    lineHeight: 22,
+  },
+  modalFooter: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+    flexDirection: 'row',
+    gap: 10,
+  },
+  actionPrimaryBtn: {
+    flex: 1,
+    backgroundColor: '#2563EB',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  actionPrimaryText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  actionCloseBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionCloseText: {
+    color: '#475569',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+});

@@ -13,7 +13,8 @@ import {
   Calendar,
   Clock,
   TrendingUp,
-  AlertCircle
+  AlertCircle,
+  FileText
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -41,7 +42,7 @@ export default function AdminReports() {
 
   // Pagination & Sort
   const [page, setPage] = useState(1);
-  const [sortField, setSortField] = useState('name');
+  const [sortField, setSortField] = useState('employeeId');
   const [sortOrder, setSortOrder] = useState('asc');
 
   // Modal
@@ -209,9 +210,23 @@ export default function AdminReports() {
       case 'ON_LEAVE':
         return <span className="badge badge-info">ON LEAVE</span>;
       case 'HOLIDAY':
-        return <span className="badge badge-primary">HOLIDAY</span>;
+        return (
+          <span
+            className="badge badge-holiday"
+            style={{ backgroundColor: '#EEF2FF', color: '#4338CA', border: '1px solid #C7D2FE', fontWeight: 600 }}
+          >
+            HOLIDAY
+          </span>
+        );
       case 'SUNDAY':
-        return <span className="badge badge-neutral">SUNDAY</span>;
+        return (
+          <span
+            className="badge badge-neutral"
+            style={{ backgroundColor: '#F1F5F9', color: '#475569', border: '1px solid #CBD5E1', fontWeight: 600 }}
+          >
+            SUNDAY
+          </span>
+        );
       default:
         return <span className="badge badge-neutral">{status}</span>;
     }
@@ -233,6 +248,16 @@ export default function AdminReports() {
           <p className="text-muted mb-0">Export comprehensive monthly reports and analyze attendance metrics</p>
         </div>
         <div className="d-flex align-items-center gap-2">
+          <button
+            className="btn btn-outline-primary d-flex align-items-center gap-1"
+            onClick={() => {
+              window.open(`${API_URL}/api/admin/reports/attendance-policy-pdf?token=${token}`, '_blank');
+            }}
+            title="Download Official Falcon Attendance & Punctuality Policy PDF"
+          >
+            <FileText size={15} />
+            <span>Rules of Attendance (PDF)</span>
+          </button>
           <button className="btn btn-secondary" onClick={() => handleExport('excel')}>
             <Download size={15} />
             <span>Export Excel</span>

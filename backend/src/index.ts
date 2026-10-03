@@ -27,6 +27,7 @@ const corsOptions = {
   origin: process.env.CORS_ORIGIN
     ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
     : '*',
+  exposedHeaders: ['Content-Disposition', 'Content-Length']
 };
 
 app.use(cors(corsOptions));

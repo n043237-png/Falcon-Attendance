@@ -11,7 +11,14 @@ exports.pool = new pg_1.Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: {
         rejectUnauthorized: false
-    }
+    },
+    max: 20,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000,
+    keepAlive: true,
+});
+exports.pool.on('error', (err) => {
+    console.warn('[Postgres Pool Warning] Idle client error:', err.message);
 });
 // Helper for executing queries
 const query = (text, params) => {

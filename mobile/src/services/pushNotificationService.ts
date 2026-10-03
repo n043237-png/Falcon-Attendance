@@ -219,7 +219,20 @@ export async function cancelShiftEndReminder() {
 }
 
 /**
- * Schedule recurring daily reminders 5 minutes before late mark and 5 minutes before shift end (logout).
+ * Cancel any legacy daily repeating alarms from previous app builds
+ */
+export async function clearLegacyRepeatingReminders() {
+  try {
+    await Notifications.cancelScheduledNotificationAsync('falcon-late-mark-reminder');
+    await Notifications.cancelScheduledNotificationAsync('falcon-shift-end-reminder');
+    console.log('[Push] Cleared legacy repeating shift reminders');
+  } catch (err) {
+    console.warn('[Push] Error clearing legacy shift reminders:', err);
+  }
+}
+
+/**
+ * Schedule one-time reminders for TODAY 5 minutes before late mark and 5 minutes before shift end (logout).
  * Only schedules if the user has NOT already marked attendance/checkout for today.
  */
 export async function scheduleLocalShiftReminders(
@@ -255,9 +268,10 @@ export async function scheduleLocalShiftReminders(
 
         // Only schedule if reminder time is in the future for today
         const now = new Date();
-        const currentMins = now.getHours() * 60 + now.getMinutes();
+        const scheduledTime = new Date();
+        scheduledTime.setHours(hour, minute, 0, 0);
 
-        if (currentMins < reminderMin) {
+        if (scheduledTime.getTime() > now.getTime()) {
           await Notifications.scheduleNotificationAsync({
             identifier: 'falcon-late-mark-reminder',
             content: {
@@ -268,13 +282,12 @@ export async function scheduleLocalShiftReminders(
               data: { url: '/attendance' },
             },
             trigger: {
-              type: Notifications.SchedulableTriggerInputTypes.DAILY,
-              hour,
-              minute,
+              type: Notifications.SchedulableTriggerInputTypes.DATE,
+              date: scheduledTime,
               channelId: 'falcon-default',
             },
           });
-          console.log(`[Push] Scheduled daily check-in reminder at ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')} (deadline: ${formattedLate})`);
+          console.log(`[Push] Scheduled today's check-in reminder at ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')} (deadline: ${formattedLate})`);
         }
       }
     }
@@ -291,9 +304,10 @@ export async function scheduleLocalShiftReminders(
         const minute = endMinutes % 60;
 
         const now = new Date();
-        const currentMins = now.getHours() * 60 + now.getMinutes();
+        const scheduledTime = new Date();
+        scheduledTime.setHours(hour, minute, 0, 0);
 
-        if (currentMins < endMinutes) {
+        if (scheduledTime.getTime() > now.getTime()) {
           await Notifications.scheduleNotificationAsync({
             identifier: 'falcon-shift-end-reminder',
             content: {
@@ -304,13 +318,12 @@ export async function scheduleLocalShiftReminders(
               data: { url: '/attendance' },
             },
             trigger: {
-              type: Notifications.SchedulableTriggerInputTypes.DAILY,
-              hour,
-              minute,
+              type: Notifications.SchedulableTriggerInputTypes.DATE,
+              date: scheduledTime,
               channelId: 'falcon-default',
             },
           });
-          console.log(`[Push] Scheduled daily check-out reminder at ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')} (shift end: 6:30 PM)`);
+          console.log(`[Push] Scheduled today's check-out reminder at ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')} (shift end: 6:30 PM)`);
         }
       }
     }

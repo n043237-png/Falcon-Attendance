@@ -106,7 +106,14 @@ class PayrollCalculationService {
       FROM users u
       LEFT JOIN employee_salary_profiles p ON u.id = p.employee_id
       WHERE u.status = 'active'
-      ORDER BY u.name ASC
+      ORDER BY 
+        CASE 
+          WHEN u.employee_id ILIKE 'ADMIN%' THEN 0 
+          WHEN u.employee_id ILIKE 'FISPL%' THEN 1 
+          ELSE 2 
+        END, 
+        NULLIF(substring(u.employee_id from '[0-9]+'), '')::bigint ASC NULLS LAST, 
+        u.employee_id ASC
     `);
         const employees = empRes.rows;
         if (employees.length === 0) {

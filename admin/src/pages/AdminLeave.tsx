@@ -13,7 +13,8 @@ import {
   AlertCircle,
   CalendarPlus,
   UserCheck,
-  Lock
+  Lock,
+  RotateCcw
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import Avatar from '../components/common/Avatar';
@@ -102,6 +103,19 @@ export default function AdminLeave() {
       fetchLeaves();
     } catch (err: any) {
       setError(err.response?.data?.error?.message || err.response?.data?.error || 'Failed to reject leave');
+    }
+  };
+
+  const handleRevoke = async (id: number, employeeName: string) => {
+    if (!window.confirm(`Revoke approved leave for ${employeeName}? This will cancel the leave and allow them to mark attendance for the leave date(s).`)) return;
+    try {
+      const res = await axios.patch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/admin/leave/${id}/revoke`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      alert(res.data.message || 'Leave revoked successfully.');
+      fetchLeaves();
+    } catch (err: any) {
+      alert(err.response?.data?.error?.message || 'Failed to revoke leave.');
     }
   };
 
@@ -303,6 +317,16 @@ export default function AdminLeave() {
                                     </button>
                                   </>
                                 )
+                              )}
+                              {lr.status === 'APPROVED' && (
+                                <button
+                                  className="btn btn-outline-warning btn-sm d-inline-flex align-items-center gap-1"
+                                  onClick={() => handleRevoke(lr.id, lr.employeeName)}
+                                  title="Revoke approved leave — employee came to office"
+                                >
+                                  <RotateCcw size={13} />
+                                  <span>Revoke</span>
+                                </button>
                               )}
                               <button
                                 className="btn btn-outline-primary btn-sm d-inline-flex align-items-center gap-1"

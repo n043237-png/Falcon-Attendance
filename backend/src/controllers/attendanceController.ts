@@ -384,17 +384,18 @@ export const checkOut = async (req: AuthRequest, res: Response): Promise<void> =
     // Calculate metrics using ShiftService
     const metrics = ShiftService.evaluateAttendance(shift, checkInDate, now);
 
-    // Determine final status (Required working time: 510 minutes / 8h 30m)
+    // Determine final status (Required working time: 510 minutes / 8h 30m, Half day: 255 minutes)
     const requiredWorkingMins = shift.minimumWorkHours ? Math.round(shift.minimumWorkHours * 60) : 510;
+    const halfDayMins = shift.halfDayMinutes || Math.round(requiredWorkingMins / 2);
     const isLateAttendance = attendance.is_late || metrics.isLate;
     let finalStatus = 'PRESENT';
 
-    if (metrics.workingMinutes < requiredWorkingMins) {
-      finalStatus = 'INSUFFICIENT_HOURS';
-    } else if (isLateAttendance) {
-      finalStatus = 'LATE';
+    if (metrics.workingMinutes >= requiredWorkingMins) {
+      finalStatus = isLateAttendance ? 'LATE' : 'PRESENT';
+    } else if (metrics.workingMinutes >= halfDayMins) {
+      finalStatus = 'HALF_DAY';
     } else {
-      finalStatus = 'PRESENT';
+      finalStatus = 'INSUFFICIENT_HOURS';
     }
 
     // 3. Update checkout
@@ -476,8 +477,12 @@ export const checkOut = async (req: AuthRequest, res: Response): Promise<void> =
         return `${h}h ${m}m`;
       };
       let notifMsg = `Checkout completed successfully for ${shift.name}. Duration: ${formatDuration(metrics.workingMinutes)}.`;
-      if (metrics.workingMinutes < requiredWorkingMins) {
-        notifMsg = `Checkout recorded for ${shift.name}. Duration: ${formatDuration(metrics.workingMinutes)}. Insufficient Working Hours (Required: 8h 30m / 510 mins).`;
+      if (finalStatus === 'HALF_DAY') {
+        notifMsg = `Checkout recorded for ${shift.name}. Duration: ${formatDuration(metrics.workingMinutes)}. Half Day marked (Required for Full Day: ${formatDuration(requiredWorkingMins)}).`;
+      } else if (finalStatus === 'INSUFFICIENT_HOURS') {
+        notifMsg = `Checkout recorded for ${shift.name}. Duration: ${formatDuration(metrics.workingMinutes)}. Insufficient Working Hours (Minimum required: ${formatDuration(halfDayMins)}).`;
+      } else if (finalStatus === 'LATE') {
+        notifMsg = `Checkout completed for ${shift.name}. Duration: ${formatDuration(metrics.workingMinutes)} (Present - Late Check-in).`;
       } else if (metrics.breakDeducted && metrics.breakDeducted > 0) {
         notifMsg = `Checkout completed successfully for ${shift.name}. Duration: ${formatDuration(metrics.workingMinutes)} (Break deducted: ${metrics.breakDeducted}m).`;
       }

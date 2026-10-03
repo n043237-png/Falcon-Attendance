@@ -59,7 +59,14 @@ const getAttendanceReport = async (req, res) => {
             empParams.push(`%${search}%`);
             empQuery += ` AND (u.name ILIKE $${empParams.length} OR u.employee_id ILIKE $${empParams.length} OR u.employee_code ILIKE $${empParams.length} OR u.email ILIKE $${empParams.length} OR u.department ILIKE $${empParams.length} OR u.designation ILIKE $${empParams.length})`;
         }
-        empQuery += ` ORDER BY u.name ASC`;
+        empQuery += ` ORDER BY 
+      CASE 
+        WHEN u.employee_id ILIKE 'ADMIN%' THEN 0 
+        WHEN u.employee_id ILIKE 'FISPL%' THEN 1 
+        ELSE 2 
+      END, 
+      NULLIF(substring(u.employee_id from '[0-9]+'), '')::bigint ASC NULLS LAST, 
+      u.employee_id ASC`;
         const empRes = await (0, db_1.query)(empQuery, empParams);
         const employees = empRes.rows;
         if (employees.length === 0) {
@@ -253,7 +260,7 @@ const getAttendanceReport = async (req, res) => {
         const totalAttended = globalSummary.present + (globalSummary.halfDay * 0.5);
         const totalRequired = globalSummary.totalExpectedDays - globalSummary.onLeave;
         globalSummary.attendancePercentage = totalRequired > 0 ? Math.round((totalAttended / totalRequired) * 100) : 100;
-        // Apply sorting to employeeReports (simplified by name or %)
+        // Apply sorting to employeeReports (by % attendance, present count, name, or serial-wise employee ID)
         const sortField = req.query.sort;
         const order = req.query.order === 'desc' ? -1 : 1;
         if (sortField === 'attendancePercentage') {
@@ -262,8 +269,25 @@ const getAttendanceReport = async (req, res) => {
         else if (sortField === 'present') {
             employeeReports.sort((a, b) => (a.summary.present - b.summary.present) * order);
         }
-        else {
+        else if (sortField === 'name') {
             employeeReports.sort((a, b) => a.name.localeCompare(b.name) * order);
+        }
+        else {
+            // Default: Serial-wise as per Employee ID (ADMIN001, FISPL0001, FISPL0002...)
+            employeeReports.sort((a, b) => {
+                const codeA = (a.employeeCode || a.empId || '').trim();
+                const codeB = (b.employeeCode || b.empId || '').trim();
+                const rankA = codeA.toUpperCase().startsWith('ADMIN') ? 0 : (codeA.toUpperCase().startsWith('FISPL') ? 1 : 2);
+                const rankB = codeB.toUpperCase().startsWith('ADMIN') ? 0 : (codeB.toUpperCase().startsWith('FISPL') ? 1 : 2);
+                if (rankA !== rankB)
+                    return (rankA - rankB) * order;
+                const numA = parseInt(codeA.replace(/\D/g, ''), 10);
+                const numB = parseInt(codeB.replace(/\D/g, ''), 10);
+                if (!isNaN(numA) && !isNaN(numB) && numA !== numB) {
+                    return (numA - numB) * order;
+                }
+                return codeA.localeCompare(codeB, undefined, { numeric: true, sensitivity: 'base' }) * order;
+            });
         }
         if (exportType === 'excel') {
             return await exportExcel(res, globalSummary, employeeReports, startDateStr, endDateStr);

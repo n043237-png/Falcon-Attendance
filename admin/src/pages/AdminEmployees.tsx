@@ -1007,7 +1007,7 @@ export default function AdminEmployees() {
                     <th>Status</th>
                     <th>Job Status</th>
                     <th>Mode</th>
-                    <th className="text-end" style={{ width: '230px', minWidth: '230px' }}>Actions</th>
+                    <th className="text-end" style={{ width: '135px', minWidth: '135px' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1029,10 +1029,15 @@ export default function AdminEmployees() {
                               }}
                             />
                             <div>
-                              <div className="fw-semibold text-dark" style={{ fontSize: '14.5px' }}>
+                              <div
+                                className="fw-semibold text-dark"
+                                style={{ fontSize: '14px', cursor: 'pointer' }}
+                                onClick={() => openDetail(r)}
+                                title="Click to view details"
+                              >
                                 {r.name}
                               </div>
-                              <div className="text-muted" style={{ fontSize: '13px' }}>
+                              <div className="text-muted" style={{ fontSize: '12.5px' }}>
                                 {r.email}
                               </div>
                             </div>
@@ -1098,95 +1103,124 @@ export default function AdminEmployees() {
                             </span>
                           )}
                         </td>
-                        <td className="text-end" style={{ width: '230px', minWidth: '230px' }}>
-                          <div className="d-inline-flex align-items-center gap-1.5">
+                        <td className="text-end" style={{ width: '135px', minWidth: '135px' }}>
+                          <div className="d-inline-flex align-items-center gap-1.5 justify-content-end">
                             <button
-                              className="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-1 px-2 py-1"
+                              className="btn btn-sm d-inline-flex align-items-center gap-1 px-2.5 py-1"
                               onClick={() => openDetail(r)}
                               title="View details"
-                              style={{ fontSize: '12.5px', height: '30px' }}
+                              style={{
+                                fontSize: '12px',
+                                fontWeight: 500,
+                                height: '30px',
+                                backgroundColor: '#F8FAFC',
+                                color: '#334155',
+                                border: '1px solid #E2E8F0',
+                                borderRadius: '7px'
+                              }}
                             >
-                              <Eye size={13} />
+                              <Eye size={13} className="text-muted" />
                               <span>View</span>
                             </button>
+
                             <button
-                              className="btn btn-outline-primary btn-sm d-inline-flex align-items-center gap-1 px-2 py-1"
-                              onClick={() => openAdjustLeave(r, r.leaveBalances?.currentBalance ?? 0)}
-                              title="Adjust Leave Balance"
-                              style={{ fontSize: '12.5px', height: '30px' }}
-                            >
-                              <CalendarPlus size={13} />
-                              <span>Leave</span>
-                            </button>
-                            <button
-                              className="btn btn-primary btn-sm d-inline-flex align-items-center gap-1 px-2.5 py-1"
+                              className="btn btn-sm d-inline-flex align-items-center gap-1 px-2.5 py-1"
                               onClick={() => openEdit(r)}
                               title="Edit employee"
-                              style={{ fontSize: '12.5px', height: '30px' }}
+                              style={{
+                                fontSize: '12px',
+                                fontWeight: 500,
+                                height: '30px',
+                                backgroundColor: '#EFF6FF',
+                                color: '#2563EB',
+                                border: '1px solid #BFDBFE',
+                                borderRadius: '7px'
+                              }}
                             >
                               <Edit2 size={13} />
                               <span>Edit</span>
-                            </button>
-                            <button
-                              className="btn btn-outline-info btn-sm d-inline-flex align-items-center gap-1 px-2 py-1"
-                              onClick={() => {
-                                setSelectedEmpForIdCard(r.id);
-                                setShowIdCardModal(true);
-                              }}
-                              title="Digital ID Card"
-                              style={{ fontSize: '12.5px', height: '30px' }}
-                            >
-                              <CreditCard size={13} />
-                              <span>ID Card</span>
                             </button>
 
                             <Dropdown align="end" drop={index >= records.length - 3 ? 'up' : 'down'} className="d-inline-block position-relative">
                               <Dropdown.Toggle
                                 variant="light"
                                 size="sm"
-                                className="no-caret d-inline-flex align-items-center justify-content-center p-0 border bg-white"
-                                style={{ width: '30px', height: '30px', borderRadius: '6px' }}
+                                className="no-caret d-inline-flex align-items-center justify-content-center p-0 border"
+                                style={{
+                                  width: '30px',
+                                  height: '30px',
+                                  borderRadius: '7px',
+                                  backgroundColor: '#FFFFFF',
+                                  borderColor: '#E2E8F0',
+                                  color: '#64748B'
+                                }}
                                 title="More actions"
                               >
-                                <MoreVertical size={15} className="text-secondary" />
+                                <MoreVertical size={14} />
                               </Dropdown.Toggle>
                               <Dropdown.Menu
-                                style={{ fontSize: '13px', minWidth: '190px', zIndex: 1060 }}
-                                className="shadow border py-1"
+                                style={{
+                                  fontSize: '13px',
+                                  minWidth: '205px',
+                                  zIndex: 1060,
+                                  borderRadius: '10px',
+                                  boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.04)',
+                                  border: '1px solid #E2E8F0',
+                                  padding: '6px'
+                                }}
                               >
                                 <Dropdown.Item
                                   onClick={() => {
                                     setSelectedEmpForIdCard(r.id);
                                     setShowIdCardModal(true);
                                   }}
-                                  className="d-flex align-items-center gap-2 py-1.5"
+                                  className="d-flex align-items-center gap-2 py-1.5 px-2.5 rounded-2"
                                 >
                                   <CreditCard size={14} className="text-primary" />
                                   <span>Digital ID Card</span>
                                 </Dropdown.Item>
-                                <Dropdown.Divider className="my-1" />
+
+                                <Dropdown.Item
+                                  onClick={() => openAdjustLeave(r, r.leaveBalances?.currentBalance ?? 0)}
+                                  className="d-flex align-items-center gap-2 py-1.5 px-2.5 rounded-2"
+                                >
+                                  <CalendarPlus size={14} className="text-info" />
+                                  <span>Adjust Leave Balance</span>
+                                </Dropdown.Item>
+
+                                <Dropdown.Item
+                                  onClick={() => handleResetPassword(r)}
+                                  className="d-flex align-items-center gap-2 py-1.5 px-2.5 rounded-2"
+                                >
+                                  <Key size={14} className="text-secondary" />
+                                  <span>Reset Password</span>
+                                </Dropdown.Item>
+
                                 {r.jobStatus === 'Provisional' && (
                                   <>
+                                    <Dropdown.Divider className="my-1" />
                                     <Dropdown.Item
                                       onClick={() => openPermanentModal(r)}
-                                      className="d-flex align-items-center gap-2 text-success py-1.5"
+                                      className="d-flex align-items-center gap-2 text-success py-1.5 px-2.5 rounded-2"
                                     >
                                       <CheckCircle size={14} />
                                       <span>Mark as Permanent</span>
                                     </Dropdown.Item>
                                     <Dropdown.Item
                                       onClick={() => openExtendModal(r)}
-                                      className="d-flex align-items-center gap-2 text-warning py-1.5"
+                                      className="d-flex align-items-center gap-2 text-warning py-1.5 px-2.5 rounded-2"
                                     >
                                       <Calendar size={14} />
                                       <span>Extend Provisional</span>
                                     </Dropdown.Item>
-                                    <Dropdown.Divider className="my-1" />
                                   </>
                                 )}
+
+                                <Dropdown.Divider className="my-1" />
+
                                 <Dropdown.Item
                                   onClick={() => handleToggleStatus(r)}
-                                  className="d-flex align-items-center gap-2 py-1.5"
+                                  className="d-flex align-items-center gap-2 py-1.5 px-2.5 rounded-2"
                                 >
                                   {r.status === 'active' ? (
                                     <>
@@ -1200,18 +1234,13 @@ export default function AdminEmployees() {
                                     </>
                                   )}
                                 </Dropdown.Item>
-                                <Dropdown.Item
-                                  onClick={() => handleResetPassword(r)}
-                                  className="d-flex align-items-center gap-2 py-1.5"
-                                >
-                                  <Key size={14} className="text-muted" />
-                                  <span>Reset Password</span>
-                                </Dropdown.Item>
+
                                 <Dropdown.Divider className="my-1" />
+
                                 <Dropdown.Item
                                   onClick={() => handleDeleteEmployee(r)}
                                   disabled={r.id === currentUser?.id}
-                                  className="d-flex align-items-center gap-2 text-danger py-1.5"
+                                  className="d-flex align-items-center gap-2 text-danger py-1.5 px-2.5 rounded-2"
                                 >
                                   <Trash2 size={14} />
                                   <span>Delete Employee</span>

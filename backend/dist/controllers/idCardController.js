@@ -121,7 +121,14 @@ const getBulkIdCardsData = async (req, res) => {
             params.push(`%${search}%`);
             sql += ` AND (u.name ILIKE $${params.length} OR u.employee_id ILIKE $${params.length} OR u.email ILIKE $${params.length})`;
         }
-        sql += ` ORDER BY u.name ASC`;
+        sql += ` ORDER BY 
+      CASE 
+        WHEN u.employee_id ILIKE 'ADMIN%' THEN 0 
+        WHEN u.employee_id ILIKE 'FISPL%' THEN 1 
+        ELSE 2 
+      END, 
+      NULLIF(substring(u.employee_id from '[0-9]+'), '')::bigint ASC NULLS LAST, 
+      u.employee_id ASC`;
         const result = await (0, db_1.query)(sql, params);
         res.json({ success: true, count: result.rows.length, data: result.rows });
     }
@@ -139,7 +146,8 @@ exports.getBulkIdCardsData = getBulkIdCardsData;
  */
 const downloadBulkIdCardsPdf = async (req, res) => {
     try {
-        const { userIds } = req.body;
+        const { userIds } = req.body || {};
+        console.log(`[IdCardController] Starting bulk PDF generation for ${userIds?.length || 'all'} users...`);
         const pdfBuffer = await idCardService_1.IdCardService.generateBulkCardsPdf(userIds);
         const timestamp = new Date().toISOString().split('T')[0];
         const filename = `Falcon_Bulk_ID_Cards_${timestamp}.pdf`;
@@ -147,6 +155,7 @@ const downloadBulkIdCardsPdf = async (req, res) => {
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.setHeader('Content-Length', pdfBuffer.length);
         res.end(pdfBuffer);
+        console.log(`[IdCardController] Bulk PDF generated successfully (${pdfBuffer.length} bytes).`);
     }
     catch (error) {
         console.error('downloadBulkIdCardsPdf error:', error);
@@ -162,7 +171,8 @@ exports.downloadBulkIdCardsPdf = downloadBulkIdCardsPdf;
  */
 const downloadBulkIdCardsZip = async (req, res) => {
     try {
-        const { userIds } = req.body;
+        const { userIds } = req.body || {};
+        console.log(`[IdCardController] Starting bulk ZIP generation for ${userIds?.length || 'all'} users...`);
         const zipBuffer = await idCardService_1.IdCardService.generateBulkCardsZip(userIds);
         const timestamp = new Date().toISOString().split('T')[0];
         const filename = `Falcon_Bulk_ID_Cards_${timestamp}.zip`;
@@ -170,6 +180,7 @@ const downloadBulkIdCardsZip = async (req, res) => {
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.setHeader('Content-Length', zipBuffer.length);
         res.end(zipBuffer);
+        console.log(`[IdCardController] Bulk ZIP generated successfully (${zipBuffer.length} bytes).`);
     }
     catch (error) {
         console.error('downloadBulkIdCardsZip error:', error);

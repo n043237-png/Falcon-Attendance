@@ -13,6 +13,7 @@ const crypto_1 = __importDefault(require("crypto"));
 const db_1 = require("../db");
 const employeeProfileService_1 = require("./employeeProfileService");
 const logoHelper_1 = require("../utils/logoHelper");
+const sharp_1 = __importDefault(require("sharp"));
 class IdCardService {
     /**
      * Deterministically generates a secure verification code for an employee
@@ -124,22 +125,40 @@ class IdCardService {
      */
     static async generateBulkCardsPdf(userIds) {
         let usersList = [];
+        const orderClause = `
+      ORDER BY 
+        CASE 
+          WHEN employee_id ILIKE 'ADMIN%' THEN 0 
+          WHEN employee_id ILIKE 'FISPL%' THEN 1 
+          ELSE 2 
+        END, 
+        NULLIF(substring(employee_id from '[0-9]+'), '')::bigint ASC NULLS LAST, 
+        employee_id ASC
+    `;
         if (userIds && userIds.length > 0) {
-            const res = await (0, db_1.query)(`SELECT id FROM users WHERE id = ANY($1::int[]) AND status = 'active' ORDER BY name ASC`, [userIds]);
+            const res = await (0, db_1.query)(`SELECT id FROM users WHERE id = ANY($1::int[]) AND status = 'active' ${orderClause}`, [userIds]);
             usersList = res.rows;
         }
         else {
-            const res = await (0, db_1.query)(`SELECT id FROM users WHERE status = 'active' ORDER BY name ASC`);
+            const res = await (0, db_1.query)(`SELECT id FROM users WHERE status = 'active' ${orderClause}`);
             usersList = res.rows;
         }
         const cardsData = [];
-        for (const u of usersList) {
-            try {
-                const card = await this.getEmployeeCardData(u.id);
-                cardsData.push(card);
-            }
-            catch (e) {
-                console.warn(`Skipping ID card for user ${u.id}:`, e);
+        const chunkSize = 5;
+        for (let i = 0; i < usersList.length; i += chunkSize) {
+            const chunk = usersList.slice(i, i + chunkSize);
+            const chunkResults = await Promise.all(chunk.map(async (u) => {
+                try {
+                    return await this.getEmployeeCardData(u.id);
+                }
+                catch (e) {
+                    console.warn(`Skipping ID card for user ${u.id}:`, e);
+                    return null;
+                }
+            }));
+            for (const card of chunkResults) {
+                if (card)
+                    cardsData.push(card);
             }
         }
         return this.createPdfDocument(cardsData);
@@ -149,26 +168,40 @@ class IdCardService {
      */
     static async generateBulkCardsZip(userIds) {
         let usersList = [];
+        const orderClause = `
+      ORDER BY 
+        CASE 
+          WHEN employee_id ILIKE 'ADMIN%' THEN 0 
+          WHEN employee_id ILIKE 'FISPL%' THEN 1 
+          ELSE 2 
+        END, 
+        NULLIF(substring(employee_id from '[0-9]+'), '')::bigint ASC NULLS LAST, 
+        employee_id ASC
+    `;
         if (userIds && userIds.length > 0) {
-            const res = await (0, db_1.query)(`SELECT id FROM users WHERE id = ANY($1::int[]) AND status = 'active' ORDER BY name ASC`, [userIds]);
+            const res = await (0, db_1.query)(`SELECT id FROM users WHERE id = ANY($1::int[]) AND status = 'active' ${orderClause}`, [userIds]);
             usersList = res.rows;
         }
         else {
-            const res = await (0, db_1.query)(`SELECT id FROM users WHERE status = 'active' ORDER BY name ASC`);
+            const res = await (0, db_1.query)(`SELECT id FROM users WHERE status = 'active' ${orderClause}`);
             usersList = res.rows;
         }
         const zip = new jszip_1.default();
-        for (const u of usersList) {
-            try {
-                const card = await this.getEmployeeCardData(u.id);
-                const pdfBuf = await this.createPdfDocument([card]);
-                const safeName = card.employee.name.replace(/[^a-zA-Z0-9_-]/g, '_');
-                const filename = `ID_Card_${card.employee.employeeId}_${safeName}.pdf`;
-                zip.file(filename, pdfBuf);
-            }
-            catch (e) {
-                console.warn(`Error generating zip entry for user ${u.id}:`, e);
-            }
+        const chunkSize = 5;
+        for (let i = 0; i < usersList.length; i += chunkSize) {
+            const chunk = usersList.slice(i, i + chunkSize);
+            await Promise.all(chunk.map(async (u) => {
+                try {
+                    const card = await this.getEmployeeCardData(u.id);
+                    const pdfBuf = await this.createPdfDocument([card]);
+                    const safeName = card.employee.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+                    const filename = `ID_Card_${card.employee.employeeId}_${safeName}.pdf`;
+                    zip.file(filename, pdfBuf);
+                }
+                catch (e) {
+                    console.warn(`Error generating zip entry for user ${u.id}:`, e);
+                }
+            }));
         }
         return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
     }
@@ -229,17 +262,44 @@ class IdCardService {
                         .fillAndStroke('#FFFFFF', '#2563EB');
                     let photoRendered = false;
                     if (card.employee.profilePhotoUrl) {
-                        const diskPhotoPath = path_1.default.join(process.cwd(), card.employee.profilePhotoUrl.replace(/^\//, ''));
-                        if (fs_1.default.existsSync(diskPhotoPath)) {
+                        if (card.employee.profilePhotoUrl.startsWith('data:image/')) {
                             try {
-                                doc.save();
-                                doc.roundedRect(photoX, photoY, photoSize, photoSize, 6).clip();
-                                doc.image(diskPhotoPath, photoX, photoY, { width: photoSize, height: photoSize, fit: [photoSize, photoSize] });
-                                doc.restore();
-                                photoRendered = true;
+                                const base64Data = card.employee.profilePhotoUrl.split(',')[1];
+                                if (base64Data) {
+                                    let imgBuffer = Buffer.from(base64Data, 'base64');
+                                    if (card.employee.profilePhotoUrl.includes('webp') || card.employee.profilePhotoUrl.includes('svg')) {
+                                        try {
+                                            imgBuffer = await (0, sharp_1.default)(imgBuffer).png().toBuffer();
+                                        }
+                                        catch (convErr) {
+                                            console.warn('[IdCardService] Sharp conversion error:', convErr);
+                                        }
+                                    }
+                                    doc.save();
+                                    doc.roundedRect(photoX, photoY, photoSize, photoSize, 6).clip();
+                                    doc.image(imgBuffer, photoX, photoY, { width: photoSize, height: photoSize, fit: [photoSize, photoSize] });
+                                    doc.restore();
+                                    photoRendered = true;
+                                }
                             }
                             catch (e) {
+                                console.warn('[IdCardService] Failed to render base64 photo in PDF:', e);
                                 photoRendered = false;
+                            }
+                        }
+                        else {
+                            const diskPhotoPath = path_1.default.join(process.cwd(), card.employee.profilePhotoUrl.replace(/^\//, ''));
+                            if (fs_1.default.existsSync(diskPhotoPath)) {
+                                try {
+                                    doc.save();
+                                    doc.roundedRect(photoX, photoY, photoSize, photoSize, 6).clip();
+                                    doc.image(diskPhotoPath, photoX, photoY, { width: photoSize, height: photoSize, fit: [photoSize, photoSize] });
+                                    doc.restore();
+                                    photoRendered = true;
+                                }
+                                catch (e) {
+                                    photoRendered = false;
+                                }
                             }
                         }
                     }

@@ -425,7 +425,14 @@ export class ShiftService {
       FROM users u
       LEFT JOIN employee_profiles ep ON ep.user_id = u.id
       WHERE u.shift_id = $1
-      ORDER BY u.name ASC
+      ORDER BY 
+        CASE 
+          WHEN u.employee_id ILIKE 'ADMIN%' THEN 0 
+          WHEN u.employee_id ILIKE 'FISPL%' THEN 1 
+          ELSE 2 
+        END, 
+        NULLIF(substring(u.employee_id from '[0-9]+'), '')::bigint ASC NULLS LAST, 
+        u.employee_id ASC
     `, [shiftId]);
 
     return res.rows;
@@ -564,10 +571,12 @@ export class ShiftService {
       }
 
       // Attendance status calculation based on working minutes vs required threshold (510 mins / 8h 30m)
-      if (workingMinutes < expectedWorkingMinutes) {
-        status = 'INSUFFICIENT_HOURS';
+      if (workingMinutes >= expectedWorkingMinutes) {
+        status = isLate ? 'LATE' : 'PRESENT';
+      } else if (workingMinutes >= halfDayMinutes) {
+        status = 'HALF_DAY';
       } else {
-        status = 'PRESENT';
+        status = 'INSUFFICIENT_HOURS';
       }
     }
 

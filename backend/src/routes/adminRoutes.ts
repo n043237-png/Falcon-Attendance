@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { getAttendance, getDailySummary } from '../controllers/adminController';
 import { getAttendanceReport } from '../controllers/adminReportController';
-import { getAdminLeaves, approveLeave, rejectLeave, adjustEmployeeLeaveBalance, getLeaveAdjustmentHistory, getEmployeeLeaveBalance } from '../controllers/adminLeaveController';
+import { getAdminLeaves, approveLeave, rejectLeave, revokeLeave, adjustEmployeeLeaveBalance, getLeaveAdjustmentHistory, getEmployeeLeaveBalance } from '../controllers/adminLeaveController';
 import { 
   getEmployees, 
   getEmployeeDetail, 
@@ -75,6 +75,18 @@ router.post('/holidays', addHoliday);
 router.delete('/holidays/:id', deleteHoliday);
 
 router.get('/reports/attendance', getAttendanceReport);
+router.get('/reports/attendance-policy-pdf', async (req, res) => {
+  try {
+    const { generateAttendanceRulesPdf } = await import('../services/policyPdfService');
+    const pdfBuf = await generateAttendanceRulesPdf();
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename="Falcon_Attendance_Rules_and_Policy.pdf"');
+    res.setHeader('Content-Length', pdfBuf.length);
+    res.end(pdfBuf);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { message: err.message || 'Failed to generate policy PDF' } });
+  }
+});
 
 // WhatsApp Alert Endpoints
 router.get('/whatsapp-logs', async (req, res) => {
@@ -119,6 +131,7 @@ router.post('/leave/initialize', (req, res, next) => {
 router.get('/leave', getAdminLeaves);
 router.patch('/leave/:id/approve', approveLeave);
 router.patch('/leave/:id/reject', rejectLeave);
+router.patch('/leave/:id/revoke', revokeLeave);
 router.post('/leave/adjust-balance', adjustEmployeeLeaveBalance);
 router.get('/leave/balance/:employeeId', getEmployeeLeaveBalance);
 router.get('/leave/adjust-history/:employeeId', getLeaveAdjustmentHistory);

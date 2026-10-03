@@ -169,7 +169,16 @@ export const getAttendance = async (req: AuthRequest, res: Response): Promise<vo
       JOIN users u ON a.employee_id = u.id
       LEFT JOIN shifts s ON s.id = u.shift_id
       ${filterQuery.replace(/a\.status/g, 'a.computed_status')}
-      ORDER BY a.attendance_date DESC, a.check_in DESC NULLS LAST
+      ORDER BY 
+        a.attendance_date DESC,
+        CASE 
+          WHEN u.employee_id ILIKE 'ADMIN%' THEN 0 
+          WHEN u.employee_id ILIKE 'FISPL%' THEN 1 
+          ELSE 2 
+        END, 
+        NULLIF(substring(u.employee_id from '[0-9]+'), '')::bigint ASC NULLS LAST, 
+        u.employee_id ASC,
+        a.check_in DESC NULLS LAST
       LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}
     `, [...queryParams, limit, offset]);
 

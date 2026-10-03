@@ -186,7 +186,7 @@ const getEmployees = async (req, res) => {
           WHEN u.employee_id ILIKE 'ADMIN%' THEN 0 
           ELSE 2 
         END,
-        NULLIF(regexp_replace(u.employee_id, '\\D', '', 'g'), '')::bigint ASC NULLS LAST,
+        NULLIF(substring(u.employee_id from '[0-9]+'), '')::bigint ASC NULLS LAST,
         u.employee_id ASC
       LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}
     `, [...queryParams, limit, offset]);
@@ -607,12 +607,16 @@ const editEmployee = async (req, res) => {
         }
         // Notify employee that their profile was updated
         try {
+            const adminLabel = req.user?.name
+                ? `${req.user.name} (${req.user.employee_id})`
+                : (req.user?.employee_id || 'an administrator');
             await notificationService_1.NotificationService.notifyUser(id, {
                 title: 'Profile Updated',
-                message: 'Your employee profile details were updated by an administrator.',
+                message: `Your employee profile details were updated by admin ${adminLabel}.`,
                 type: 'Profile',
                 priority: 'Medium',
                 actionUrl: '/profile',
+                senderUserId: req.user?.id,
             });
         }
         catch (notifErr) {
@@ -869,7 +873,7 @@ const exportEmployees = async (req, res) => {
           WHEN employee_id ILIKE 'ADMIN%' THEN 0 
           ELSE 2 
         END,
-        NULLIF(regexp_replace(employee_id, '\\D', '', 'g'), '')::bigint ASC NULLS LAST,
+        NULLIF(substring(employee_id from '[0-9]+'), '')::bigint ASC NULLS LAST,
         employee_id ASC
     `, queryParams);
         const format = req.query.format === 'excel' ? 'excel' : 'csv';

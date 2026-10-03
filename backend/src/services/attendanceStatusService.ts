@@ -123,8 +123,11 @@ export function calculateStatus(
   } else if (hasHalfDayLeave && result.workingMinutes >= effectiveHalfDayMinutes) {
     // If they have HALF_DAY_LEAVE, working half a day implies full compliance.
     result.status = 'PRESENT';
+  } else if (result.workingMinutes >= effectiveHalfDayMinutes) {
+    // Worked at least half day threshold (e.g. 255 mins / 4h 15m)
+    result.status = 'HALF_DAY';
   } else {
-    // Checked out before completing required working time (510 minutes)
+    // Checked out before completing half day threshold
     result.status = 'INSUFFICIENT_HOURS';
   }
 

@@ -30,7 +30,8 @@ async function updateDayShiftPolicy() {
       late_threshold = '10:00:00',
       absence_cutoff = '11:00:00',
       full_day_minutes = 510,
-      checkout_reminder_time = '18:30:00',
+      half_day_minutes = 255,
+      checkout_reminder_time = '19:00:00',
       updated_at = CURRENT_TIMESTAMP
     WHERE id = 1
     RETURNING *;

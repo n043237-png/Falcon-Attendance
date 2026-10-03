@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Row, Col, Form, Alert, Spinner } from 'react-bootstrap';
+import { Row, Col, Form, Alert, Spinner, Badge, InputGroup } from 'react-bootstrap';
 import {
   Settings,
   Clock,
@@ -985,29 +985,82 @@ export default function AdminSettings() {
                   <Row className="g-3">
                     <Col md={6}>
                       <Form.Group>
-                        <Form.Label className="fw-medium text-dark" style={{ fontSize: '13.5px' }}>Half Day Requirement (Min)</Form.Label>
-                        <Form.Control
-                          type="number"
-                          value={settings.halfDayMinutes}
-                          onChange={(e) => setSettings({ ...settings, halfDayMinutes: Number(e.target.value) })}
-                          style={{ height: '44px', borderRadius: '10px', fontSize: '14px' }}
-                          required
-                        />
-                        <span className="text-muted mt-1 d-block" style={{ fontSize: '12px' }}>E.g. 240 mins (4 hours)</span>
+                        <div className="d-flex justify-content-between align-items-center mb-1">
+                          <Form.Label className="fw-medium text-dark mb-0" style={{ fontSize: '13.5px' }}>
+                            Full Day Requirement
+                          </Form.Label>
+                          <Badge bg="primary" className="fw-normal" style={{ fontSize: '11px' }}>
+                            {(Number(settings.fullDayMinutes || 0) / 60).toFixed(2)} hrs ({settings.fullDayMinutes || 0} mins)
+                          </Badge>
+                        </div>
+                        <InputGroup>
+                          <Form.Control
+                            type="number"
+                            step="15"
+                            min="60"
+                            max="1440"
+                            value={settings.fullDayMinutes}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              setSettings({
+                                ...settings,
+                                fullDayMinutes: val,
+                              });
+                            }}
+                            style={{ height: '44px', borderRadius: '10px 0 0 10px', fontSize: '14px' }}
+                            required
+                          />
+                          <InputGroup.Text className="bg-light fw-medium text-secondary" style={{ fontSize: '12.5px', borderRadius: '0 10px 10px 0' }}>
+                            Minutes
+                          </InputGroup.Text>
+                        </InputGroup>
+                        <div className="d-flex justify-content-between align-items-center mt-1">
+                          <span className="text-muted" style={{ fontSize: '12px' }}>
+                            Net hours required: {Math.floor(Number(settings.fullDayMinutes || 0) / 60)}h {Number(settings.fullDayMinutes || 0) % 60}m
+                          </span>
+                          <button
+                            type="button"
+                            className="btn btn-link p-0 text-decoration-none"
+                            style={{ fontSize: '11.5px', color: '#2563EB' }}
+                            onClick={() => {
+                              const full = Number(settings.fullDayMinutes || 0);
+                              setSettings({ ...settings, halfDayMinutes: Math.round(full / 2) });
+                            }}
+                          >
+                            Set Half Day to 50% ({Math.round(Number(settings.fullDayMinutes || 0) / 2)}m)
+                          </button>
+                        </div>
                       </Form.Group>
                     </Col>
 
                     <Col md={6}>
                       <Form.Group>
-                        <Form.Label className="fw-medium text-dark" style={{ fontSize: '13.5px' }}>Full Day Requirement (Min)</Form.Label>
-                        <Form.Control
-                          type="number"
-                          value={settings.fullDayMinutes}
-                          onChange={(e) => setSettings({ ...settings, fullDayMinutes: Number(e.target.value) })}
-                          style={{ height: '44px', borderRadius: '10px', fontSize: '14px' }}
-                          required
-                        />
-                        <span className="text-muted mt-1 d-block" style={{ fontSize: '12px' }}>E.g. 480 mins (8 hours)</span>
+                        <div className="d-flex justify-content-between align-items-center mb-1">
+                          <Form.Label className="fw-medium text-dark mb-0" style={{ fontSize: '13.5px' }}>
+                            Half Day Requirement
+                          </Form.Label>
+                          <Badge bg="secondary" className="fw-normal" style={{ fontSize: '11px' }}>
+                            {(Number(settings.halfDayMinutes || 0) / 60).toFixed(2)} hrs ({settings.halfDayMinutes || 0} mins)
+                          </Badge>
+                        </div>
+                        <InputGroup>
+                          <Form.Control
+                            type="number"
+                            step="15"
+                            min="30"
+                            max="720"
+                            value={settings.halfDayMinutes}
+                            onChange={(e) => setSettings({ ...settings, halfDayMinutes: Number(e.target.value) })}
+                            style={{ height: '44px', borderRadius: '10px 0 0 10px', fontSize: '14px' }}
+                            required
+                          />
+                          <InputGroup.Text className="bg-light fw-medium text-secondary" style={{ fontSize: '12.5px', borderRadius: '0 10px 10px 0' }}>
+                            Minutes
+                          </InputGroup.Text>
+                        </InputGroup>
+                        <span className="text-muted mt-1 d-block" style={{ fontSize: '12px' }}>
+                          Net hours required: {Math.floor(Number(settings.halfDayMinutes || 0) / 60)}h {Number(settings.halfDayMinutes || 0) % 60}m (= {(Number(settings.halfDayMinutes || 0) / 60).toFixed(2)} hours)
+                        </span>
                       </Form.Group>
                     </Col>
 

@@ -96,7 +96,13 @@ export default function HomeScreen() {
         cancelShiftEndReminder();
       }
 
-      if (res.success && res.data?.shift) {
+      const attStatus = res.data?.attendance?.status;
+      const isHolidayOrSunday = attStatus === 'HOLIDAY' || attStatus === 'SUNDAY' || attStatus === 'ON_LEAVE' || new Date().getDay() === 0;
+
+      if (isHolidayOrSunday) {
+        cancelLateMarkReminder();
+        cancelShiftEndReminder();
+      } else if (res.success && res.data?.shift) {
         setShiftInfo(res.data.shift);
         scheduleLocalShiftReminders(
           res.data.shift.startTime,
@@ -267,8 +273,11 @@ export default function HomeScreen() {
 
   const getStatusBadge = () => {
     if (hasCheckedOut) {
-      if (status === 'INSUFFICIENT_HOURS' || (attendance?.workingMinutes !== undefined && attendance.workingMinutes < 510)) {
+      if (status === 'INSUFFICIENT_HOURS' || (attendance?.workingMinutes !== undefined && attendance.workingMinutes < 255)) {
         return { label: 'Insufficient Hours', color: '#DC2626', bg: '#FEE2E2', icon: 'alert-circle' as const };
+      }
+      if (status === 'HALF_DAY' || (attendance?.workingMinutes !== undefined && attendance.workingMinutes < 510)) {
+        return { label: 'Half Day', color: '#B45309', bg: '#FEF3C7', icon: 'time' as const };
       }
       return { label: 'Completed', color: '#15803D', bg: '#DCFCE7', icon: 'checkmark-circle' as const };
     }
@@ -474,13 +483,21 @@ export default function HomeScreen() {
                 <Ionicons name={badge.icon} size={36} color={badge.color} />
               </View>
               <Text style={[styles.completedTitle, { color: badge.color }]}>
-                {hasCheckedOut ? (status === 'INSUFFICIENT_HOURS' || (attendance?.workingMinutes !== undefined && attendance.workingMinutes < 510) ? 'Insufficient Hours' : 'Day Complete') : badge.label}
+                {hasCheckedOut
+                  ? (status === 'INSUFFICIENT_HOURS' || (attendance?.workingMinutes !== undefined && attendance.workingMinutes < 255)
+                    ? 'Insufficient Hours'
+                    : (status === 'HALF_DAY' || (attendance?.workingMinutes !== undefined && attendance.workingMinutes < 510)
+                      ? 'Half Day Complete'
+                      : 'Day Complete'))
+                  : badge.label}
               </Text>
               <Text style={styles.completedSubtitle}>
                 {hasCheckedOut
-                  ? (status === 'INSUFFICIENT_HOURS' || (attendance?.workingMinutes !== undefined && attendance.workingMinutes < 510)
-                    ? `You checked out at ${formatTime(attendance?.checkOut || null)} (${formatDuration(attendance?.workingMinutes || 0)}). Less than the required 8h 30m (510 mins).`
-                    : `You checked out at ${formatTime(attendance?.checkOut || null)}. Great work today!`)
+                  ? (status === 'INSUFFICIENT_HOURS' || (attendance?.workingMinutes !== undefined && attendance.workingMinutes < 255)
+                    ? `You checked out at ${formatTime(attendance?.checkOut || null)} (${formatDuration(attendance?.workingMinutes || 0)}). Less than the minimum half day requirement (4h 15m).`
+                    : (status === 'HALF_DAY' || (attendance?.workingMinutes !== undefined && attendance.workingMinutes < 510)
+                      ? `You checked out at ${formatTime(attendance?.checkOut || null)} (${formatDuration(attendance?.workingMinutes || 0)}). Half Day marked (Required for Full Day: 8h 30m).`
+                      : `You checked out at ${formatTime(attendance?.checkOut || null)}. Great work today!`))
                   : status === 'ON_LEAVE'
                   ? `Approved Leave: ${attendance?.leaveType || 'Annual Leave'}`
                   : status === 'HOLIDAY'

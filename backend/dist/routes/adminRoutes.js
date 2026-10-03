@@ -72,6 +72,19 @@ router.get('/holidays', settingsController_1.getHolidays);
 router.post('/holidays', settingsController_1.addHoliday);
 router.delete('/holidays/:id', settingsController_1.deleteHoliday);
 router.get('/reports/attendance', adminReportController_1.getAttendanceReport);
+router.get('/reports/attendance-policy-pdf', async (req, res) => {
+    try {
+        const { generateAttendanceRulesPdf } = await Promise.resolve().then(() => __importStar(require('../services/policyPdfService')));
+        const pdfBuf = await generateAttendanceRulesPdf();
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', 'attachment; filename="Falcon_Attendance_Rules_and_Policy.pdf"');
+        res.setHeader('Content-Length', pdfBuf.length);
+        res.end(pdfBuf);
+    }
+    catch (err) {
+        res.status(500).json({ success: false, error: { message: err.message || 'Failed to generate policy PDF' } });
+    }
+});
 // WhatsApp Alert Endpoints
 router.get('/whatsapp-logs', async (req, res) => {
     try {
@@ -113,6 +126,7 @@ router.post('/leave/initialize', (req, res, next) => {
 router.get('/leave', adminLeaveController_1.getAdminLeaves);
 router.patch('/leave/:id/approve', adminLeaveController_1.approveLeave);
 router.patch('/leave/:id/reject', adminLeaveController_1.rejectLeave);
+router.patch('/leave/:id/revoke', adminLeaveController_1.revokeLeave);
 router.post('/leave/adjust-balance', adminLeaveController_1.adjustEmployeeLeaveBalance);
 router.get('/leave/balance/:employeeId', adminLeaveController_1.getEmployeeLeaveBalance);
 router.get('/leave/adjust-history/:employeeId', adminLeaveController_1.getLeaveAdjustmentHistory);

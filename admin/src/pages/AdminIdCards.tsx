@@ -150,7 +150,10 @@ export default function AdminIdCards() {
   // Bulk PDF Download
   const handleBulkDownloadPdf = async () => {
     const targetIds = selectedIds.length > 0 ? selectedIds : filteredEmployees.map((e) => e.id);
-    if (targetIds.length === 0) return;
+    if (targetIds.length === 0) {
+      alert('No employees selected to generate ID cards.');
+      return;
+    }
 
     setBulkDownloading(true);
     try {
@@ -159,10 +162,20 @@ export default function AdminIdCards() {
         { userIds: targetIds },
         {
           headers: { Authorization: `Bearer ${token}` },
-          responseType: 'blob'
+          responseType: 'blob',
+          timeout: 120000
         }
       );
-      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+
+      // Verify the response is not an error JSON blob
+      if (res.data.type === 'application/json') {
+        const text = await res.data.text();
+        const json = JSON.parse(text);
+        throw new Error(json.error?.message || json.message || 'Server error occurred');
+      }
+
+      const blob = new Blob([res.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = `Falcon_Bulk_ID_Cards_${targetIds.length}_Employees.pdf`;
@@ -173,7 +186,20 @@ export default function AdminIdCards() {
       setSuccessMsg(`Successfully generated bulk PDF for ${targetIds.length} employee(s).`);
       setTimeout(() => setSuccessMsg(null), 4000);
     } catch (err: any) {
-      alert('Failed to generate bulk ID cards PDF');
+      console.error('handleBulkDownloadPdf error:', err);
+      let errMsg = 'Failed to generate bulk ID cards PDF';
+      if (err.response?.data instanceof Blob) {
+        try {
+          const text = await err.response.data.text();
+          const json = JSON.parse(text);
+          errMsg = json.error?.message || json.error || json.message || errMsg;
+        } catch {}
+      } else if (err.response?.data?.error?.message) {
+        errMsg = err.response.data.error.message;
+      } else if (err.message) {
+        errMsg = err.message;
+      }
+      alert(errMsg);
     } finally {
       setBulkDownloading(false);
     }
@@ -182,7 +208,10 @@ export default function AdminIdCards() {
   // Bulk ZIP Download
   const handleBulkDownloadZip = async () => {
     const targetIds = selectedIds.length > 0 ? selectedIds : filteredEmployees.map((e) => e.id);
-    if (targetIds.length === 0) return;
+    if (targetIds.length === 0) {
+      alert('No employees selected to generate ID cards.');
+      return;
+    }
 
     setBulkDownloading(true);
     try {
@@ -191,10 +220,20 @@ export default function AdminIdCards() {
         { userIds: targetIds },
         {
           headers: { Authorization: `Bearer ${token}` },
-          responseType: 'blob'
+          responseType: 'blob',
+          timeout: 120000
         }
       );
-      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/zip' }));
+
+      // Verify the response is not an error JSON blob
+      if (res.data.type === 'application/json') {
+        const text = await res.data.text();
+        const json = JSON.parse(text);
+        throw new Error(json.error?.message || json.message || 'Server error occurred');
+      }
+
+      const blob = new Blob([res.data], { type: 'application/zip' });
+      const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = `Falcon_Bulk_ID_Cards_Archive_${targetIds.length}_Employees.zip`;
@@ -205,7 +244,20 @@ export default function AdminIdCards() {
       setSuccessMsg(`Successfully generated ZIP archive for ${targetIds.length} employee(s).`);
       setTimeout(() => setSuccessMsg(null), 4000);
     } catch (err: any) {
-      alert('Failed to generate bulk ID cards ZIP archive');
+      console.error('handleBulkDownloadZip error:', err);
+      let errMsg = 'Failed to generate bulk ID cards ZIP archive';
+      if (err.response?.data instanceof Blob) {
+        try {
+          const text = await err.response.data.text();
+          const json = JSON.parse(text);
+          errMsg = json.error?.message || json.error || json.message || errMsg;
+        } catch {}
+      } else if (err.response?.data?.error?.message) {
+        errMsg = err.response.data.error.message;
+      } else if (err.message) {
+        errMsg = err.message;
+      }
+      alert(errMsg);
     } finally {
       setBulkDownloading(false);
     }

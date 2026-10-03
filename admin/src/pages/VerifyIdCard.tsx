@@ -132,7 +132,9 @@ export default function VerifyIdCard() {
                     {data.profilePhotoUrl ? (
                       <img
                         src={
-                          data.profilePhotoUrl.startsWith('http')
+                          data.profilePhotoUrl.startsWith('data:') ||
+                          data.profilePhotoUrl.startsWith('http://') ||
+                          data.profilePhotoUrl.startsWith('https://')
                             ? data.profilePhotoUrl
                             : `${API_URL}${data.profilePhotoUrl.startsWith('/') ? '' : '/'}${data.profilePhotoUrl}`
                         }
