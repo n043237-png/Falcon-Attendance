@@ -85,36 +85,6 @@ router.get('/reports/attendance-policy-pdf', async (req, res) => {
         res.status(500).json({ success: false, error: { message: err.message || 'Failed to generate policy PDF' } });
     }
 });
-// WhatsApp Alert Endpoints
-router.get('/whatsapp-logs', async (req, res) => {
-    try {
-        const date = req.query.date || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-        const logsRes = await (0, db_1.query)(`
-      SELECT w.id, w.employee_id as "employeeId", u.name as "employeeName", u.department,
-             w.recipient_phone as "recipientPhone", w.alert_type as "alertType",
-             w.attendance_date as "attendanceDate", w.message, w.status, w.sent_at as "sentAt"
-      FROM whatsapp_logs w
-      JOIN users u ON w.employee_id = u.id
-      WHERE w.attendance_date = $1
-      ORDER BY w.sent_at DESC
-    `, [date]);
-        res.json({ success: true, data: logsRes.rows });
-    }
-    catch (err) {
-        res.status(500).json({ success: false, error: { message: 'Failed to fetch WhatsApp logs' } });
-    }
-});
-router.post('/test-whatsapp-alert', async (req, res) => {
-    try {
-        const { checkAndSendLateAttendanceAlerts } = await Promise.resolve().then(() => __importStar(require('../services/whatsappService')));
-        const date = req.body.date;
-        const result = await checkAndSendLateAttendanceAlerts(date);
-        res.json({ success: true, result });
-    }
-    catch (err) {
-        res.status(500).json({ success: false, error: { message: err.message || 'Failed to trigger WhatsApp alerts' } });
-    }
-});
 router.get('/attendance', adminController_1.getAttendance);
 router.get('/attendance/summary', adminController_1.getDailySummary);
 router.get('/leave/is-initialized', (req, res, next) => {

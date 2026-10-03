@@ -124,19 +124,6 @@ function startScheduler() {
     }, {
         timezone: 'Asia/Kolkata'
     });
-    // 11:00 AM IST - Daily Late Attendance WhatsApp Alerts (Disabled per request)
-    /*
-    cron.schedule('0 11 * * *', async () => {
-      try {
-        console.log('[Scheduler] 11:00 AM IST: Checking late attendance and sending WhatsApp alerts...');
-        await checkAndSendLateAttendanceAlerts();
-      } catch (e) {
-        console.error('[Scheduler] 11:00 AM Late Attendance WhatsApp error:', e);
-      }
-    }, {
-      timezone: 'Asia/Kolkata'
-    });
-    */
     // Quarterly Credit Engine - Runs every day at 00:01
     node_cron_1.default.schedule('1 0 * * *', async () => {
         try {
@@ -316,14 +303,6 @@ function startScheduler() {
                 catch (e) {
                     console.error('Failed to insert consolidated admin absent alert:', e);
                 }
-                // WhatsApp Late Attendance Alerts (Disabled per request)
-                /*
-                try {
-                  await checkAndSendLateAttendanceAlerts(dateStr);
-                } catch (e: any) {
-                  console.error('[Scheduler] WhatsApp late alert check error:', e);
-                }
-                */
             }
             // 3. CHECKOUT MISSING PROCESSING
             // If current time >= checkout_reminder_time (19:00 = 7:00 PM)
