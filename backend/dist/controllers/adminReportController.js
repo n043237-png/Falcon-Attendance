@@ -174,7 +174,21 @@ const getAttendanceReport = async (req, res) => {
                 const result = (0, attendanceStatusService_1.calculateStatus)(dStr, rec, settings, hol, lve, new Date());
                 result.holidayName = result.holidayName || null;
                 result.leaveType = lve ? lve.leave_type : null;
-                if (!status || status === 'All' || result.status === status) {
+                const isLateRecord = (result.status === 'PRESENT' && result.isLate) || !!rec?.is_late || (rec && Number(rec.late_minutes) > 0);
+                let matchesStatus = false;
+                if (!status || status === 'All' || status === '') {
+                    matchesStatus = true;
+                }
+                else if (status === 'LATE') {
+                    matchesStatus = isLateRecord;
+                }
+                else if (status === 'ON_LEAVE' || status === 'LEAVE') {
+                    matchesStatus = result.status === 'ON_LEAVE' || result.status === 'HALF_DAY_LEAVE';
+                }
+                else {
+                    matchesStatus = result.status === status;
+                }
+                if (matchesStatus) {
                     dailyRecords.push({
                         date: dStr,
                         day: curr.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'Asia/Kolkata' }),
@@ -189,7 +203,7 @@ const getAttendanceReport = async (req, res) => {
                         shiftName: emp.shift_name,
                         leaveType: result.leaveType,
                         holidayName: result.holidayName,
-                        isLate: result.status === 'PRESENT' && result.isLate,
+                        isLate: isLateRecord,
                         attendanceMode: rec?.attendance_mode || emp.attendance_mode || 'Office',
                         address: rec?.check_in_address || null,
                         selfieUrl: rec?.check_in_selfie_url || null
@@ -450,6 +464,8 @@ async function exportExcel(res, summary, employeeReports, from, to) {
                 st = 'Insufficient Hours';
             if (d.status === 'CHECKOUT_MISSING')
                 st = 'Checkout Missing';
+            if (d.isLate)
+                st = 'Present (Late)';
             const row = sheet.getRow(currentRowIdx);
             row.height = 22;
             const isEven = currentRowIdx % 2 === 0;

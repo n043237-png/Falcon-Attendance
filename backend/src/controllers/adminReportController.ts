@@ -191,7 +191,20 @@ export const getAttendanceReport = async (req: AuthRequest, res: Response): Prom
         (result as any).holidayName = (result as any).holidayName || null;
         (result as any).leaveType = lve ? lve.leave_type : null;
 
-        if (!status || status === 'All' || result.status === status) {
+        const isLateRecord = (result.status === 'PRESENT' && result.isLate) || !!rec?.is_late || (rec && Number(rec.late_minutes) > 0);
+
+        let matchesStatus = false;
+        if (!status || status === 'All' || status === '') {
+          matchesStatus = true;
+        } else if (status === 'LATE') {
+          matchesStatus = isLateRecord;
+        } else if (status === 'ON_LEAVE' || status === 'LEAVE') {
+          matchesStatus = result.status === 'ON_LEAVE' || result.status === 'HALF_DAY_LEAVE';
+        } else {
+          matchesStatus = result.status === status;
+        }
+
+        if (matchesStatus) {
           dailyRecords.push({
             date: dStr,
             day: curr.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'Asia/Kolkata' }),
@@ -206,7 +219,7 @@ export const getAttendanceReport = async (req: AuthRequest, res: Response): Prom
             shiftName: emp.shift_name,
             leaveType: (result as any).leaveType,
             holidayName: (result as any).holidayName,
-            isLate: result.status === 'PRESENT' && result.isLate,
+            isLate: isLateRecord,
             attendanceMode: rec?.attendance_mode || emp.attendance_mode || 'Office',
             address: rec?.check_in_address || null,
             selfieUrl: rec?.check_in_selfie_url || null
@@ -477,6 +490,7 @@ async function exportExcel(res: Response, summary: any, employeeReports: any[], 
       if (d.status === 'ON_LEAVE' || d.status === 'HALF_DAY_LEAVE') st = 'Leave';
       if (d.status === 'INSUFFICIENT_HOURS') st = 'Insufficient Hours';
       if (d.status === 'CHECKOUT_MISSING') st = 'Checkout Missing';
+      if (d.isLate) st = 'Present (Late)';
 
       const row = sheet.getRow(currentRowIdx);
       row.height = 22;

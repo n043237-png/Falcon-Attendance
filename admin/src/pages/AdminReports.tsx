@@ -185,6 +185,15 @@ export default function AdminReports() {
     switch (status) {
       case 'PRESENT':
         return <span className="badge badge-success">PRESENT</span>;
+      case 'LATE':
+        return (
+          <span
+            className="badge"
+            style={{ backgroundColor: '#FEF3C7', color: '#B45309', border: '1px solid #FCD34D' }}
+          >
+            LATE
+          </span>
+        );
       case 'ABSENT':
         return <span className="badge badge-danger">ABSENT</span>;
       case 'INSUFFICIENT_HOURS':
@@ -358,10 +367,9 @@ export default function AdminReports() {
               >
                 <option value="">All Statuses</option>
                 <option value="PRESENT">Present</option>
-                <option value="ABSENT">Absent</option>
-                <option value="INSUFFICIENT_HOURS">Insufficient Hours</option>
-                <option value="CHECKOUT_MISSING">Checkout Missing</option>
+                <option value="LATE">Late</option>
                 <option value="HALF_DAY">Half Day</option>
+                <option value="ABSENT">Absent</option>
                 <option value="ON_LEAVE">On Leave</option>
               </Form.Select>
             </Form.Group>

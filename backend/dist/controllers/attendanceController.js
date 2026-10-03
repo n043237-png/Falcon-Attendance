@@ -207,10 +207,22 @@ const checkIn = async (req, res) => {
                 const empName = req.user.name || 'An employee';
                 const empCode = req.user.employee_id || `FISPL${String(employeeId).padStart(3, '0')}`;
                 const lateMinutes = Math.round(evalResult.lateMinutes);
+                const lateH = Math.floor(lateMinutes / 60);
+                const lateM = lateMinutes % 60;
+                let lateDurationStr = `${lateMinutes} minutes`;
+                if (lateH > 0 && lateM > 0) {
+                    lateDurationStr = `${lateH}h ${lateM}m (${lateH} hour${lateH > 1 ? 's' : ''} ${lateM} mins)`;
+                }
+                else if (lateH > 0) {
+                    lateDurationStr = `${lateH} hour${lateH > 1 ? 's' : ''} (${lateH}h)`;
+                }
+                else {
+                    lateDurationStr = `${lateM} minute${lateM !== 1 ? 's' : ''}`;
+                }
                 // 2. Employee Checked In Late -> Notify Admins
                 await notificationService_1.NotificationService.notifyAdmins({
                     title: 'Late Check-in',
-                    message: `${empName} (${empCode}) checked in at ${timeStr12}, which is ${lateMinutes} minutes late.`,
+                    message: `${empName} (${empCode}) checked in at ${timeStr12}, which is ${lateDurationStr} late.`,
                     type: 'Attendance',
                     priority: 'Medium',
                     actionUrl: `/attendance?status=Late&date=${attendanceDate}&search=${encodeURIComponent(empName)}`,
@@ -762,10 +774,9 @@ const getSummary = async (req, res) => {
                 summary.totalWorkingHours += (result.workingMinutes / 60);
                 current.setDate(current.getDate() + 1);
             }
-            // Calculate attendance percentage: (Present + (Half Days * 0.5) + (Half Day Leave * 0.5) + Checkout Missing) / (Working Days - Leaves)
-            // Actually simpler: (Present + CheckoutMissing + HalfDay/2 + HalfDayLeave/2) / (TotalWorkingDays - FullDayLeaves)
-            // The user just requested a logical percentage.
-            const attended = summary.present + summary.checkoutMissing + (summary.halfDays * 0.5) + (summary.halfDayLeave * 0.5);
+            // Calculate attendance percentage: (Present + (Half Days * 0.5) + (Half Day Leave * 0.5)) / (Working Days - Leaves)
+            // Note: CheckoutMissing has indeterminate / 0 working hours and cannot be counted as attended until regularized
+            const attended = summary.present + (summary.halfDays * 0.5) + (summary.halfDayLeave * 0.5);
             const required = summary.totalWorkingDays - summary.onLeave;
             if (required > 0) {
                 summary.attendancePercentage = Math.round((attended / required) * 100);
