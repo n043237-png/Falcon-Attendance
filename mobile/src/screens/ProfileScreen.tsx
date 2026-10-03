@@ -20,7 +20,6 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { getProfile, updateProfile, changePassword, resolvePhotoUrl, uploadProfilePhoto, deleteProfilePhoto } from '../api/profileApi';
 import { Ionicons } from '@expo/vector-icons';
-import { sendTestNotification, getNativeFcmToken } from '../services/pushNotificationService';
 import { FullImageModal } from '../components/FullImageModal';
 import { DigitalIdCardModal } from '../components/DigitalIdCardModal';
 
@@ -591,44 +590,6 @@ export default function ProfileScreen() {
         <TouchableOpacity style={styles.btnOutline} onPress={() => setShowPassword(true)} activeOpacity={0.8}>
           <Ionicons name="key-outline" size={18} color="#2563EB" style={{ marginRight: 8 }} />
           <Text style={styles.btnTextOutline}>Change Account Password</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.btnNotificationTest}
-          onPress={async () => {
-            const res = await sendTestNotification();
-            Alert.alert(res.success ? 'Notification Sent! 🔔' : 'Notification Alert', res.message);
-          }}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="notifications-outline" size={18} color="#2563EB" style={{ marginRight: 8 }} />
-          <Text style={styles.btnTextNotificationTest}>Test Push Notification</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.btnNotificationTest, { backgroundColor: '#FFF7ED', borderColor: '#FED7AA', marginTop: 10 }]}
-          onPress={async () => {
-            const fcmToken = await getNativeFcmToken();
-            if (fcmToken) {
-              Alert.alert(
-                'Firebase Console Connected 🔥',
-                `Your Device FCM Registration Token:\n\n${fcmToken.slice(0, 36)}...\n\nTap "Share / Copy Token" to copy it and paste into Firebase Console > Messaging > Send test message.`,
-                [
-                  {
-                    text: 'Share / Copy Token',
-                    onPress: () => Share.share({ message: fcmToken, title: 'Firebase FCM Registration Token' })
-                  },
-                  { text: 'Close', style: 'cancel' }
-                ]
-              );
-            } else {
-              Alert.alert('Firebase FCM Token', 'Token is initializing. Please ensure network connectivity and Google Play Services are enabled.');
-            }
-          }}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="flame-outline" size={18} color="#EA580C" style={{ marginRight: 8 }} />
-          <Text style={[styles.btnTextNotificationTest, { color: '#C2410C' }]}>Firebase Console FCM Token</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.btnLogout} onPress={logout} activeOpacity={0.8}>
@@ -1428,22 +1389,6 @@ const styles = StyleSheet.create({
   },
   btnTextOutline: {
     color: '#1E40AF',
-    fontWeight: '700',
-    fontSize: 15,
-  },
-  btnNotificationTest: {
-    flexDirection: 'row',
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-    backgroundColor: '#F0F9FF',
-    paddingVertical: 14,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-  },
-  btnTextNotificationTest: {
-    color: '#0369A1',
     fontWeight: '700',
     fontSize: 15,
   },
