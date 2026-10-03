@@ -24,104 +24,114 @@ interface ParsedEmployee {
   code: string;
 }
 
-interface ParsedRoster {
+interface ParsedNotificationData {
+  isRoster: boolean;
+  rosterType: 'ABSENT' | 'MISSING_CHECKOUT' | 'GENERIC';
   intro: string;
   employees: ParsedEmployee[];
-  isMissingCheckout: boolean;
 }
 
 /**
- * Determines whether a notification is an admin broadcast/summary report of multiple employees
- * (e.g. absent roster or missing checkout list). Personal employee notifications (late check-in,
- * checkout, profile update, reminders, leave, etc.) must NEVER be treated as a roster.
- */
-const isRosterNotification = (item?: Notification | null, isAdmin?: boolean): boolean => {
-  if (!item || !item.message) return false;
-
-  // Only administrators receive multi-employee broadcast rosters
-  if (!isAdmin) return false;
-
-  const title = (item.title || '').toLowerCase();
-  const type = (item.type || '').toUpperCase();
-  const msg = (item.message || '').toLowerCase();
-
-  // Explicit type check for admin absence report
-  if (type === 'ADMIN_DAILY_ABSENCE') return true;
-
-  // Title checks
-  const isAbsentTitle = title.includes('absent notification') || title.includes('daily absence');
-  const isMissingCheckoutTitle = title.includes('missing check-out');
-
-  // Broadcast phrases
-  const hasBroadcastPhrase =
-    msg.includes('are considered absent:') ||
-    msg.includes('absence report:') ||
-    (msg.includes('employee(s) have not marked check-out') && msg.includes(':'));
-
-  return isAbsentTitle || isMissingCheckoutTitle || hasBroadcastPhrase;
-};
-
-/**
- * Extracts individual employees and employee codes from absent/attendance notifications.
- * Matches patterns like: "Sufyan khan (FISPL0004), Mangesh B (FISPL0012)"
+ * Extracts individual employees and employee codes from consolidated absent/missing check-out roster notifications.
+ * Preserves colons in timestamps (e.g. "11:00 AM", "7:00 PM") and prevents personal notifications from being misclassified.
  */
 const parseNotificationEmployees = (
-  item?: Notification | null,
-  isAdmin?: boolean
-): ParsedRoster => {
-  if (!item || !item.message) {
-    return { intro: '', employees: [], isMissingCheckout: false };
+  message?: string,
+  title?: string,
+  type?: string
+): ParsedNotificationData => {
+  if (!message) return { isRoster: false, rosterType: 'GENERIC', intro: '', employees: [] };
+
+  const rawTitle = (title || '').toLowerCase();
+  const rawType = (type || '').toLowerCase();
+  const rawMsg = message.toLowerCase();
+
+  // 1. Identify if this is a consolidated broadcast roster
+  const isAbsentRoster =
+    rawTitle.includes('absent notification') ||
+    rawTitle.includes('absence') ||
+    rawType.includes('absence') ||
+    rawType === 'admin_daily_absence' ||
+    rawMsg.includes('considered absent:');
+
+  const isMissingCheckoutRoster =
+    rawTitle.includes('missing check-out') ||
+    rawTitle.includes('missing checkout') ||
+    rawMsg.includes('have not marked check-out');
+
+  if (!isAbsentRoster && !isMissingCheckoutRoster) {
+    return { isRoster: false, rosterType: 'GENERIC', intro: message, employees: [] };
   }
 
-  if (!isRosterNotification(item, isAdmin)) {
-    return { intro: item.message, employees: [], isMissingCheckout: false };
+  // 2. Personal alerts that might contain the word absence/checkout (extra safety)
+  if (
+    rawTitle.includes('late check-in') ||
+    rawTitle.includes('check-in successful') ||
+    rawTitle.includes('check-out successful') ||
+    rawTitle.includes('reminder') ||
+    rawTitle.includes('profile updated') ||
+    rawMsg.startsWith('your attendance has been marked') ||
+    rawMsg.startsWith('checkout recorded for')
+  ) {
+    return { isRoster: false, rosterType: 'GENERIC', intro: message, employees: [] };
   }
 
-  const isMissingCheckout =
-    (item.title || '').toLowerCase().includes('missing check-out') ||
-    item.message.toLowerCase().includes('not marked check-out');
+  const rosterType: 'ABSENT' | 'MISSING_CHECKOUT' = isMissingCheckoutRoster ? 'MISSING_CHECKOUT' : 'ABSENT';
 
-  // Find the separator colon that precedes the employee list
-  let intro = item.message;
+  // 3. Find the exact boundary before the employee list
+  let intro = message;
   let listPart = '';
 
-  const markerMatch = item.message.match(/^(.*?(?:considered absent|check-out for [^:]+|report|employees absent)):\s*(.+)$/i);
-  if (markerMatch && markerMatch[1] && markerMatch[2]) {
-    intro = markerMatch[1].trim() + ':';
-    listPart = markerMatch[2].trim();
+  const absentMarker = 'considered absent:';
+  const checkoutMarkerMatch = message.match(/have not marked check-out for [^:]+:/i);
+
+  if (message.includes(absentMarker)) {
+    const splitIdx = message.indexOf(absentMarker) + absentMarker.length;
+    intro = message.substring(0, splitIdx).trim();
+    listPart = message.substring(splitIdx).trim();
+  } else if (checkoutMarkerMatch && checkoutMarkerMatch.index !== undefined) {
+    const splitIdx = checkoutMarkerMatch.index + checkoutMarkerMatch[0].length;
+    intro = message.substring(0, splitIdx).trim();
+    listPart = message.substring(splitIdx).trim();
   } else {
-    const lastColon = item.message.lastIndexOf(':');
-    if (lastColon !== -1) {
-      intro = item.message.substring(0, lastColon + 1).trim();
-      listPart = item.message.substring(lastColon + 1).trim();
+    // Look for the last colon before the first "Name (EMPCODE)" pattern
+    const match = message.match(/:\s*([A-Za-z\s.'-]+\s*\([A-Za-z0-9_-]{3,20}\))/);
+    if (match && match.index !== undefined) {
+      intro = message.substring(0, match.index + 1).trim();
+      listPart = message.substring(match.index + 1).trim();
     }
   }
 
   if (!listPart) {
-    return { intro: item.message, employees: [], isMissingCheckout };
+    return { isRoster: false, rosterType, intro: message, employees: [] };
   }
 
-  // Strictly match valid names and employee codes (e.g. FISPL0004, EMP001, etc.)
-  // Code must not contain spaces, colons or long sentences
-  const regex = /([A-Za-z\s.'-]+?)\s*\(([A-Za-z0-9_-]{2,15})\)/g;
+  // 4. Parse employees from listPart
+  // Pattern: Name (CODE) where CODE is 3-20 characters without spaces
+  const empRegex = /([A-Za-z\s.'-]+?)\s*\(([A-Za-z0-9_-]{3,20})\)/g;
   const employees: ParsedEmployee[] = [];
-  let match;
-  while ((match = regex.exec(listPart)) !== null) {
-    const name = match[1]
-      .replace(/^\s*(?:and|,)\s+/i, '')
-      .replace(/^[.\s]+|[.\s]+$/g, '')
+  let m;
+  while ((m = empRegex.exec(listPart)) !== null) {
+    let name = m[1]
+      .replace(/^\s*and\s+/i, '')
+      .replace(/^[,.\s]+|[,.\s]+$/g, '')
       .trim();
-    const code = match[2].trim();
+    const code = m[2].trim();
+
+    if (name.toLowerCase().startsWith('considered absent:')) {
+      name = name.substring('considered absent:'.length).trim();
+    }
+
     if (name && code && name.length >= 2) {
       employees.push({ name, code });
     }
   }
 
-  if (employees.length > 0) {
-    return { intro, employees, isMissingCheckout };
+  if (employees.length === 0) {
+    return { isRoster: false, rosterType, intro: message, employees: [] };
   }
 
-  return { intro: item.message, employees: [], isMissingCheckout };
+  return { isRoster: true, rosterType, intro, employees };
 };
 
 const getInitials = (name: string): string => {
@@ -301,12 +311,18 @@ export default function NotificationsScreen() {
 
   // Filtered employees for selected notification modal
   const selectedParsed = useMemo(() => {
-    if (!selectedNotification) return { intro: '', employees: [], isMissingCheckout: false };
-    return parseNotificationEmployees(selectedNotification, isAdmin);
-  }, [selectedNotification, isAdmin]);
+    if (!selectedNotification) {
+      return { isRoster: false, rosterType: 'GENERIC' as const, intro: '', employees: [] };
+    }
+    return parseNotificationEmployees(
+      selectedNotification.message,
+      selectedNotification.title,
+      selectedNotification.type
+    );
+  }, [selectedNotification]);
 
   const filteredModalEmployees = useMemo(() => {
-    if (!selectedParsed.employees.length) return [];
+    if (!selectedParsed.isRoster || !selectedParsed.employees.length) return [];
     if (!modalSearch.trim()) return selectedParsed.employees;
     const q = modalSearch.toLowerCase().trim();
     return selectedParsed.employees.filter(
@@ -319,10 +335,11 @@ export default function NotificationsScreen() {
     const theme = getTypeTheme(item.type, item.priority);
     const dateText = formatNotificationDate(item.sentAt || item.sent_at || item.createdAt || item.created_at);
 
-    const { intro, employees } = parseNotificationEmployees(item, isAdmin);
+    const parsed = parseNotificationEmployees(item.message, item.title, item.type);
     const isExpanded = !!expandedIds[item.id];
-    const hasEmployees = employees.length > 0;
+    const hasEmployees = parsed.isRoster && parsed.employees.length > 0;
     const isLongText = (item.message || '').length > 90 || (item.message || '').includes('\n');
+    const isMissingCheckout = parsed.rosterType === 'MISSING_CHECKOUT';
 
     return (
       <TouchableOpacity
@@ -345,22 +362,42 @@ export default function NotificationsScreen() {
           {hasEmployees ? (
             <View style={styles.employeeNotificationBlock}>
               <Text style={[styles.messageText, isUnread && styles.unreadMessage]}>
-                {intro}
+                {parsed.intro}
               </Text>
 
               {/* Renders employee chips */}
               <View style={styles.chipsContainer}>
-                {(isExpanded ? employees : employees.slice(0, 3)).map((emp, idx) => (
-                  <View key={idx} style={styles.employeeChip}>
-                    <Ionicons name="person-circle" size={15} color="#DC2626" style={{ marginRight: 4 }} />
-                    <Text style={styles.chipEmpName} numberOfLines={1}>{emp.name}</Text>
-                    <Text style={styles.chipEmpCode}>({emp.code})</Text>
+                {(isExpanded ? parsed.employees : parsed.employees.slice(0, 3)).map((emp, idx) => (
+                  <View
+                    key={idx}
+                    style={[
+                      styles.employeeChip,
+                      isMissingCheckout && { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' },
+                    ]}
+                  >
+                    <Ionicons
+                      name="person-circle"
+                      size={15}
+                      color={isMissingCheckout ? '#D97706' : '#DC2626'}
+                      style={{ marginRight: 4 }}
+                    />
+                    <Text
+                      style={[styles.chipEmpName, isMissingCheckout && { color: '#B45309' }]}
+                      numberOfLines={1}
+                    >
+                      {emp.name}
+                    </Text>
+                    <Text
+                      style={[styles.chipEmpCode, isMissingCheckout && { color: '#D97706' }]}
+                    >
+                      ({emp.code})
+                    </Text>
                   </View>
                 ))}
 
-                {!isExpanded && employees.length > 3 && (
+                {!isExpanded && parsed.employees.length > 3 && (
                   <View style={styles.moreCountChip}>
-                    <Text style={styles.moreCountText}>+{employees.length - 3} more</Text>
+                    <Text style={styles.moreCountText}>+{parsed.employees.length - 3} more</Text>
                   </View>
                 )}
               </View>
@@ -376,7 +413,7 @@ export default function NotificationsScreen() {
                   activeOpacity={0.7}
                 >
                   <Text style={styles.expandToggleText}>
-                    {isExpanded ? 'Show less' : `Show all ${employees.length} employees`}
+                    {isExpanded ? 'Show less' : `Show all ${parsed.employees.length} employees`}
                   </Text>
                   <Ionicons
                     name={isExpanded ? 'chevron-up' : 'chevron-down'}
@@ -549,25 +586,39 @@ export default function NotificationsScreen() {
 
             {/* Modal Body */}
             <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={true}>
-              {selectedParsed.employees.length > 0 ? (
+              {selectedParsed.isRoster && selectedParsed.employees.length > 0 ? (
                 <View>
                   {/* Summary Banner */}
-                  <View style={styles.summaryBanner}>
-                    <View style={styles.bannerTopRow}>
-                      <View style={styles.bannerBadge}>
-                        <Ionicons name="warning" size={14} color="#DC2626" style={{ marginRight: 4 }} />
-                        <Text style={styles.bannerBadgeText}>
-                          {selectedParsed.employees.length} Employees {selectedParsed.isMissingCheckout ? 'Missing Check-Out' : 'Absent'}
+                  {(() => {
+                    const isMissingCheckout = selectedParsed.rosterType === 'MISSING_CHECKOUT';
+                    const bannerBadgeBg = isMissingCheckout ? '#FEF3C7' : '#FEE2E2';
+                    const bannerBadgeText = isMissingCheckout ? '#B45309' : '#B91C1C';
+                    const bannerIcon = isMissingCheckout ? 'time' : 'warning';
+                    const bannerTitle = isMissingCheckout
+                      ? `${selectedParsed.employees.length} Missing Check-Out`
+                      : `${selectedParsed.employees.length} Employees Absent`;
+
+                    return (
+                      <View style={[styles.summaryBanner, isMissingCheckout && styles.summaryBannerMissing]}>
+                        <View style={styles.bannerTopRow}>
+                          <View style={[styles.bannerBadge, { backgroundColor: bannerBadgeBg }]}>
+                            <Ionicons name={bannerIcon} size={14} color={bannerBadgeText} style={{ marginRight: 4 }} />
+                            <Text style={[styles.bannerBadgeText, { color: bannerBadgeText }]}>
+                              {bannerTitle}
+                            </Text>
+                          </View>
+                          {selectedNotification?.priority && (
+                            <View style={styles.modalPriorityPill}>
+                              <Text style={styles.modalPriorityText}>{selectedNotification.priority}</Text>
+                            </View>
+                          )}
+                        </View>
+                        <Text style={[styles.bannerIntroText, isMissingCheckout && { color: '#92400E' }]}>
+                          {selectedParsed.intro}
                         </Text>
                       </View>
-                      {selectedNotification?.priority && (
-                        <View style={styles.modalPriorityPill}>
-                          <Text style={styles.modalPriorityText}>{selectedNotification.priority}</Text>
-                        </View>
-                      )}
-                    </View>
-                    <Text style={styles.bannerIntroText}>{selectedParsed.intro}</Text>
-                  </View>
+                    );
+                  })()}
 
                   {/* Search Bar for List */}
                   {selectedParsed.employees.length > 4 && (
@@ -590,74 +641,126 @@ export default function NotificationsScreen() {
                   )}
 
                   {/* Employee List */}
-                  <View style={styles.employeeListContainer}>
-                    <Text style={styles.sectionHeading}>
-                      {selectedParsed.isMissingCheckout ? 'Missing Check-Out List' : 'Absent Roster'} ({filteredModalEmployees.length} of {selectedParsed.employees.length})
-                    </Text>
+                  {(() => {
+                    const isMissingCheckout = selectedParsed.rosterType === 'MISSING_CHECKOUT';
+                    const sectionTitle = isMissingCheckout
+                      ? `Missing Check-Out Roster (${filteredModalEmployees.length} of ${selectedParsed.employees.length})`
+                      : `Absent Roster (${filteredModalEmployees.length} of ${selectedParsed.employees.length})`;
 
-                    {filteredModalEmployees.map((emp, index) => (
-                      <View key={index} style={styles.employeeCardRow}>
-                        <View style={styles.empAvatarCircle}>
-                          <Text style={styles.empAvatarText}>{getInitials(emp.name)}</Text>
-                        </View>
-                        <View style={styles.empDetails}>
-                          <Text style={styles.empFullName}>{emp.name}</Text>
-                          <Text style={styles.empCodeBadge}>{emp.code}</Text>
-                        </View>
-                        <View style={styles.absentPill}>
-                          <Text style={styles.absentPillText}>
-                            {selectedParsed.isMissingCheckout ? 'NO CHECKOUT' : 'ABSENT'}
-                          </Text>
-                        </View>
-                      </View>
-                    ))}
+                    return (
+                      <View style={styles.employeeListContainer}>
+                        <Text style={styles.sectionHeading}>{sectionTitle}</Text>
 
-                    {filteredModalEmployees.length === 0 && (
-                      <View style={styles.noMatchBox}>
-                        <Text style={styles.noMatchText}>No employees matching "{modalSearch}"</Text>
+                        {filteredModalEmployees.map((emp, index) => (
+                          <View key={index} style={styles.employeeCardRow}>
+                            <View
+                              style={[
+                                styles.empAvatarCircle,
+                                isMissingCheckout && { backgroundColor: '#FEF3C7' },
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.empAvatarText,
+                                  isMissingCheckout && { color: '#B45309' },
+                                ]}
+                              >
+                                {getInitials(emp.name)}
+                              </Text>
+                            </View>
+                            <View style={styles.empDetails}>
+                              <Text style={styles.empFullName}>{emp.name}</Text>
+                              <Text style={styles.empCodeBadge}>{emp.code}</Text>
+                            </View>
+                            <View
+                              style={[
+                                styles.absentPill,
+                                isMissingCheckout && { backgroundColor: '#FEF3C7' },
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.absentPillText,
+                                  isMissingCheckout && { color: '#B45309' },
+                                ]}
+                              >
+                                {isMissingCheckout ? 'NO CHECK-OUT' : 'ABSENT'}
+                              </Text>
+                            </View>
+                          </View>
+                        ))}
+
+                        {filteredModalEmployees.length === 0 && (
+                          <View style={styles.noMatchBox}>
+                            <Text style={styles.noMatchText}>No employees matching "{modalSearch}"</Text>
+                          </View>
+                        )}
                       </View>
-                    )}
-                  </View>
+                    );
+                  })()}
                 </View>
               ) : (
                 <View style={styles.standardMessageContainer}>
                   <View style={styles.standardMessageCard}>
-                    {selectedNotification?.priority && (
-                      <View style={styles.standardMetaRow}>
-                        <View
+                    <View
+                      style={[
+                        styles.standardMessageHeader,
+                        {
+                          backgroundColor: getTypeTheme(
+                            selectedNotification?.type,
+                            selectedNotification?.priority
+                          ).bg,
+                        },
+                      ]}
+                    >
+                      <Ionicons
+                        name={getTypeTheme(selectedNotification?.type, selectedNotification?.priority).icon}
+                        size={22}
+                        color={getTypeTheme(selectedNotification?.type, selectedNotification?.priority).color}
+                      />
+                      <View style={{ marginLeft: 12, flex: 1 }}>
+                        <Text
                           style={[
-                            styles.modalPriorityPill,
+                            styles.standardMessageTitle,
                             {
-                              backgroundColor: getTypeTheme(
-                                selectedNotification.type,
-                                selectedNotification.priority
-                              ).bg,
+                              color: getTypeTheme(
+                                selectedNotification?.type,
+                                selectedNotification?.priority
+                              ).color,
                             },
                           ]}
+                          numberOfLines={1}
                         >
-                          <Text
-                            style={[
-                              styles.modalPriorityText,
-                              {
-                                color: getTypeTheme(
-                                  selectedNotification.type,
-                                  selectedNotification.priority
-                                ).color,
-                              },
-                            ]}
-                          >
-                            {selectedNotification.priority} PRIORITY
+                          {selectedNotification?.title || selectedNotification?.type || 'Notification'}
+                        </Text>
+                        {selectedNotification?.priority && (
+                          <Text style={styles.standardMessagePrioText}>
+                            Priority: {selectedNotification.priority.toUpperCase()}
                           </Text>
-                        </View>
-                        {selectedNotification.attendanceDate && (
-                          <View style={styles.standardDatePill}>
-                            <Ionicons name="calendar-outline" size={12} color="#64748B" style={{ marginRight: 4 }} />
-                            <Text style={styles.standardDateText}>{selectedNotification.attendanceDate}</Text>
-                          </View>
                         )}
                       </View>
+                    </View>
+
+                    <View style={styles.standardMessageContent}>
+                      <Text style={styles.standardMessageBodyText}>{selectedNotification?.message}</Text>
+                    </View>
+
+                    {(selectedNotification?.sentAt ||
+                      selectedNotification?.sent_at ||
+                      selectedNotification?.createdAt ||
+                      selectedNotification?.created_at) && (
+                      <View style={styles.standardMessageMetaRow}>
+                        <Ionicons name="time-outline" size={13} color="#94A3B8" />
+                        <Text style={styles.standardMessageMetaTime}>
+                          {formatNotificationDate(
+                            selectedNotification?.sentAt ||
+                              selectedNotification?.sent_at ||
+                              selectedNotification?.createdAt ||
+                              selectedNotification?.created_at
+                          )}
+                        </Text>
+                      </View>
                     )}
-                    <Text style={styles.standardMessageText}>{selectedNotification?.message}</Text>
                   </View>
                 </View>
               )}
@@ -1128,39 +1231,59 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#94A3B8',
   },
+  summaryBannerMissing: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FCD34D',
+  },
   standardMessageContainer: {
-    paddingVertical: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
   },
   standardMessageCard: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 14,
-    padding: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: '#E2E8F0',
+    overflow: 'hidden',
   },
-  standardMetaRow: {
+  standardMessageHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
   },
-  standardDatePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F1F5F9',
-    paddingVertical: 3,
-    paddingHorizontal: 8,
-    borderRadius: 6,
+  standardMessageTitle: {
+    fontSize: 15,
+    fontWeight: '700',
   },
-  standardDateText: {
-    fontSize: 12,
+  standardMessagePrioText: {
+    fontSize: 11,
+    fontWeight: '600',
     color: '#64748B',
+    marginTop: 2,
+  },
+  standardMessageContent: {
+    padding: 18,
+  },
+  standardMessageBodyText: {
+    fontSize: 15,
+    color: '#1E293B',
+    lineHeight: 23,
     fontWeight: '500',
   },
-  standardMessageText: {
-    fontSize: 14.5,
-    color: '#1E293B',
-    lineHeight: 22,
+  standardMessageMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 18,
+    paddingBottom: 14,
+    gap: 4,
+  },
+  standardMessageMetaTime: {
+    fontSize: 12,
+    color: '#94A3B8',
+    fontWeight: '500',
   },
   modalFooter: {
     paddingHorizontal: 20,
