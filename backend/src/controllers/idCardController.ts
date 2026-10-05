@@ -261,12 +261,6 @@ export const verifyIdCard = async (req: Request, res: Response): Promise<void> =
  * Public Verification web page: Renders verified employee credential page
  */
 export const renderVerificationPage = async (req: Request, res: Response): Promise<void> => {
-  const adminDistHtml = path.join(process.cwd(), '..', 'admin', 'dist', 'index.html');
-  if (fs.existsSync(adminDistHtml)) {
-    res.sendFile(adminDistHtml);
-    return;
-  }
-
   const rawId = req.params.verificationId;
   const verificationId = Array.isArray(rawId) ? rawId[0] : rawId;
 
@@ -466,6 +460,10 @@ export const renderVerificationPage = async (req: Request, res: Response): Promi
           <div class="detail-row">
             <span class="detail-label">Joining Date</span>
             <span class="detail-value">${emp.joiningDate || 'N/A'}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Blood Group</span>
+            <span class="detail-value" style="color: #DC2626;">${emp.bloodGroup || 'N/A'}</span>
           </div>
           <div class="detail-row">
             <span class="detail-label">Status</span>

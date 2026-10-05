@@ -1,13 +1,8 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.renderVerificationPage = exports.verifyIdCard = exports.downloadBulkIdCardsZip = exports.downloadBulkIdCardsPdf = exports.getBulkIdCardsData = exports.downloadEmployeeIdCardPdf = exports.getEmployeeIdCard = exports.downloadMyIdCardPdf = exports.getMyIdCard = void 0;
 const idCardService_1 = require("../services/idCardService");
 const db_1 = require("../db");
-const path_1 = __importDefault(require("path"));
-const fs_1 = __importDefault(require("fs"));
 /**
  * Get current logged in employee's ID card data
  */
@@ -258,11 +253,6 @@ exports.verifyIdCard = verifyIdCard;
  * Public Verification web page: Renders verified employee credential page
  */
 const renderVerificationPage = async (req, res) => {
-    const adminDistHtml = path_1.default.join(process.cwd(), '..', 'admin', 'dist', 'index.html');
-    if (fs_1.default.existsSync(adminDistHtml)) {
-        res.sendFile(adminDistHtml);
-        return;
-    }
     const rawId = req.params.verificationId;
     const verificationId = Array.isArray(rawId) ? rawId[0] : rawId;
     try {
@@ -456,6 +446,10 @@ const renderVerificationPage = async (req, res) => {
           <div class="detail-row">
             <span class="detail-label">Joining Date</span>
             <span class="detail-value">${emp.joiningDate || 'N/A'}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Blood Group</span>
+            <span class="detail-value" style="color: #DC2626;">${emp.bloodGroup || 'N/A'}</span>
           </div>
           <div class="detail-row">
             <span class="detail-label">Status</span>
