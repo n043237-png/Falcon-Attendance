@@ -89,7 +89,7 @@ export default function VerifyIdCard() {
               </p>
               <div className="p-2.5 rounded-3 bg-light text-muted" style={{ fontSize: '12px' }}>
                 If you suspect this card is counterfeit, please contact{' '}
-                <strong>hr@falconinfosolutions.com</strong>.
+                <strong>info@falconinfo.net</strong>.
               </div>
             </Card.Body>
           ) : data ? (

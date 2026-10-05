@@ -61,7 +61,17 @@ export const checkIn = async (
     );
     return res.data;
   } catch (error: any) {
-    return error.response?.data || { success: false, error: { message: 'No internet connection.' } };
+    if (error.response?.data) {
+      const data = error.response.data;
+      if (typeof data === 'string') {
+        const msg = error.response.status === 413
+          ? 'Image file is too large. Please retake the selfie and try again.'
+          : (data.includes('<title>') ? 'Server error occurred. Please try again.' : data);
+        return { success: false, error: { message: msg } };
+      }
+      return data;
+    }
+    return { success: false, error: { message: error.message || 'No internet connection.' } };
   }
 };
 
@@ -80,7 +90,17 @@ export const checkOut = async (
     );
     return res.data;
   } catch (error: any) {
-    return error.response?.data || { success: false, error: { message: 'No internet connection.' } };
+    if (error.response?.data) {
+      const data = error.response.data;
+      if (typeof data === 'string') {
+        const msg = error.response.status === 413
+          ? 'Image file is too large. Please retake the selfie and try again.'
+          : (data.includes('<title>') ? 'Server error occurred. Please try again.' : data);
+        return { success: false, error: { message: msg } };
+      }
+      return data;
+    }
+    return { success: false, error: { message: error.message || 'No internet connection.' } };
   }
 };
 

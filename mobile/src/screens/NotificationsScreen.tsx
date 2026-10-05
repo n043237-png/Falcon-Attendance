@@ -169,7 +169,19 @@ export default function NotificationsScreen() {
       const res = await getNotifications(token);
       if (res && res.success) {
         const rawItems = res.data?.items ?? (Array.isArray(res.data) ? res.data : []);
-        setNotifications(Array.isArray(rawItems) ? rawItems : []);
+        const list = Array.isArray(rawItems) ? rawItems : [];
+        // Client-side deduplication safeguard: suppress rapid duplicate notifications
+        const deduped: Notification[] = [];
+        const seen = new Set<string>();
+        for (const item of list) {
+          const timeBucket = item.createdAt ? Math.floor(new Date(item.createdAt).getTime() / (3 * 60 * 1000)) : 0;
+          const key = `${item.title}_${item.message}_${timeBucket}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            deduped.push(item);
+          }
+        }
+        setNotifications(deduped);
       } else {
         setNotifications([]);
       }

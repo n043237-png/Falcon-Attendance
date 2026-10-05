@@ -206,8 +206,8 @@ export const DigitalIdCardModal: React.FC<DigitalIdCardModalProps> = ({
                           <Text style={styles.detailValue}>{employee.phone || 'N/A'}</Text>
                         </View>
                         <View style={styles.detailRow}>
-                          <Text style={styles.detailLabel}>COMPANY EMAIL</Text>
-                          <Text style={[styles.detailValue, { fontSize: 9.5 }]} numberOfLines={1}>{employee.email || 'N/A'}</Text>
+                          <Text style={styles.detailLabel}>BLOOD GROUP</Text>
+                          <Text style={styles.detailValue}>{employee.bloodGroup && employee.bloodGroup !== 'Not Specified' ? employee.bloodGroup : (employee.bloodGroup || 'N/A')}</Text>
                         </View>
                         <View style={[styles.detailRow, { borderBottomWidth: 0 }]}>
                           <Text style={styles.detailLabel}>JOINING DATE</Text>

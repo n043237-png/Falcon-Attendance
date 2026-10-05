@@ -12,7 +12,6 @@ import {
   Calendar,
   ExternalLink,
   CheckCircle2,
-  Copy,
   Sparkles,
   QrCode as QrIcon
 } from 'lucide-react';
@@ -60,10 +59,10 @@ interface DigitalIdCardProps {
 export const defaultCompany: IdCardCompanyData = {
   name: 'Falcon Info Solutions Pvt. Ltd.',
   shortName: 'Falcon Info Solutions',
-  website: 'www.falconinfosolutions.com',
-  email: 'hr@falconinfosolutions.com',
-  phone: '+91 120 4567890',
-  officeAddress: 'Falcon Info Solutions HQ, Sector 62, Noida, UP - 201309',
+  website: 'www.falconinfo.net',
+  email: 'info@falconinfo.net',
+  phone: '01204108910',
+  officeAddress: 'A-166, Sector 63 Rd, A Block, Sector 63, Noida, Uttar Pradesh 201309',
   emergencyMessage: 'If found, please return this card to Falcon Info Solutions Pvt. Ltd.',
   logoUrl: '/logo.png'
 };
@@ -78,16 +77,12 @@ export default function DigitalIdCard({
 }: DigitalIdCardProps) {
   const [isFlipped, setIsFlipped] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const [copiedLink, setCopiedLink] = useState(false);
-
   const frontRef = useRef<HTMLDivElement>(null);
   const backRef = useRef<HTMLDivElement>(null);
 
   const verificationId =
     employee.verificationId ||
     `FALCON-VERIFY-${employee.id}-${(employee.employeeId || 'EMP').toUpperCase()}`;
-
-  const verifyUrl = `${window.location.origin}/verify-id/${verificationId}`;
 
   // Image source resolution
   const photoUrl = employee.profilePhotoUrl
@@ -110,13 +105,6 @@ export default function DigitalIdCard({
   // Flip card
   const handleFlip = () => {
     setIsFlipped(!isFlipped);
-  };
-
-  // Copy Verification Link
-  const handleCopyLink = () => {
-    navigator.clipboard.writeText(verifyUrl);
-    setCopiedLink(true);
-    setTimeout(() => setCopiedLink(false), 2500);
   };
 
   // Download PNG (Front or Back or Both)
@@ -205,9 +193,147 @@ export default function DigitalIdCard({
     }
   };
 
-  // Direct Print
+  // Direct Print via isolated iframe to ensure exactly 1 sheet of paper is printed
   const handlePrint = () => {
-    window.print();
+    if (!frontRef.current || !backRef.current) {
+      window.print();
+      return;
+    }
+
+    try {
+      const frontClone = frontRef.current.cloneNode(true) as HTMLElement;
+      const backClone = backRef.current.cloneNode(true) as HTMLElement;
+
+      // Reset transforms and positioning for print layout
+      frontClone.style.transform = 'none';
+      frontClone.style.position = 'relative';
+      frontClone.style.boxShadow = 'none';
+      frontClone.style.border = '1px solid #CBD5E1';
+      frontClone.style.width = '320px';
+      frontClone.style.height = '485px';
+      frontClone.style.maxHeight = '485px';
+      frontClone.style.margin = '0 auto';
+      frontClone.style.backfaceVisibility = 'visible';
+
+      backClone.style.transform = 'none';
+      backClone.style.position = 'relative';
+      backClone.style.boxShadow = 'none';
+      backClone.style.border = '1px solid #CBD5E1';
+      backClone.style.width = '320px';
+      backClone.style.height = '485px';
+      backClone.style.maxHeight = '485px';
+      backClone.style.margin = '0 auto';
+      backClone.style.backfaceVisibility = 'visible';
+
+      let printIframe = document.getElementById('id-card-print-frame') as HTMLIFrameElement;
+      if (printIframe) {
+        printIframe.remove();
+      }
+
+      printIframe = document.createElement('iframe');
+      printIframe.id = 'id-card-print-frame';
+      printIframe.style.position = 'fixed';
+      printIframe.style.top = '-9999px';
+      printIframe.style.left = '-9999px';
+      printIframe.style.width = '0px';
+      printIframe.style.height = '0px';
+      printIframe.style.border = 'none';
+      document.body.appendChild(printIframe);
+
+      const frameDoc = printIframe.contentDocument || printIframe.contentWindow?.document;
+      if (!frameDoc) {
+        window.print();
+        return;
+      }
+
+      // Collect current document styles and links
+      const styles = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
+        .map((node) => node.outerHTML)
+        .join('\n');
+
+      frameDoc.open();
+      frameDoc.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="utf-8" />
+            <title>Falcon ID Card - ${employee.name}</title>
+            <base href="${window.location.origin}/" />
+            ${styles}
+            <style>
+              @page {
+                size: portrait;
+                margin: 6mm auto;
+              }
+              * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+                box-sizing: border-box;
+              }
+              html, body {
+                margin: 0 !important;
+                padding: 0 !important;
+                background: #ffffff !important;
+                width: 100% !important;
+                height: 100% !important;
+                overflow: hidden !important;
+              }
+              .print-cards-container {
+                display: flex !important;
+                flex-direction: column !important;
+                align-items: center !important;
+                justify-content: center !important;
+                gap: 12px !important;
+                width: 100% !important;
+                height: 100% !important;
+                margin: 0 auto !important;
+                padding: 0 !important;
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+              }
+              .id-card-face {
+                position: relative !important;
+                width: 320px !important;
+                height: 485px !important;
+                max-height: 485px !important;
+                transform: none !important;
+                -webkit-transform: none !important;
+                backface-visibility: visible !important;
+                -webkit-backface-visibility: visible !important;
+                box-shadow: none !important;
+                border: 1px solid #CBD5E1 !important;
+                margin: 0 auto !important;
+                page-break-before: avoid !important;
+                page-break-after: avoid !important;
+                page-break-inside: avoid !important;
+                break-before: avoid !important;
+                break-after: avoid !important;
+                break-inside: avoid !important;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="print-cards-container">
+              ${frontClone.outerHTML}
+              ${backClone.outerHTML}
+            </div>
+          </body>
+        </html>
+      `);
+      frameDoc.close();
+
+      setTimeout(() => {
+        try {
+          printIframe.contentWindow?.focus();
+          printIframe.contentWindow?.print();
+        } catch {
+          window.print();
+        }
+      }, 300);
+    } catch (err) {
+      console.error('Isolated print error:', err);
+      window.print();
+    }
   };
 
   const triggerDownload = (dataUrl: string, filename: string) => {
@@ -469,9 +595,9 @@ export default function DigitalIdCard({
                     {employee.phone || 'N/A'}
                   </div>
 
-                  <div className="col-5 text-muted fw-semibold">Company Email</div>
-                  <div className="col-7 text-dark fw-semibold text-end text-truncate" title={employee.email}>
-                    {employee.email || 'N/A'}
+                  <div className="col-5 text-muted fw-semibold">Blood Group</div>
+                  <div className="col-7 text-dark fw-semibold text-end">
+                    {employee.bloodGroup && employee.bloodGroup !== 'Not Specified' ? employee.bloodGroup : (employee.bloodGroup || 'N/A')}
                   </div>
 
                   <div className="col-5 text-muted fw-semibold">Joining Date</div>
@@ -763,49 +889,116 @@ export default function DigitalIdCard({
               <span>Print</span>
             </Button>
           </div>
-
-          {/* Copy Verification Link */}
-          <Button
-            variant="light"
-            size="sm"
-            className="d-flex align-items-center justify-content-center gap-1.5 text-muted border py-1.5 px-3 w-100 rounded-2"
-            onClick={handleCopyLink}
-            style={{ fontSize: '11.5px' }}
-          >
-            {copiedLink ? <CheckCircle2 size={13} className="text-success" /> : <Copy size={13} />}
-            <span>{copiedLink ? 'Verification Link Copied!' : 'Copy Verification Link'}</span>
-          </Button>
         </div>
       )}
 
-      {/* Print CSS specific styles */}
+      {/* Print CSS specific styles for browser printing / fallback */}
       <style>{`
         @media print {
-          body * {
-            visibility: hidden;
+          @page {
+            size: portrait;
+            margin: 6mm auto;
           }
-          .id-card-face,
-          .id-card-face * {
-            visibility: visible;
+          * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            box-sizing: border-box;
+          }
+          html, body {
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #ffffff !important;
+            width: 100% !important;
+            height: 100% !important;
+            overflow: hidden !important;
+          }
+          /* Hide non-printable app UI */
+          body.modal-open #root,
+          .modal-backdrop,
+          .modal-header,
+          .modal-footer,
+          .id-card-actions-panel,
+          button,
+          .btn,
+          nav,
+          header,
+          footer,
+          .navbar,
+          .sidebar {
+            display: none !important;
+          }
+          .modal {
+            position: static !important;
+            display: block !important;
+            overflow: visible !important;
+            padding: 0 !important;
+            margin: 0 !important;
+          }
+          .modal-dialog {
+            max-width: 100% !important;
+            width: 100% !important;
+            margin: 0 auto !important;
+            padding: 0 !important;
+            transform: none !important;
+          }
+          .modal-content {
+            border: none !important;
+            box-shadow: none !important;
+            background: transparent !important;
+            padding: 0 !important;
+          }
+          .modal-body {
+            padding: 0 !important;
+            margin: 0 !important;
+            background: transparent !important;
+            overflow: visible !important;
+          }
+          .digital-id-card-wrapper {
+            margin: 0 auto !important;
+            padding: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: center !important;
+            justify-content: center !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
           }
           .id-card-perspective-container {
             perspective: none !important;
             width: 100% !important;
             height: auto !important;
+            margin: 0 auto !important;
           }
           .id-card-flipper {
             transform: none !important;
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: center !important;
+            justify-content: center !important;
+            gap: 12px !important;
+            width: 100% !important;
+            height: auto !important;
           }
-          .id-card-front, .id-card-back {
+          .id-card-front,
+          .id-card-back {
             position: relative !important;
-            page-break-after: always;
-            margin: 20px auto;
+            width: 320px !important;
+            height: 485px !important;
+            max-height: 485px !important;
             transform: none !important;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-          .id-card-actions-panel {
-            display: none !important;
+            margin: 0 auto !important;
+            box-shadow: none !important;
+            border: 1px solid #CBD5E1 !important;
+            backface-visibility: visible !important;
+            -webkit-backface-visibility: visible !important;
+            page-break-before: avoid !important;
+            page-break-after: avoid !important;
+            page-break-inside: avoid !important;
+            break-before: avoid !important;
+            break-after: avoid !important;
+            break-inside: avoid !important;
           }
         }
       `}</style>

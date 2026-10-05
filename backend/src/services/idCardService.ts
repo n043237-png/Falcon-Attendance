@@ -87,20 +87,11 @@ export class IdCardService {
     const empId = profile.employeeId || profile.employeeCode || `EMP${String(profile.id).padStart(4, '0')}`;
     const formattedJoiningDate = this.formatDate(profile.joiningDate);
 
-    // Format QR code payload
-    const qrPayloadObj = {
-      issuer: 'Falcon Info Solutions Pvt. Ltd.',
-      employeeId: empId,
-      name: profile.name,
-      department: profile.department || 'General',
-      designation: profile.designation || 'Staff',
-      attendanceMode: profile.attendanceMode || 'Office',
-      verificationId: verificationId,
-      verifyUrl: `${process.env.FRONTEND_URL || 'https://attendance.falconinfosolutions.com'}/verify-id/${verificationId}`
-    };
+    const baseUrl = (process.env.FRONTEND_URL || process.env.BASE_URL || 'https://falcon-attendance-bcyo.onrender.com').replace(/\/+$/, '');
+    const verifyUrl = `${baseUrl}/verify-id/${verificationId}`;
 
-    const qrPayload = JSON.stringify(qrPayloadObj);
-    const qrCodeDataUrl = await QRCode.toDataURL(qrPayload, {
+    // Encode the direct verification URL into the QR code so phone cameras and Google Lens open it directly as a link
+    const qrCodeDataUrl = await QRCode.toDataURL(verifyUrl, {
       width: 400,
       margin: 1,
       color: {
@@ -121,7 +112,7 @@ export class IdCardService {
         department: profile.department || 'General',
         designation: profile.designation || 'Staff',
         attendanceMode: profile.attendanceMode || 'Office',
-        bloodGroup: profile.bloodGroup || 'Not Specified',
+        bloodGroup: profile.bloodGroup || 'N/A',
         joiningDate: formattedJoiningDate,
         profilePhotoUrl: profile.profilePhotoUrl || null,
         emergencyContactPhone: profile.emergencyContactPhone || profile.phone || '+91 98765 43210',
@@ -131,15 +122,15 @@ export class IdCardService {
       company: {
         name: 'Falcon Info Solutions Pvt. Ltd.',
         shortName: 'Falcon Info Solutions',
-        website: 'www.falconinfosolutions.com',
-        email: 'hr@falconinfosolutions.com',
-        phone: '+91 120 4567890',
-        officeAddress: 'Falcon Info Solutions HQ, Sector 62, Noida, UP - 201309',
+        website: 'www.falconinfo.net',
+        email: 'info@falconinfo.net',
+        phone: '01204108910',
+        officeAddress: 'A-166, Sector 63 Rd, A Block, Sector 63, Noida, Uttar Pradesh 201309',
         emergencyMessage: 'If found, please return this card to Falcon Info Solutions Pvt. Ltd.',
         logoUrl: '/logo.png'
       },
       qrCodeDataUrl,
-      qrPayload,
+      qrPayload: verifyUrl,
       verificationId
     };
   }
@@ -393,7 +384,7 @@ export class IdCardService {
             { label: 'Designation', val: card.employee.designation || 'Staff', bold: false },
             { label: 'Department', val: card.employee.department || 'General', bold: false },
             { label: 'Mobile No.', val: card.employee.phone || 'N/A', bold: false },
-            { label: 'Company Email', val: card.employee.email || 'N/A', bold: false },
+            { label: 'Blood Group', val: card.employee.bloodGroup || 'N/A', bold: false },
             { label: 'Joining Date', val: card.employee.joiningDate || 'N/A', bold: false },
           ];
 
@@ -470,7 +461,7 @@ export class IdCardService {
             { label: 'Website', val: card.company.website },
             { label: 'Official Email', val: card.company.email },
             { label: 'Emergency Contact', val: card.employee.emergencyContactPhone },
-            { label: 'Office Address', val: 'HQ, Sector 62, Noida, UP - 201309' }
+            { label: 'Office Address', val: card.company.officeAddress }
           ];
 
           contactRows.forEach((cr, cIdx) => {

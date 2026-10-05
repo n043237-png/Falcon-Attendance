@@ -30,7 +30,8 @@ const corsOptions = {
     exposedHeaders: ['Content-Disposition', 'Content-Length']
 };
 app.use((0, cors_1.default)(corsOptions));
-app.use(express_1.default.json());
+app.use(express_1.default.json({ limit: '15mb' }));
+app.use(express_1.default.urlencoded({ limit: '15mb', extended: true }));
 app.use('/uploads', express_1.default.static(path_1.default.join(process.cwd(), 'uploads')));
 // Serve admin panel static files
 const adminDistPath = path_1.default.join(process.cwd(), '..', 'admin', 'dist');
@@ -47,6 +48,7 @@ app.use('/api/employee', employeeRoutes_1.default);
 app.use('/api/holidays', holidayRoutes_1.default);
 app.use('/api/expenses', expenseRoutes_1.default);
 app.get('/api/verify/id-card/:verificationId', idCardController_1.verifyIdCard);
+app.get('/verify-id/:verificationId', idCardController_1.renderVerificationPage);
 (0, schedulerService_1.startScheduler)();
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', message: 'Falcon Office Backend is running' });

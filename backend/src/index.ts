@@ -15,7 +15,7 @@ import employeeRoutes from './routes/employeeRoutes';
 import payrollRoutes from './routes/payrollRoutes';
 import holidayRoutes from './routes/holidayRoutes';
 import expenseRoutes from './routes/expenseRoutes';
-import { verifyIdCard } from './controllers/idCardController';
+import { verifyIdCard, renderVerificationPage } from './controllers/idCardController';
 import { startScheduler } from './services/schedulerService';
 
 import path from 'path';
@@ -31,7 +31,8 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.use(express.json());
+app.use(express.json({ limit: '15mb' }));
+app.use(express.urlencoded({ limit: '15mb', extended: true }));
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 // Serve admin panel static files
@@ -50,6 +51,7 @@ app.use('/api/employee', employeeRoutes);
 app.use('/api/holidays', holidayRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.get('/api/verify/id-card/:verificationId', verifyIdCard);
+app.get('/verify-id/:verificationId', renderVerificationPage);
 
 startScheduler();
 

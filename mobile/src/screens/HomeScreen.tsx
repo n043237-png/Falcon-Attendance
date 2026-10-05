@@ -138,64 +138,20 @@ export default function HomeScreen() {
       const locData = await getCurrentLocation();
 
       let liveAddress: string | undefined;
-      let selfieDataUri: string | undefined;
 
       if (isFieldMode) {
-        // 1. Fetch live address via reverse geocoding
+        // Fetch live address via reverse geocoding
         try {
           liveAddress = await getReadableAddress(locData.latitude, locData.longitude);
         } catch (addrErr) {
           console.warn('Reverse geocoding error:', addrErr);
         }
-
-        // 2. Mandatory front camera selfie capture for Field employees
-        const { status: camStatus } = await ImagePicker.requestCameraPermissionsAsync();
-        if (camStatus !== 'granted') {
-          Alert.alert(
-            'Camera Permission Required',
-            'Selfie capture is mandatory to mark attendance in Field Mode. Please enable camera access in settings.'
-          );
-          setActionLoading(false);
-          return;
-        }
-
-        const camResult = await ImagePicker.launchCameraAsync({
-          cameraType: ImagePicker.CameraType.front,
-          allowsEditing: true,
-          aspect: [1, 1],
-          quality: 0.6,
-          base64: true,
-        });
-
-        if (camResult.canceled || !camResult.assets || camResult.assets.length === 0) {
-          Alert.alert(
-            'Selfie Required',
-            'Attendance in Field Mode requires a mandatory front selfie. Action cancelled.'
-          );
-          setActionLoading(false);
-          return;
-        }
-
-        let base64Photo = camResult.assets[0].base64;
-        if (!base64Photo && camResult.assets[0].uri) {
-          base64Photo = await FileSystem.readAsStringAsync(camResult.assets[0].uri, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
-        }
-
-        if (!base64Photo) {
-          Alert.alert('Selfie Error', 'Unable to process captured selfie. Please try again.');
-          setActionLoading(false);
-          return;
-        }
-
-        selfieDataUri = `data:image/jpeg;base64,${base64Photo}`;
       }
 
       const result =
         action === 'check-in'
-          ? await checkIn(locData.latitude, locData.longitude, locData.accuracy, token!, liveAddress, selfieDataUri)
-          : await checkOut(locData.latitude, locData.longitude, locData.accuracy, token!, liveAddress, selfieDataUri);
+          ? await checkIn(locData.latitude, locData.longitude, locData.accuracy, token!, liveAddress)
+          : await checkOut(locData.latitude, locData.longitude, locData.accuracy, token!, liveAddress);
 
       if (result.success) {
         if (action === 'check-in') {
@@ -211,7 +167,8 @@ export default function HomeScreen() {
       } else {
         const configuredRadius = officeInfo?.radiusMeters || result.data?.allowedRadiusMeters || 20;
         const errorTitle = action === 'check-in' ? 'Check-In Verification' : 'Check-Out Verification';
-        const errorMsg = result.error?.message || (
+        const serverError = (typeof result.error === 'string' ? result.error : result.error?.message) || result.message;
+        const errorMsg = serverError || (
           result.data?.distanceMeters !== undefined
             ? `You are outside the permitted office location (${result.data.distanceMeters}m away). Attendance is only allowed within ${result.data.allowedRadiusMeters || configuredRadius} metres of the office.`
             : `Verification failed. Please ensure you are physically within the ${configuredRadius}-metre office radius.`
@@ -532,9 +489,7 @@ export default function HomeScreen() {
                       {!hasCheckedIn ? 'PUNCH IN' : 'PUNCH OUT'}
                     </Text>
                     <Text style={styles.punchButtonSubtitle}>
-                      {isFieldMode
-                        ? (!hasCheckedIn ? 'Tap to capture selfie & mark arrival' : 'Tap to capture selfie & end workday')
-                        : (!hasCheckedIn ? 'Tap to mark your arrival' : 'Tap to end your workday')}
+                      {!hasCheckedIn ? 'Tap to mark your arrival' : 'Tap to end your workday'}
                     </Text>
                   </>
                 )}
@@ -551,9 +506,9 @@ export default function HomeScreen() {
 
               {isFieldMode ? (
                 <View style={styles.fieldModeFootnoteBox}>
-                  <Ionicons name="camera-outline" size={15} color="#D97706" style={{ marginRight: 6 }} />
+                  <Ionicons name="navigate-outline" size={15} color="#D97706" style={{ marginRight: 6 }} />
                   <Text style={styles.fieldModeFootnoteText}>
-                    Field Mode Active: Punch from any location with live GPS, address & mandatory selfie verification.
+                    Field Mode Active: Punch from any location with live GPS & address verification.
                   </Text>
                 </View>
               ) : (

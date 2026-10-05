@@ -134,10 +134,22 @@ export const getNotifications = async (req: AuthRequest, res: Response): Promise
       [...queryParams, limit, offset]
     );
 
+    // Deduplicate any rapid duplicate items as a final safeguard
+    const uniqueItems: any[] = [];
+    const seenKeys = new Set<string>();
+    for (const item of itemsRes.rows) {
+      const timeBucket = item.createdAt ? Math.floor(new Date(item.createdAt).getTime() / (3 * 60 * 1000)) : 0;
+      const key = `${item.title}_${item.message}_${timeBucket}`;
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        uniqueItems.push(item);
+      }
+    }
+
     res.json({
       success: true,
       data: {
-        items: itemsRes.rows,
+        items: uniqueItems,
         pagination: {
           page,
           limit,

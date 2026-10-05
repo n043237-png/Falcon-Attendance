@@ -3,6 +3,26 @@ import { query } from '../db';
 import { getAttendanceSettings } from './attendanceStatusService';
 import { NotificationService } from './notificationService';
 
+/**
+ * Run a scheduled task with a PostgreSQL distributed advisory lock.
+ * Ensures only 1 server instance executes the job when multiple instances (e.g., Render replicas or dev + prod) are connected to the database.
+ */
+async function runWithDistributedLock(lockKey: number, taskName: string, taskFn: () => Promise<void>): Promise<void> {
+  try {
+    const lockRes = await query('SELECT pg_try_advisory_lock($1) as acquired', [lockKey]);
+    if (!lockRes.rows[0]?.acquired) {
+      return;
+    }
+    try {
+      await taskFn();
+    } finally {
+      await query('SELECT pg_advisory_unlock($1)', [lockKey]).catch(() => {});
+    }
+  } catch (err) {
+    console.error(`[Scheduler] Error acquiring advisory lock for ${taskName}:`, err);
+  }
+}
+
 export function startScheduler() {
   // 1-Month Retention Policy: Clean up notifications older than 30 days on startup
   cleanupExpiredNotifications().catch((err) =>
@@ -11,17 +31,20 @@ export function startScheduler() {
 
   // Daily Notification Retention Cleanup - Runs every night at 00:05 AM IST
   cron.schedule('5 0 * * *', async () => {
-    try {
-      await cleanupExpiredNotifications();
-    } catch (e) {
-      console.error('[Scheduler] Daily notification cleanup error:', e);
-    }
+    await runWithDistributedLock(9001, 'daily-notification-cleanup', async () => {
+      try {
+        await cleanupExpiredNotifications();
+      } catch (e) {
+        console.error('[Scheduler] Daily notification cleanup error:', e);
+      }
+    });
   }, {
     timezone: 'Asia/Kolkata'
   });
 
   // 9:55 AM IST - Check-in Reminder (Employee Alert)
   cron.schedule('55 9 * * 1-6', async () => {
+    await runWithDistributedLock(9002, '9:55-checkin-reminder', async () => {
     try {
       const now = new Date();
       const dateStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
@@ -73,55 +96,58 @@ export function startScheduler() {
     } catch (e) {
       console.error('[Scheduler] 9:55 AM Check-in Reminder error:', e);
     }
+  });
   }, {
     timezone: 'Asia/Kolkata'
   });
 
   // 6:30 PM IST - Check-out Reminder (Employee Alert)
   cron.schedule('30 18 * * 1-6', async () => {
-    try {
-      const now = new Date();
-      const dateStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    await runWithDistributedLock(9003, '6:30-checkout-reminder', async () => {
+      try {
+        const now = new Date();
+        const dateStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 
-      // Skip Sundays & Holidays
-      if (new Date(dateStr).getDay() === 0) return;
-      const holidayRes = await query('SELECT id FROM holidays WHERE holiday_date = $1 AND is_active = true', [dateStr]);
-      if (holidayRes.rows.length > 0) return;
+        // Skip Sundays & Holidays
+        if (new Date(dateStr).getDay() === 0) return;
+        const holidayRes = await query('SELECT id FROM holidays WHERE holiday_date = $1 AND is_active = true', [dateStr]);
+        if (holidayRes.rows.length > 0) return;
 
-      // Find employees who checked in today but have not checked out yet
-      const missingOutRes = await query(`
-        SELECT u.id, u.name
-        FROM users u
-        JOIN attendance a ON a.employee_id = u.id AND a.attendance_date = $1
-        WHERE u.status = 'active'
-          AND a.check_in IS NOT NULL
-          AND a.check_out IS NULL
-      `, [dateStr]);
+        // Find employees who checked in today but have not checked out yet
+        const missingOutRes = await query(`
+          SELECT u.id, u.name
+          FROM users u
+          JOIN attendance a ON a.employee_id = u.id AND a.attendance_date = $1
+          WHERE u.status = 'active'
+            AND a.check_in IS NOT NULL
+            AND a.check_out IS NULL
+        `, [dateStr]);
 
-      for (const emp of missingOutRes.rows) {
-        try {
-          const alreadyNotified = await query(
-            `SELECT id FROM notifications WHERE recipient_user_id = $1 AND title = 'Check-out Reminder' AND attendance_date = $2`,
-            [emp.id, dateStr]
-          );
-          if (alreadyNotified.rows.length === 0) {
-            await NotificationService.notifyUser(emp.id, {
-              title: 'Check-out Reminder',
-              message: "Your shift has ended. Please remember to check out.",
-              type: 'Attendance',
-              priority: 'High',
-              actionUrl: '/home',
-              attendanceDate: dateStr,
-            });
-            console.log(`[Scheduler] 6:30 PM Check-out Reminder sent to ${emp.name} (ID: ${emp.id})`);
+        for (const emp of missingOutRes.rows) {
+          try {
+            const alreadyNotified = await query(
+              `SELECT id FROM notifications WHERE recipient_user_id = $1 AND title = 'Check-out Reminder' AND attendance_date = $2`,
+              [emp.id, dateStr]
+            );
+            if (alreadyNotified.rows.length === 0) {
+              await NotificationService.notifyUser(emp.id, {
+                title: 'Check-out Reminder',
+                message: "Your shift has ended. Please remember to check out.",
+                type: 'Attendance',
+                priority: 'High',
+                actionUrl: '/home',
+                attendanceDate: dateStr,
+              });
+              console.log(`[Scheduler] 6:30 PM Check-out Reminder sent to ${emp.name} (ID: ${emp.id})`);
+            }
+          } catch (err) {
+            console.error(`Failed to send 6:30 PM reminder to user ${emp.id}:`, err);
           }
-        } catch (err) {
-          console.error(`Failed to send 6:30 PM reminder to user ${emp.id}:`, err);
         }
+      } catch (e) {
+        console.error('[Scheduler] 6:30 PM Check-out Reminder error:', e);
       }
-    } catch (e) {
-      console.error('[Scheduler] 6:30 PM Check-out Reminder error:', e);
-    }
+    });
   }, {
     timezone: 'Asia/Kolkata'
   });
@@ -196,7 +222,8 @@ export function startScheduler() {
 
   // Daily Attendance Processing - Runs every minute
   cron.schedule('* * * * *', async () => {
-    try {
+    await runWithDistributedLock(9005, 'minute-attendance-processor', async () => {
+      try {
       const now = new Date();
       // Current date in IST
       const dateStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
@@ -418,9 +445,10 @@ export function startScheduler() {
         }
       }
 
-    } catch (error) {
-      console.error('Scheduler error:', error);
-    }
+      } catch (error) {
+        console.error('Scheduler error:', error);
+      }
+    });
   });
 }
 

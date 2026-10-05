@@ -32,16 +32,7 @@ export const checkIn = async (req: AuthRequest, res: Response): Promise<void> =>
     const attendanceMode = userModeRes.rows[0]?.attendance_mode || 'Office';
     const isFieldMode = attendanceMode.toLowerCase() === 'field';
 
-    // In Field Mode, selfie is mandatory
-    if (isFieldMode && (!selfie || !selfie.trim())) {
-      res.status(400).json({
-        success: false,
-        error: { code: 'SELFIE_REQUIRED', message: 'Selfie capture is mandatory for Field attendance.' }
-      });
-      return;
-    }
-
-    // Process & store selfie image if provided
+    // Process & store selfie image if optionally provided
     let selfieUrl: string | null = null;
     if (selfie && selfie.trim()) {
       try {
