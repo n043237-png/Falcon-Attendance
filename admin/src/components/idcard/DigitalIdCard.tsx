@@ -170,19 +170,19 @@ export default function DigitalIdCard({
         const canvasFront = await html2canvas(frontRef.current, { scale: 3, useCORS: true });
         const canvasBack = await html2canvas(backRef.current, { scale: 3, useCORS: true });
 
-        // CR80 dimensions in mm: 54mm x 85.6mm portrait
+        // CR80 standard dimensions: 54 mm x 85.6 mm (2.125" x 3.375" portrait)
         const pdf = new jsPDF({
           orientation: 'portrait',
           unit: 'mm',
-          format: [54, 86]
+          format: [54, 85.6]
         });
 
         const imgFront = canvasFront.toDataURL('image/png');
-        pdf.addImage(imgFront, 'PNG', 0, 0, 54, 86);
+        pdf.addImage(imgFront, 'PNG', 0, 0, 54, 85.6);
 
-        pdf.addPage([54, 86], 'portrait');
+        pdf.addPage([54, 85.6], 'portrait');
         const imgBack = canvasBack.toDataURL('image/png');
-        pdf.addImage(imgBack, 'PNG', 0, 0, 54, 86);
+        pdf.addImage(imgBack, 'PNG', 0, 0, 54, 85.6);
 
         pdf.save(`Falcon_ID_Card_${employee.employeeId}.pdf`);
       }
@@ -210,8 +210,8 @@ export default function DigitalIdCard({
       frontClone.style.boxShadow = 'none';
       frontClone.style.border = '1px solid #CBD5E1';
       frontClone.style.width = '320px';
-      frontClone.style.height = '485px';
-      frontClone.style.maxHeight = '485px';
+      frontClone.style.height = '508px';
+      frontClone.style.maxHeight = '508px';
       frontClone.style.margin = '0 auto';
       frontClone.style.backfaceVisibility = 'visible';
 
@@ -220,8 +220,8 @@ export default function DigitalIdCard({
       backClone.style.boxShadow = 'none';
       backClone.style.border = '1px solid #CBD5E1';
       backClone.style.width = '320px';
-      backClone.style.height = '485px';
-      backClone.style.maxHeight = '485px';
+      backClone.style.height = '508px';
+      backClone.style.maxHeight = '508px';
       backClone.style.margin = '0 auto';
       backClone.style.backfaceVisibility = 'visible';
 
@@ -294,8 +294,8 @@ export default function DigitalIdCard({
               .id-card-face {
                 position: relative !important;
                 width: 320px !important;
-                height: 485px !important;
-                max-height: 485px !important;
+                height: 508px !important;
+                max-height: 508px !important;
                 transform: none !important;
                 -webkit-transform: none !important;
                 backface-visibility: visible !important;
@@ -353,7 +353,7 @@ export default function DigitalIdCard({
         style={{
           perspective: '1200px',
           width: '320px',
-          height: '530px',
+          height: '508px',
           position: 'relative'
         }}
       >

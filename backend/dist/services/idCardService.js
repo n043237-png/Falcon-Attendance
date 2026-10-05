@@ -202,9 +202,9 @@ class IdCardService {
     static async createPdfDocument(cards) {
         return new Promise(async (resolve, reject) => {
             try {
-                // Standard Portrait ID Card dimensions: 230 x 360 points
+                // Standard Portrait ID Card dimensions (CR80 standard: 2.125" x 3.375" / 54 mm x 85.6 mm)
                 const cardW = 230;
-                const cardH = 360;
+                const cardH = 365; // 230 * (3.375 / 2.125) = 365.29 points (1 : 1.588 ratio)
                 const doc = new pdfkit_1.default({
                     size: [cardW, cardH],
                     margins: { top: 0, bottom: 0, left: 0, right: 0 },

@@ -399,6 +399,7 @@ const styles = StyleSheet.create({
   },
   cardContainer: {
     width: 300,
+    minHeight: 476,
     borderRadius: 20,
     overflow: 'hidden',
     backgroundColor: '#FFFFFF',
