@@ -195,6 +195,9 @@ exports.downloadBulkIdCardsZip = downloadBulkIdCardsZip;
  * Public Verification endpoint: Verify ID card credentials
  */
 const verifyIdCard = async (req, res) => {
+    if (req.headers.accept && req.headers.accept.includes('text/html')) {
+        return (0, exports.renderVerificationPage)(req, res);
+    }
     try {
         const rawId = req.params.verificationId;
         const verificationId = Array.isArray(rawId) ? rawId[0] : rawId;
