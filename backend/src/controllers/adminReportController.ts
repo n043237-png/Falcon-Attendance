@@ -221,6 +221,7 @@ export const getAttendanceReport = async (req: AuthRequest, res: Response): Prom
             holidayName: (result as any).holidayName,
             isLate: isLateRecord,
             attendanceMode: rec?.attendance_mode || emp.attendance_mode || 'Office',
+            attendanceSource: rec?.attendance_source || (rec?.check_in ? 'Mobile App' : null),
             address: rec?.check_in_address || null,
             selfieUrl: rec?.check_in_selfie_url || null
           });
@@ -369,7 +370,8 @@ async function exportExcel(res: Response, summary: any, employeeReports: any[], 
     { width: 15 }, // F: Check Out
     { width: 16 }, // G: Working Hours
     { width: 16 }, // H: Status
-    { width: 22 }, // I: Location / Notes
+    { width: 18 }, // I: Attendance Source
+    { width: 25 }, // J: Location / Remarks
   ];
 
   // 2. Borders and Styles
@@ -410,19 +412,19 @@ async function exportExcel(res: Response, summary: any, employeeReports: any[], 
     }
   }
 
-  sheet.mergeCells('B2:I2');
+  sheet.mergeCells('B2:J2');
   const titleCell = sheet.getCell('B2');
   titleCell.value = 'FALCON INFO SOLUTIONS';
   titleCell.font = { name: 'Segoe UI', size: 16, bold: true, color: { argb: 'FF1E3A8A' } };
   titleCell.alignment = { vertical: 'middle', horizontal: 'left' };
 
-  sheet.mergeCells('B3:I3');
+  sheet.mergeCells('B3:J3');
   const subCell = sheet.getCell('B3');
   subCell.value = 'Enterprise Attendance & Compliance Report';
   subCell.font = { name: 'Segoe UI', size: 11, bold: true, color: { argb: 'FF475569' } };
   subCell.alignment = { vertical: 'middle', horizontal: 'left' };
 
-  sheet.mergeCells('B4:I4');
+  sheet.mergeCells('B4:J4');
   const metaCell = sheet.getCell('B4');
   const genDate = new Date().toLocaleDateString('en-US', {
     timeZone: 'Asia/Kolkata',
@@ -448,6 +450,7 @@ async function exportExcel(res: Response, summary: any, employeeReports: any[], 
     'Check Out',
     'Working Hours',
     'Status',
+    'Attendance Source',
     'Location / Remarks'
   ];
 
@@ -527,6 +530,7 @@ async function exportExcel(res: Response, summary: any, employeeReports: any[], 
         statusColor = 'FF6D28D9';
       }
 
+      const sourceVal = d.attendanceSource || (d.checkIn ? 'Mobile App' : '-');
       const cellData = [
         { val: er.empId || `EMP${String(er.id).padStart(3, '0')}`, align: 'center', bold: true, color: 'FF334155' },
         { val: er.name, align: 'left', bold: true, color: 'FF0F172A', indent: 1 },
@@ -536,6 +540,7 @@ async function exportExcel(res: Response, summary: any, employeeReports: any[], 
         { val: outTime, align: 'center', color: outTime !== '-' ? 'FF0F172A' : 'FF94A3B8' },
         { val: hours, align: 'center', bold: hours !== '-', color: hours !== '-' ? 'FF0F172A' : 'FF94A3B8' },
         { val: st, align: 'center', bold: true, color: statusColor, bg: statusBg },
+        { val: sourceVal, align: 'center', bold: sourceVal === 'Web Portal', color: sourceVal === 'Web Portal' ? 'FF0284C7' : (sourceVal === 'Mobile App' ? 'FF475569' : 'FF94A3B8') },
         { val: loc, align: 'center', color: 'FF64748B' }
       ];
 
@@ -566,7 +571,7 @@ async function exportExcel(res: Response, summary: any, employeeReports: any[], 
   }
 
   // 7. Auto-filter and Frozen Panes
-  sheet.autoFilter = { from: 'A6', to: 'I6' };
+  sheet.autoFilter = { from: 'A6', to: 'J6' };
   sheet.views = [
     { state: 'frozen', xSplit: 0, ySplit: 6, showGridLines: true }
   ];

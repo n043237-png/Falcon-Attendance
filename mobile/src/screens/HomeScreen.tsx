@@ -58,6 +58,31 @@ export default function HomeScreen() {
     return () => clearInterval(timer);
   }, []);
 
+  const [resolvedAddress, setResolvedAddress] = useState<string | null>(null);
+
+  // Auto-resolve raw GPS coordinates to readable location name if needed
+  useEffect(() => {
+    if (!attendance?.checkInAddress) {
+      setResolvedAddress(null);
+      return;
+    }
+    const raw = attendance.checkInAddress.trim();
+    const gpsMatch = raw.match(/^(?:GPS\s*\(\s*)?(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\)?$/i);
+    if (gpsMatch) {
+      const lat = parseFloat(gpsMatch[1]);
+      const lon = parseFloat(gpsMatch[2]);
+      if (!isNaN(lat) && !isNaN(lon)) {
+        getReadableAddress(lat, lon).then((name) => {
+          if (name && !name.startsWith('GPS')) {
+            setResolvedAddress(name);
+          }
+        }).catch(() => {});
+      }
+    } else {
+      setResolvedAddress(null);
+    }
+  }, [attendance?.checkInAddress]);
+
   const hour = currentTime.getHours();
   const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
 
@@ -580,7 +605,12 @@ export default function HomeScreen() {
                 <Text style={styles.fieldModeTagText}>{attendance.attendanceMode || 'Field'}</Text>
               </View>
             </View>
-            <Text style={styles.locationBannerAddress}>{attendance.checkInAddress}</Text>
+            <Text style={styles.locationBannerAddress}>
+              {resolvedAddress || attendance.checkInAddress}
+            </Text>
+            {Boolean(resolvedAddress && resolvedAddress !== attendance.checkInAddress) && (
+              <Text style={styles.locationBannerGpsSubtext}>{attendance.checkInAddress}</Text>
+            )}
           </View>
         )}
 
@@ -909,8 +939,14 @@ const styles = StyleSheet.create({
   },
   locationBannerAddress: {
     fontSize: 13,
-    color: '#475569',
+    color: '#0F172A',
     lineHeight: 18,
+    fontWeight: '600',
+  },
+  locationBannerGpsSubtext: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 3,
     fontWeight: '500',
   },
   heroDivider: {

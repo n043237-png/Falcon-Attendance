@@ -14,7 +14,9 @@ import {
   Clock,
   TrendingUp,
   AlertCircle,
-  FileText
+  FileText,
+  Monitor,
+  Smartphone
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -650,6 +652,7 @@ export default function AdminReports() {
                   <th>Check-in</th>
                   <th>Check-out</th>
                   <th>Working Hours</th>
+                  <th>Source</th>
                   <th>Remarks</th>
                 </tr>
               </thead>
@@ -671,12 +674,37 @@ export default function AdminReports() {
                     <td>{formatTime(d.checkIn)}</td>
                     <td>{formatTime(d.checkOut)}</td>
                     <td>{formatHours(d.workingMinutes)}</td>
-                    <td className="text-muted small">{d.leaveType || d.holidayName || '-'}</td>
+                    <td>
+                      {d.checkIn ? (
+                        d.attendanceSource === 'Web Portal' ? (
+                          <span 
+                            className="badge bg-info-subtle text-info-emphasis border border-info-subtle d-inline-flex align-items-center gap-1"
+                            style={{ fontSize: '11px', padding: '3.5px 7px', borderRadius: '5px' }}
+                            title="Marked via Web Portal"
+                          >
+                            <Monitor size={11} />
+                            <span>Web Portal</span>
+                          </span>
+                        ) : (
+                          <span 
+                            className="badge bg-light text-secondary border d-inline-flex align-items-center gap-1"
+                            style={{ fontSize: '11px', padding: '3.5px 7px', borderRadius: '5px' }}
+                            title="Marked via Mobile App"
+                          >
+                            <Smartphone size={11} />
+                            <span>Mobile App</span>
+                          </span>
+                        )
+                      ) : (
+                        <span className="text-muted">-</span>
+                      )}
+                    </td>
+                    <td className="text-muted small">{d.leaveType || d.holidayName || (d.address ? d.address : '-')}</td>
                   </tr>
                 ))}
                 {activeEmpReport?.daily?.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="text-center py-4 text-muted">
+                    <td colSpan={8} className="text-center py-4 text-muted">
                       No records matched the filter criteria for this employee.
                     </td>
                   </tr>

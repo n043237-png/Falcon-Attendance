@@ -40,6 +40,7 @@ export const getCurrentLocation = async (): Promise<LocationData> => {
 };
 
 export const getReadableAddress = async (latitude: number, longitude: number): Promise<string> => {
+  // 1. Try native Expo reverse geocoding
   try {
     const addresses = await Location.reverseGeocodeAsync({ latitude, longitude });
     if (addresses && addresses.length > 0) {
@@ -56,7 +57,60 @@ export const getReadableAddress = async (latitude: number, longitude: number): P
       }
     }
   } catch (e) {
-    console.warn('reverseGeocode failed:', e);
+    console.warn('Native reverseGeocode failed, trying web service fallback:', e);
   }
-  return `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+
+  // 2. Try OpenStreetMap Nominatim reverse geocode
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4000);
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`,
+      {
+        headers: { 'User-Agent': 'FalconAttendanceApp/1.0' },
+        signal: controller.signal,
+      }
+    );
+    clearTimeout(timeout);
+    if (res.ok) {
+      const data: any = await res.json();
+      if (data?.address) {
+        const addr = data.address;
+        const road = addr.road || addr.street || addr.neighbourhood || addr.suburb || addr.hamlet || addr.village;
+        const city = addr.city || addr.town || addr.county || addr.state_district;
+        const state = addr.state;
+        const postcode = addr.postcode;
+        const parts = [road, city, state, postcode].filter(Boolean);
+        if (parts.length > 0) return parts.join(', ');
+      }
+      if (data?.display_name) return data.display_name;
+    }
+  } catch (osmErr) {
+    // Continue to next fallback
+  }
+
+  // 3. Fallback: BigDataCloud free client reverse geocoding
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4000);
+    const bdcRes = await fetch(
+      `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`,
+      { signal: controller.signal }
+    );
+    clearTimeout(timeout);
+    if (bdcRes.ok) {
+      const bdc: any = await bdcRes.json();
+      const parts = [
+        bdc.locality,
+        bdc.city,
+        bdc.principalSubdivision,
+        bdc.postcode,
+      ].filter(Boolean);
+      if (parts.length > 0) {
+        return Array.from(new Set(parts)).join(', ');
+      }
+    }
+  } catch (bdcErr) {}
+
+  return `GPS (${latitude.toFixed(5)}, ${longitude.toFixed(5)})`;
 };

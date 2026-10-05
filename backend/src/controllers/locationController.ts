@@ -8,6 +8,7 @@ const locationSchema = z.object({
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
   accuracy: z.number().positive(),
+  source: z.string().optional(),
 });
 
 export const validateLocation = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -22,9 +23,10 @@ export const validateLocation = async (req: AuthRequest, res: Response): Promise
     }
 
     const { latitude, longitude, accuracy } = parsed.data;
+    const isWeb = !!(parsed.data.source || req.body?.source)?.toLowerCase().includes('web');
 
     try {
-      const result = await verifyLocation(latitude, longitude, accuracy);
+      const result = await verifyLocation(latitude, longitude, accuracy, isWeb);
 
       // Audit log
       await query(`

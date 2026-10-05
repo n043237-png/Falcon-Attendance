@@ -3,12 +3,18 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.verifyLocation = void 0;
 const db_1 = require("../db");
 const MAX_ACCURACY = parseInt(process.env.MAX_LOCATION_ACCURACY_METERS || '100', 10);
-const verifyLocation = async (latitude, longitude, accuracy) => {
-    if (accuracy > MAX_ACCURACY) {
+const WEB_OFFICE_RADIUS_METERS = parseInt(process.env.WEB_OFFICE_RADIUS_METERS || '12000', 10);
+const verifyLocation = async (latitude, longitude, accuracy, isWeb = false) => {
+    // Mobile devices require high-precision GPS (<= 100m).
+    // Web Portal (PC/laptop) uses Wi-Fi / IP geolocation without GPS hardware.
+    const maxAllowedAccuracy = isWeb ? 50000 : MAX_ACCURACY;
+    if (accuracy > maxAllowedAccuracy) {
         throw {
             status: 400,
             code: 'LOCATION_ACCURACY_TOO_LOW',
-            message: 'GPS accuracy is too low. Please move to an area with better GPS signal and try again.',
+            message: isWeb
+                ? 'Location accuracy is too low. Please ensure location services are enabled.'
+                : 'GPS accuracy is too low. Please move to an area with better GPS signal and try again.',
         };
     }
     const officeResult = await (0, db_1.query)(`
@@ -30,11 +36,15 @@ const verifyLocation = async (latitude, longitude, accuracy) => {
     }
     const office = officeResult.rows[0];
     const distanceMeters = parseFloat(office.distance_meters);
-    const insideOffice = distanceMeters <= office.radius_meters;
+    // For Web Portal, office PCs use wired broadband or Wi-Fi where ISP IP routing places them within regional exchange range (~7-10km).
+    const allowedRadius = isWeb
+        ? Math.max(office.radius_meters, WEB_OFFICE_RADIUS_METERS)
+        : office.radius_meters;
+    const insideOffice = distanceMeters <= allowedRadius;
     return {
         insideOffice,
         distanceMeters: Math.round(distanceMeters * 10) / 10,
-        allowedRadiusMeters: office.radius_meters,
+        allowedRadiusMeters: allowedRadius,
         accuracyMeters: Math.round(accuracy),
         officeId: office.id,
         officeName: office.name || 'Falcon Info Solutions HQ'

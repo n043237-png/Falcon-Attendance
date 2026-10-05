@@ -414,21 +414,15 @@ export default function ProfileScreen() {
                   <Ionicons name="navigate-circle-outline" size={16} color="#64748B" />
                   <Text style={styles.label}>Attendance Mode</Text>
                 </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <Text style={[
-                    styles.value,
-                    {
-                      fontWeight: '700',
-                      color: (profile.attendanceMode || 'Office') === 'Field' ? '#D97706' : '#2563EB',
-                      marginRight: 4
-                    }
-                  ]}>
-                    {(profile.attendanceMode || 'Office') === 'Field' ? '📍 Field' : '🏢 Office'}
-                  </Text>
-                  <Text style={{ fontSize: 10, color: '#94A3B8', fontWeight: '500' }}>
-                    (Read-only)
-                  </Text>
-                </View>
+                <Text style={[
+                  styles.value,
+                  {
+                    fontWeight: '700',
+                    color: (profile.attendanceMode || 'Office') === 'Field' ? '#D97706' : '#2563EB'
+                  }
+                ]}>
+                  {(profile.attendanceMode || 'Office') === 'Field' ? '📍 Field' : '🏢 Office'}
+                </Text>
               </View>
 
               <View style={styles.infoRow}>

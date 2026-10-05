@@ -8,6 +8,7 @@ import { getAttendanceSettings, calculateStatus } from '../services/attendanceSt
 import { ShiftService } from '../services/shiftService';
 
 import { processAndSaveAttendanceSelfie } from '../middlewares/upload';
+import { GeocodingService } from '../services/geocodingService';
 
 const coordsSchema = z.object({
   latitude: z.number().min(-90).max(90),
@@ -73,7 +74,7 @@ export const checkIn = async (req: AuthRequest, res: Response): Promise<void> =>
     if (isWebPortal || !isFieldMode) {
       // Office geofence validation strictly required for Office Mode and Web Portal attendance
       try {
-        const vr = await verifyLocation(latitude, longitude, accuracy);
+        const vr = await verifyLocation(latitude, longitude, accuracy, isWebPortal);
         locResult = {
           officeId: vr.officeId,
           officeName: vr.officeName,
@@ -88,6 +89,17 @@ export const checkIn = async (req: AuthRequest, res: Response): Promise<void> =>
         }
         throw verr;
       }
+
+      console.log('[Web Check-In Location]', {
+        employeeId,
+        latitude,
+        longitude,
+        accuracy,
+        isWebPortal,
+        distanceMeters: locResult.distanceMeters,
+        allowedRadiusMeters: locResult.allowedRadiusMeters,
+        insideOffice: locResult.insideOffice
+      });
 
       if (!locResult.insideOffice) {
         const outsideMsg = isWebPortal
@@ -115,7 +127,22 @@ export const checkIn = async (req: AuthRequest, res: Response): Promise<void> =>
       locResult.officeName = defOff.rows[0]?.name || 'Field Location';
     }
 
-    const recordedAddress = address?.trim() || (isFieldMode && !isWebPortal ? `GPS (${latitude.toFixed(5)}, ${longitude.toFixed(5)})` : (locResult.officeName || 'Office'));
+    let recordedAddress = address?.trim();
+    if (isFieldMode && !isWebPortal) {
+      if (!recordedAddress || /^GPS\s*\(/i.test(recordedAddress) || /^-?\d+(\.\d+)?,\s*-?\d+(\.\d+)?$/.test(recordedAddress)) {
+        try {
+          const resolved = await GeocodingService.reverseGeocode(latitude, longitude);
+          if (resolved) {
+            recordedAddress = resolved;
+          }
+        } catch (geoErr) {
+          console.warn('Geocoding check-in address resolution failed:', geoErr);
+        }
+      }
+    }
+    if (!recordedAddress) {
+      recordedAddress = isFieldMode && !isWebPortal ? `GPS (${latitude.toFixed(5)}, ${longitude.toFixed(5)})` : (locResult.officeName || 'Office');
+    }
 
     // 2. Fetch employee's assigned shift
     const shift = await ShiftService.getEmployeeShift(employeeId);
@@ -353,7 +380,7 @@ export const checkOut = async (req: AuthRequest, res: Response): Promise<void> =
     if (isWebPortal || !isFieldMode) {
       // Office Mode and Web Portal: Strictly validate office geofence & radius
       try {
-        const vr = await verifyLocation(latitude, longitude, accuracy);
+        const vr = await verifyLocation(latitude, longitude, accuracy, isWebPortal);
         locResult = {
           officeId: vr.officeId,
           officeName: vr.officeName,
@@ -368,6 +395,17 @@ export const checkOut = async (req: AuthRequest, res: Response): Promise<void> =
         }
         throw verr;
       }
+
+      console.log('[Web Check-Out Location]', {
+        employeeId,
+        latitude,
+        longitude,
+        accuracy,
+        isWebPortal,
+        distanceMeters: locResult.distanceMeters,
+        allowedRadiusMeters: locResult.allowedRadiusMeters,
+        insideOffice: locResult.insideOffice
+      });
 
       if (!locResult.insideOffice) {
         const outsideMsg = isWebPortal
@@ -392,7 +430,22 @@ export const checkOut = async (req: AuthRequest, res: Response): Promise<void> =
       locResult.officeName = 'Field Location';
     }
 
-    const recordedOutAddress = address?.trim() || (isFieldMode && !isWebPortal ? `GPS (${latitude.toFixed(5)}, ${longitude.toFixed(5)})` : (locResult.officeName || 'Office'));
+    let recordedOutAddress = address?.trim();
+    if (isFieldMode && !isWebPortal) {
+      if (!recordedOutAddress || /^GPS\s*\(/i.test(recordedOutAddress) || /^-?\d+(\.\d+)?,\s*-?\d+(\.\d+)?$/.test(recordedOutAddress)) {
+        try {
+          const resolved = await GeocodingService.reverseGeocode(latitude, longitude);
+          if (resolved) {
+            recordedOutAddress = resolved;
+          }
+        } catch (geoErr) {
+          console.warn('Geocoding check-out address resolution failed:', geoErr);
+        }
+      }
+    }
+    if (!recordedOutAddress) {
+      recordedOutAddress = isFieldMode && !isWebPortal ? `GPS (${latitude.toFixed(5)}, ${longitude.toFixed(5)})` : (locResult.officeName || 'Office');
+    }
 
     // 2. Find open attendance record (supporting night shifts across midnight)
     const openRes = await query(`
@@ -586,7 +639,9 @@ export const getToday = async (req: AuthRequest, res: Response): Promise<void> =
         SELECT id, attendance_date, check_in, check_out, working_minutes, status,
                COALESCE(attendance_mode, 'Office') as attendance_mode,
                COALESCE(attendance_source, 'Mobile App') as attendance_source,
+               check_in_latitude, check_in_longitude,
                check_in_address, check_in_selfie_url,
+               check_out_latitude, check_out_longitude,
                check_out_address, check_out_selfie_url 
         FROM attendance WHERE employee_id = $1 AND attendance_date = $2
       `, [employeeId, today]),
@@ -608,6 +663,23 @@ export const getToday = async (req: AuthRequest, res: Response): Promise<void> =
     ]);
 
     const record = existRes.rows[0];
+
+    // For Field mode: If check_in_address is missing or raw GPS coordinates, dynamically resolve and persist
+    if (record && record.attendance_mode === 'Field' && record.check_in_latitude && record.check_in_longitude) {
+      if (!record.check_in_address || /^GPS\s*\(/i.test(record.check_in_address) || /^-?\d+(\.\d+)?,\s*-?\d+(\.\d+)?$/.test(record.check_in_address)) {
+        try {
+          const lat = parseFloat(record.check_in_latitude);
+          const lon = parseFloat(record.check_in_longitude);
+          if (!isNaN(lat) && !isNaN(lon)) {
+            const resolved = await GeocodingService.reverseGeocode(lat, lon);
+            if (resolved) {
+              record.check_in_address = resolved;
+              query('UPDATE attendance SET check_in_address = $1 WHERE id = $2', [resolved, record.id]).catch(() => {});
+            }
+          }
+        } catch (err) {}
+      }
+    }
     const holiday = holRes.rows[0];
     const leave = leaveRes.rows[0];
     const officeInfo = officeRes.rows[0] ? {

@@ -8,6 +8,7 @@ const locationSchema = zod_1.z.object({
     latitude: zod_1.z.number().min(-90).max(90),
     longitude: zod_1.z.number().min(-180).max(180),
     accuracy: zod_1.z.number().positive(),
+    source: zod_1.z.string().optional(),
 });
 const validateLocation = async (req, res) => {
     try {
@@ -20,8 +21,9 @@ const validateLocation = async (req, res) => {
             return;
         }
         const { latitude, longitude, accuracy } = parsed.data;
+        const isWeb = !!(parsed.data.source || req.body?.source)?.toLowerCase().includes('web');
         try {
-            const result = await (0, locationService_1.verifyLocation)(latitude, longitude, accuracy);
+            const result = await (0, locationService_1.verifyLocation)(latitude, longitude, accuracy, isWeb);
             // Audit log
             await (0, db_1.query)(`
         INSERT INTO audit_logs (user_id, action, entity_type, entity_id, metadata)
