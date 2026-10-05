@@ -38,7 +38,8 @@ import {
   X,
   ShieldCheck,
   User as UserIcon,
-  MoreVertical
+  MoreVertical,
+  Monitor
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import Avatar from '../components/common/Avatar';
@@ -174,6 +175,7 @@ export default function AdminEmployees() {
     provisionalEndDate: '',
     shiftId: undefined as number | undefined,
     attendanceMode: 'Office',
+    allowWebAttendance: false,
     motherName: '',
     fatherName: '',
     reportingManager: ''
@@ -381,6 +383,7 @@ export default function AdminEmployees() {
       provisionalEndDate: '',
       shiftId: availableShifts.length > 0 ? availableShifts[0].id : 1,
       attendanceMode: 'Office',
+      allowWebAttendance: false,
       motherName: '',
       fatherName: '',
       reportingManager: ''
@@ -429,6 +432,7 @@ export default function AdminEmployees() {
         : '',
       shiftId: user.shiftId || 1,
       attendanceMode: user.attendanceMode || user.attendance_mode || 'Office',
+      allowWebAttendance: user.allowWebAttendance === true || user.allow_web_attendance === true,
       motherName: user.motherName || '',
       fatherName: user.fatherName || '',
       reportingManager: user.reportingManager || ''
@@ -1021,7 +1025,7 @@ export default function AdminEmployees() {
       )}
 
       {/* Employees Table */}
-      <div className="card p-0 border shadow-sm" style={{ overflow: 'visible' }}>
+      <div className="card p-0 border shadow-sm overflow-hidden">
         {loading && records.length === 0 ? (
           <div className="text-center py-5">
             <Spinner animation="border" variant="primary" />
@@ -1029,8 +1033,8 @@ export default function AdminEmployees() {
           </div>
         ) : (
           <>
-            <div className="table-responsive-wrapper" style={{ border: 'none', borderRadius: 0, overflow: 'visible' }}>
-              <table className="table table-hover align-middle table-sticky-actions mb-0">
+            <div className="table-responsive mb-0" style={{ border: 'none' }}>
+              <table className="table table-hover align-middle mb-0" style={{ width: '100%' }}>
                 <thead>
                   <tr>
                     <th>Employee</th>
@@ -1040,7 +1044,6 @@ export default function AdminEmployees() {
                     <th>Shift</th>
                     <th>Role</th>
                     <th>Status</th>
-                    <th>Job Status</th>
                     <th>Mode</th>
                     <th className="text-end" style={{ width: '135px', minWidth: '135px' }}>Actions</th>
                   </tr>
@@ -1111,24 +1114,6 @@ export default function AdminEmployees() {
                           <span className={`badge ${r.status === 'active' ? 'bg-success' : 'bg-secondary'}`}>
                             {r.status?.toUpperCase()}
                           </span>
-                        </td>
-                        <td>
-                          {r.jobStatus === 'Provisional' ? (
-                            <div>
-                              <span className="badge bg-warning text-dark border border-warning-subtle fw-medium d-inline-flex align-items-center gap-1" style={{ fontSize: '11px', padding: '3px 8px' }}>
-                                <Clock size={11} /> Provisional
-                              </span>
-                              {r.provisionalEndDate && (
-                                <div className="text-muted font-monospace" style={{ fontSize: '11px', marginTop: '2px' }}>
-                                  Ends: {r.provisionalEndDate}
-                                </div>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="badge bg-success-subtle text-success border border-success-subtle fw-medium d-inline-flex align-items-center gap-1" style={{ fontSize: '11px', padding: '3px 8px' }}>
-                              <Shield size={11} /> Permanent
-                            </span>
-                          )}
                         </td>
                         <td>
                           {r.attendanceMode === 'Field' ? (
@@ -1291,7 +1276,7 @@ export default function AdminEmployees() {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={10} className="text-center py-5 text-muted">
+                      <td colSpan={9} className="text-center py-5 text-muted">
                         No employees found matching the filters.
                       </td>
                     </tr>
@@ -1785,6 +1770,50 @@ export default function AdminEmployees() {
               <Col md={12}>
                 <div className="p-3 rounded-3 border bg-light mt-1">
                   <div className="d-flex align-items-center justify-content-between mb-2">
+                    <Form.Label className="d-flex align-items-center gap-1.5 fw-semibold text-dark mb-0">
+                      <Monitor size={15} className="text-primary" />
+                      <span>Allow Web Attendance</span>
+                    </Form.Label>
+                    <span className="text-muted" style={{ fontSize: '12px' }}>Browser / PC Attendance Permission</span>
+                  </div>
+
+                  <div className="p-2.5 rounded-2 bg-white border">
+                    <div className="d-flex align-items-center gap-4 mb-2">
+                      <Form.Check
+                        type="radio"
+                        id="web-att-yes"
+                        name="allowWebAttendance"
+                        label={<span className="fw-medium text-dark">Yes</span>}
+                        checked={formData.allowWebAttendance === true}
+                        onChange={() => setFormData({ ...formData, allowWebAttendance: true })}
+                      />
+                      <Form.Check
+                        type="radio"
+                        id="web-att-no"
+                        name="allowWebAttendance"
+                        label={<span className="fw-medium text-dark">No (Default)</span>}
+                        checked={formData.allowWebAttendance !== true}
+                        onChange={() => setFormData({ ...formData, allowWebAttendance: false })}
+                      />
+                    </div>
+                    <div className="text-muted" style={{ fontSize: '12px' }}>
+                      {formData.allowWebAttendance ? (
+                        <span className="text-success fw-medium">
+                          ✓ Authorized to mark attendance from the Web Portal on PC/laptop (subject to location & office geofence verification).
+                        </span>
+                      ) : (
+                        <span>
+                          Only authorized employees can mark attendance from a PC. When set to <strong>No</strong>, employee can only mark attendance from the mobile app.
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </Col>
+
+              <Col md={12}>
+                <div className="p-3 rounded-3 border bg-light mt-1">
+                  <div className="d-flex align-items-center justify-content-between mb-2">
                     <Form.Label className="fw-semibold text-dark mb-0 d-flex align-items-center gap-1.5">
                       <MapPin size={15} className="text-primary" />
                       <span>Attendance Mode</span>
@@ -1898,6 +1927,9 @@ export default function AdminEmployees() {
               )}
               <span className={`badge ${detailData?.profile?.attendanceMode === 'Field' ? 'bg-warning text-dark border border-warning' : 'bg-primary-subtle text-primary border border-primary-subtle'}`}>
                 {detailData?.profile?.attendanceMode === 'Field' ? '📍 FIELD' : '🏢 OFFICE'}
+              </span>
+              <span className={`badge ${detailData?.profile?.allowWebAttendance ? 'bg-success-subtle text-success border border-success' : 'bg-secondary-subtle text-secondary border'}`}>
+                {detailData?.profile?.allowWebAttendance ? '💻 WEB: ALLOWED' : '💻 WEB: BLOCKED'}
               </span>
               <span className={`badge ${detailData?.profile?.jobStatus === 'Provisional' ? 'bg-warning text-dark' : 'bg-success'}`}>
                 {detailData?.profile?.jobStatus?.toUpperCase() || 'PERMANENT'}

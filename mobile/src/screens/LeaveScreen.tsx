@@ -73,7 +73,7 @@ export default function LeaveScreen() {
 
   // Approver / Admin selection states
   const [admins, setAdmins] = useState<AdminApprover[]>([]);
-  const [selectedAdminId, setSelectedAdminId] = useState<number | null>(null);
+  const [selectedAdminIds, setSelectedAdminIds] = useState<number[]>([]);
   const [showAdminPicker, setShowAdminPicker] = useState(false);
   const modalScrollRef = useRef<ScrollView>(null);
 
@@ -175,7 +175,17 @@ export default function LeaveScreen() {
   const availableBalance = balance?.currentBalance ?? 0;
   const isLwpRequired = validation ? validation.isLwpRequired : requestedDays > availableBalance;
   const lwpDays = validation ? validation.lwpDays : (isLwpRequired ? requestedDays - availableBalance : 0);
-  const selectedAdmin = admins.find(a => a.id === selectedAdminId) || null;
+  const selectedAdmin = admins.find(a => selectedAdminIds.includes(a.id)) || null;
+  const selectedAdminTitle = selectedAdminIds.length === 0
+    ? 'All Admins (Default)'
+    : selectedAdminIds.length === 1
+    ? (admins.find(a => a.id === selectedAdminIds[0])?.name || 'Selected Admin')
+    : selectedAdminIds.map(id => admins.find(a => a.id === id)?.name).filter(Boolean).join(', ');
+  const selectedAdminSubtitle = selectedAdminIds.length === 0
+    ? 'Notify all active administrators'
+    : selectedAdminIds.length === 1
+    ? (admins.find(a => a.id === selectedAdminIds[0])?.email || 'Designated Approver')
+    : `Any of the ${selectedAdminIds.length} designated admins can approve`;
 
   const handleApply = async () => {
     if (!token) return;
@@ -224,14 +234,15 @@ export default function LeaveScreen() {
         startDate: formatDateYMD(startDate),
         endDate: formatDateYMD(endDate),
         reason: reason.trim(),
-        assignedToAdminId: selectedAdminId,
+        assignedToAdminId: selectedAdminIds.length > 0 ? selectedAdminIds[0] : null,
+        assignedToAdminIds: selectedAdminIds,
       });
 
       if (res.success) {
         Alert.alert('Success 🎉', 'Your leave request has been submitted successfully.');
         setShowApplyModal(false);
         setReason('');
-        setSelectedAdminId(null);
+        setSelectedAdminIds([]);
         setStartDate(new Date());
         setEndDate(new Date());
         fetchData(true);
@@ -494,8 +505,11 @@ export default function LeaveScreen() {
         {/* Action row: Approve / Reject for Admin on pending, or Cancel for Employee on pending */}
         {isAdmin && activeTab === 'ALL_REQUESTS' && item.status?.toUpperCase() === 'PENDING' ? (
           (() => {
+            const assignedIds: number[] = item.assignedToIds?.length > 0
+              ? item.assignedToIds.map(Number)
+              : (item.assignedTo ? [Number(item.assignedTo)] : []);
             const isAssignedToOther = Boolean(
-              item.assignedTo && user?.id && Number(item.assignedTo) !== Number(user.id)
+              assignedIds.length > 0 && user?.id && !assignedIds.includes(Number(user.id))
             );
 
             if (isAssignedToOther) {
@@ -789,7 +803,7 @@ export default function LeaveScreen() {
         transparent
         onRequestClose={() => {
           setShowApplyModal(false);
-          setSelectedAdminId(null);
+          setSelectedAdminIds([]);
         }}
       >
         <KeyboardAvoidingView
@@ -809,7 +823,7 @@ export default function LeaveScreen() {
               <TouchableOpacity
                 onPress={() => {
                   setShowApplyModal(false);
-                  setSelectedAdminId(null);
+                  setSelectedAdminIds([]);
                 }}
                 style={styles.modalCloseBtn}
               >
@@ -1040,21 +1054,19 @@ export default function LeaveScreen() {
                   activeOpacity={0.7}
                 >
                   <View style={styles.adminSelectorLeft}>
-                    <View style={[styles.adminAvatarSmall, !selectedAdmin && styles.adminAvatarAll]}>
+                    <View style={[styles.adminAvatarSmall, selectedAdminIds.length === 0 && styles.adminAvatarAll]}>
                       <Ionicons
-                        name={selectedAdmin ? "person" : "people"}
+                        name={selectedAdminIds.length > 0 ? "person" : "people"}
                         size={15}
-                        color={selectedAdmin ? "#2563EB" : "#0D9488"}
+                        color={selectedAdminIds.length > 0 ? "#2563EB" : "#0D9488"}
                       />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.adminSelectorTitle} numberOfLines={1}>
-                        {selectedAdmin ? selectedAdmin.name : 'All Admins (Default)'}
+                        {selectedAdminTitle}
                       </Text>
                       <Text style={styles.adminSelectorSubtitle} numberOfLines={1}>
-                        {selectedAdmin
-                          ? (selectedAdmin.email ? `${selectedAdmin.email}${selectedAdmin.employee_id ? ` • ${selectedAdmin.employee_id}` : ''}` : 'Designated Approver')
-                          : 'Notify all active administrators'}
+                        {selectedAdminSubtitle}
                       </Text>
                     </View>
                   </View>
@@ -1062,7 +1074,11 @@ export default function LeaveScreen() {
                 </TouchableOpacity>
 
                 <Text style={styles.fieldHelperText}>
-                  Select the specific admin or manager you are applying to, or leave as "All Admins".
+                  {selectedAdminIds.length === 0
+                    ? 'All active administrators will be notified and can approve your request.'
+                    : selectedAdminIds.length === 1
+                    ? 'Only the selected admin will be notified and can approve.'
+                    : `Either of the ${selectedAdminIds.length} selected managers can review and approve.`}
                 </Text>
               </View>
 
@@ -1121,7 +1137,7 @@ export default function LeaveScreen() {
                 style={styles.modalCancelBtn}
                 onPress={() => {
                   setShowApplyModal(false);
-                  setSelectedAdminId(null);
+                  setSelectedAdminIds([]);
                 }}
                 disabled={applying}
               >
@@ -1166,7 +1182,7 @@ export default function LeaveScreen() {
             <View style={styles.modalHeader}>
               <View>
                 <Text style={styles.modalTitle}>Approving Admin / Manager</Text>
-                <Text style={styles.modalSubtitle}>Select who should review your leave request</Text>
+                <Text style={styles.modalSubtitle}>Select one or multiple approvers</Text>
               </View>
               <TouchableOpacity
                 onPress={() => setShowAdminPicker(false)}
@@ -1181,11 +1197,10 @@ export default function LeaveScreen() {
               <TouchableOpacity
                 style={[
                   styles.adminOptionCard,
-                  selectedAdminId === null && styles.adminOptionCardSelected,
+                  selectedAdminIds.length === 0 && styles.adminOptionCardSelected,
                 ]}
                 onPress={() => {
-                  setSelectedAdminId(null);
-                  setShowAdminPicker(false);
+                  setSelectedAdminIds([]);
                 }}
                 activeOpacity={0.7}
               >
@@ -1193,21 +1208,21 @@ export default function LeaveScreen() {
                   <Ionicons name="people" size={20} color="#0D9488" />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.adminOptionName, selectedAdminId === null && styles.adminOptionNameSelected]}>
+                  <Text style={[styles.adminOptionName, selectedAdminIds.length === 0 && styles.adminOptionNameSelected]}>
                     All Admins (Default)
                   </Text>
                   <Text style={styles.adminOptionDesc}>
                     Any active administrator can review and take action
                   </Text>
                 </View>
-                {selectedAdminId === null && (
+                {selectedAdminIds.length === 0 && (
                   <Ionicons name="checkmark-circle" size={22} color="#2563EB" />
                 )}
               </TouchableOpacity>
 
               {/* List of active Admins */}
               {admins.map((admin) => {
-                const isSelected = selectedAdminId === admin.id;
+                const isSelected = selectedAdminIds.includes(admin.id);
                 const initials = (admin.name || 'Admin')
                   .split(' ')
                   .filter(Boolean)
@@ -1224,8 +1239,11 @@ export default function LeaveScreen() {
                       isSelected && styles.adminOptionCardSelected,
                     ]}
                     onPress={() => {
-                      setSelectedAdminId(admin.id);
-                      setShowAdminPicker(false);
+                      setSelectedAdminIds((prev) =>
+                        prev.includes(admin.id)
+                          ? prev.filter((id) => id !== admin.id)
+                          : [...prev, admin.id]
+                      );
                     }}
                     activeOpacity={0.7}
                   >
@@ -1241,8 +1259,10 @@ export default function LeaveScreen() {
                         {admin.employee_id ? ` • ID: ${admin.employee_id}` : ''}
                       </Text>
                     </View>
-                    {isSelected && (
-                      <Ionicons name="checkmark-circle" size={22} color="#2563EB" />
+                    {isSelected ? (
+                      <Ionicons name="checkbox" size={22} color="#2563EB" />
+                    ) : (
+                      <Ionicons name="square-outline" size={22} color="#94A3B8" />
                     )}
                   </TouchableOpacity>
                 );
@@ -1256,6 +1276,24 @@ export default function LeaveScreen() {
                 </View>
               )}
             </ScrollView>
+
+            <View style={{ marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#E2E8F0' }}>
+              <TouchableOpacity
+                style={{
+                  backgroundColor: '#2563EB',
+                  borderRadius: 10,
+                  paddingVertical: 12,
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+                onPress={() => setShowAdminPicker(false)}
+                activeOpacity={0.8}
+              >
+                <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 15 }}>
+                  Done {selectedAdminIds.length > 0 ? `(${selectedAdminIds.length} Selected)` : ''}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -1377,7 +1415,7 @@ export default function LeaveScreen() {
                   onPress={() => {
                     setShowImpactModal(false);
                     setShowApplyModal(false);
-                    setSelectedAdminId(null);
+                    setSelectedAdminIds([]);
                   }}
                   disabled={applying}
                 >

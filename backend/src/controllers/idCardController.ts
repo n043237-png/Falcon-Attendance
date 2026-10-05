@@ -320,8 +320,8 @@ export const renderVerificationPage = async (req: Request, res: Response): Promi
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: linear-gradient(135deg, #0F172A 0%, #1E293B 50%, #0F172A 100%);
-      color: #0F172A;
+      background: linear-gradient(135deg, #024E79 0%, #0072BC 45%, #013552 100%);
+      color: #023E60;
       min-height: 100vh;
       display: flex;
       flex-direction: column;
@@ -334,7 +334,7 @@ export const renderVerificationPage = async (req: Request, res: Response): Promi
     /* Top Brand & Verified Header */
     .brand-header { text-align: center; margin-bottom: 14px; }
     .brand-title { color: #FFFFFF; font-size: 15px; font-weight: 800; letter-spacing: 0.8px; text-transform: uppercase; }
-    .brand-subtitle { color: #94A3B8; font-size: 10px; font-weight: 600; letter-spacing: 0.5px; }
+    .brand-subtitle { color: #BAE6FD; font-size: 10px; font-weight: 600; letter-spacing: 0.5px; }
 
     .verified-banner {
       width: 100%;
@@ -384,7 +384,7 @@ export const renderVerificationPage = async (req: Request, res: Response): Promi
       border-radius: 20px;
       overflow: hidden;
       background: #FFFFFF;
-      box-shadow: 0 20px 45px -12px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(15, 23, 42, 0.08);
+      box-shadow: 0 20px 45px -12px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(2, 62, 96, 0.12);
       display: flex;
       flex-direction: column;
     }
@@ -394,10 +394,10 @@ export const renderVerificationPage = async (req: Request, res: Response): Promi
 
     /* Card Navy Top Bar */
     .card-top-navy {
-      background: linear-gradient(135deg, #0F172A 0%, #1E293B 70%, #0F172A 100%);
+      background: linear-gradient(135deg, #009EE2 0%, #0072BC 55%, #024E79 100%);
       padding: 14px 12px 10px 12px;
       text-align: center;
-      border-bottom: 3px solid #2563EB;
+      border-bottom: 3px solid #38BDF8;
       position: relative;
     }
     .card-top-brand {
@@ -421,7 +421,7 @@ export const renderVerificationPage = async (req: Request, res: Response): Promi
       text-align: left;
     }
     .card-comp-tag {
-      color: #94A3B8;
+      color: #BAE6FD;
       font-size: 7.5px;
       letter-spacing: 0.8px;
       font-weight: 600;
@@ -440,8 +440,8 @@ export const renderVerificationPage = async (req: Request, res: Response): Promi
       height: 88px;
       border-radius: 16px;
       padding: 3px;
-      background: linear-gradient(135deg, #2563EB 0%, #60A5FA 100%);
-      box-shadow: 0 8px 16px -4px rgba(37, 99, 235, 0.35);
+      background: linear-gradient(135deg, #0072BC 0%, #38BDF8 100%);
+      box-shadow: 0 8px 16px -4px rgba(0, 114, 188, 0.4);
       margin-bottom: 8px;
     }
     .photo-inner {
@@ -463,7 +463,7 @@ export const renderVerificationPage = async (req: Request, res: Response): Promi
     .photo-initials {
       font-size: 26px;
       font-weight: 800;
-      color: #2563EB;
+      color: #0072BC;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -471,7 +471,7 @@ export const renderVerificationPage = async (req: Request, res: Response): Promi
       height: 100%;
     }
     .emp-name-text {
-      color: #0F172A;
+      color: #023E60;
       font-size: 16px;
       font-weight: 800;
       letter-spacing: -0.3px;
@@ -479,7 +479,7 @@ export const renderVerificationPage = async (req: Request, res: Response): Promi
       line-height: 1.2;
     }
     .emp-desig-text {
-      color: #2563EB;
+      color: #0072BC;
       font-size: 11px;
       font-weight: 700;
       margin-top: 2px;
@@ -521,12 +521,12 @@ export const renderVerificationPage = async (req: Request, res: Response): Promi
       font-size: 11px;
     }
     .spec-label { color: #64748B; font-weight: 600; }
-    .spec-val { color: #0F172A; font-weight: 700; text-align: right; }
+    .spec-val { color: #023E60; font-weight: 700; text-align: right; }
 
     /* Card Navy Footer Bar */
     .card-footer-navy {
-      background: #0F172A;
-      border-top: 2px solid #2563EB;
+      background: linear-gradient(135deg, #024E79 0%, #0072BC 50%, #009EE2 100%);
+      border-top: 2.5px solid #38BDF8;
       padding: 7px 10px;
       text-align: center;
     }
@@ -539,10 +539,10 @@ export const renderVerificationPage = async (req: Request, res: Response): Promi
 
     /* Back Side Styles */
     .back-header-navy {
-      background: #0F172A;
+      background: linear-gradient(135deg, #009EE2 0%, #0072BC 55%, #024E79 100%);
       padding: 10px;
       text-align: center;
-      border-bottom: 2px solid #2563EB;
+      border-bottom: 2.5px solid #38BDF8;
     }
     .back-header-title {
       color: #FFFFFF;
@@ -564,7 +564,7 @@ export const renderVerificationPage = async (req: Request, res: Response): Promi
       padding: 8px;
       border-radius: 12px;
       border: 1px solid #CBD5E1;
-      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+      box-shadow: 0 4px 12px rgba(2, 62, 96, 0.08);
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -599,15 +599,15 @@ export const renderVerificationPage = async (req: Request, res: Response): Promi
       color: #334155;
     }
     .back-contact-label { color: #64748B; font-weight: 600; }
-    .back-contact-val { font-weight: 700; color: #0F172A; }
+    .back-contact-val { font-weight: 700; color: #023E60; }
     .return-notice {
-      background: #EFF6FF;
-      border: 1px dashed #93C5FD;
+      background: #F0F9FF;
+      border: 1px dashed #7DD3FC;
       border-radius: 8px;
       padding: 6px 10px;
       text-align: center;
       font-size: 9px;
-      color: #1E40AF;
+      color: #023E60;
       font-weight: 600;
       line-height: 1.3;
       width: 100%;
@@ -620,7 +620,7 @@ export const renderVerificationPage = async (req: Request, res: Response): Promi
       gap: 10px;
     }
     .flip-btn {
-      background: #2563EB;
+      background: #0072BC;
       color: #FFFFFF;
       border: none;
       border-radius: 24px;
@@ -631,13 +631,13 @@ export const renderVerificationPage = async (req: Request, res: Response): Promi
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
+      box-shadow: 0 4px 12px rgba(0, 114, 188, 0.35);
       transition: background 0.2s, transform 0.1s;
     }
-    .flip-btn:hover { background: #1D4ED8; }
+    .flip-btn:hover { background: #005B96; }
     .flip-btn:active { transform: scale(0.98); }
 
-    .footer { text-align: center; color: #64748B; font-size: 11px; margin-top: 18px; }
+    .footer { text-align: center; color: #94A3B8; font-size: 11px; margin-top: 18px; }
   </style>
 </head>
 <body>

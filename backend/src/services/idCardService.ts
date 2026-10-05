@@ -95,7 +95,7 @@ export class IdCardService {
       width: 400,
       margin: 1,
       color: {
-        dark: '#0F172A',
+        dark: '#000000',
         light: '#FFFFFF'
       },
       errorCorrectionLevel: 'M'
@@ -280,10 +280,10 @@ export class IdCardService {
           // Card Background & Border
           doc.rect(0, 0, cardW, cardH).fill('#FFFFFF');
 
-          // Header Navy Banner
-          doc.rect(0, 0, cardW, 85).fill('#0F172A');
-          // Accent Stripe
-          doc.rect(0, 82, cardW, 4).fill('#2563EB');
+          // Header Falcon Globe Blue Banner
+          doc.rect(0, 0, cardW, 85).fill('#0072BC');
+          // Falcon Globe Sky Cyan Accent Stripe
+          doc.rect(0, 82, cardW, 4).fill('#38BDF8');
 
           // Top Header Content: Company Logo / Name
           if (logoPath && fs.existsSync(logoPath)) {
@@ -299,7 +299,7 @@ export class IdCardService {
             .font('Helvetica-Bold')
             .text('FALCON INFO SOLUTIONS', 0, 44, { width: cardW, align: 'center' });
 
-          doc.fillColor('#94A3B8')
+          doc.fillColor('#BAE6FD')
             .fontSize(6.5)
             .font('Helvetica')
             .text('INNOVATION • INTEGRITY • EXCELLENCE', 0, 58, { width: cardW, align: 'center', characterSpacing: 0.5 });
@@ -311,7 +311,7 @@ export class IdCardService {
 
           // Outer shadow/border box
           doc.roundedRect(photoX - 2, photoY - 2, photoSize + 4, photoSize + 4, 8)
-            .fillAndStroke('#FFFFFF', '#2563EB');
+            .fillAndStroke('#FFFFFF', '#0072BC');
 
           let photoRendered = false;
           if (card.employee.profilePhotoUrl) {
@@ -355,32 +355,51 @@ export class IdCardService {
 
           if (!photoRendered) {
             // Draw placeholder initials avatar
-            doc.roundedRect(photoX, photoY, photoSize, photoSize, 6).fill('#EFF6FF');
+            doc.roundedRect(photoX, photoY, photoSize, photoSize, 6).fill('#F0F9FF');
             const initials = card.employee.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || 'EMP';
-            doc.fillColor('#2563EB').fontSize(20).font('Helvetica-Bold')
+            doc.fillColor('#0072BC').fontSize(20).font('Helvetica-Bold')
               .text(initials, photoX, photoY + 20, { width: photoSize, align: 'center' });
           }
 
           // Employee Name & Designation
           const nameY = photoY + photoSize + 6;
-          doc.fillColor('#0F172A')
+          doc.fillColor('#024E79')
             .fontSize(12)
             .font('Helvetica-Bold')
             .text(card.employee.name, 10, nameY, { width: cardW - 20, align: 'center' });
 
-          doc.fillColor('#2563EB')
+          doc.fillColor('#0072BC')
             .fontSize(8.5)
             .font('Helvetica-Bold')
             .text(card.employee.designation, 10, nameY + 15, { width: cardW - 20, align: 'center' });
 
+          // Attendance Mode Pill Badge
+          const modeBadgeY = nameY + 28;
+          const isField = card.employee.attendanceMode === 'Field';
+          const badgeW = 86;
+          const badgeH = 13;
+          const badgeX = (cardW - badgeW) / 2;
+          doc.roundedRect(badgeX, modeBadgeY, badgeW, badgeH, 6)
+            .fill(isField ? '#FEF3C7' : '#DCFCE7');
+
+          doc.fillColor(isField ? '#92400E' : '#15803D')
+            .fontSize(6.2)
+            .font('Helvetica-Bold')
+            .text(isField ? 'FIELD EMPLOYEE' : 'OFFICE EMPLOYEE', badgeX, modeBadgeY + 3.5, { width: badgeW, align: 'center' });
+
           // Details Table Area
-          const tableY = nameY + 34;
-          const leftX = 16;
-          const valueX = 82;
+          const tableBoxX = 14;
+          const tableY = modeBadgeY + 18;
+          const tableBoxW = cardW - 28;
+          const tableBoxH = 88;
+          doc.roundedRect(tableBoxX, tableY, tableBoxW, tableBoxH, 8).fillAndStroke('#F8FAFC', '#E2E8F0');
+
+          const leftX = tableBoxX + 10;
+          const valueX = tableBoxX + 68;
           const rowH = 13.5;
 
           const rows = [
-            { label: 'EMP ID', val: card.employee.employeeId, bold: true },
+            { label: 'Employee ID', val: card.employee.employeeId, bold: true },
             { label: 'Designation', val: card.employee.designation || 'Staff', bold: false },
             { label: 'Department', val: card.employee.department || 'General', bold: false },
             { label: 'Mobile No.', val: card.employee.phone || 'N/A', bold: false },
@@ -389,22 +408,22 @@ export class IdCardService {
           ];
 
           rows.forEach((r, idx) => {
-            const currentY = tableY + (idx * rowH);
+            const currentY = tableY + 6 + (idx * rowH);
             doc.fillColor('#64748B')
               .fontSize(6.8)
               .font('Helvetica-Bold')
-              .text(r.label.toUpperCase(), leftX, currentY);
+              .text(r.label, leftX, currentY, { width: 55 });
 
-            doc.fillColor('#0F172A')
-              .fontSize(7.2)
+            doc.fillColor('#024E79')
+              .fontSize(7)
               .font(r.bold ? 'Helvetica-Bold' : 'Helvetica')
-              .text(r.val, valueX, currentY, { width: cardW - valueX - 14, ellipsis: true });
+              .text(r.val, valueX, currentY, { width: tableBoxW - 74, ellipsis: true });
           });
 
-          // Footer Navy Banner
+          // Footer Falcon Globe Blue Banner
           const footerH = 26;
-          doc.rect(0, cardH - footerH, cardW, footerH).fill('#0F172A');
-          doc.rect(0, cardH - footerH, cardW, 2).fill('#2563EB');
+          doc.rect(0, cardH - footerH, cardW, footerH).fill('#0072BC');
+          doc.rect(0, cardH - footerH, cardW, 2.5).fill('#38BDF8');
 
           doc.fillColor('#FFFFFF')
             .fontSize(7.5)
@@ -420,83 +439,94 @@ export class IdCardService {
           doc.rect(0, 0, cardW, cardH).fill('#FFFFFF');
 
           // Header
-          doc.rect(0, 0, cardW, 36).fill('#0F172A');
-          doc.rect(0, 34, cardW, 2).fill('#2563EB');
+          doc.rect(0, 0, cardW, 36).fill('#0072BC');
+          doc.rect(0, 34, cardW, 2.5).fill('#38BDF8');
 
           doc.fillColor('#FFFFFF')
-            .fontSize(8.5)
+            .fontSize(9)
             .font('Helvetica-Bold')
-            .text('EMPLOYEE VERIFICATION', 0, 12, { width: cardW, align: 'center' });
+            .text('OFFICIAL VERIFICATION', 0, 9, { width: cardW, align: 'center' });
 
-          // QR Code rendering
+          doc.fillColor('#BAE6FD')
+            .fontSize(6)
+            .font('Helvetica')
+            .text('SECURE QR CREDENTIAL', 0, 22, { width: cardW, align: 'center', characterSpacing: 0.5 });
+
+          // QR Code container box
+          const qrBoxW = 126;
+          const qrBoxH = 134;
+          const qrBoxX = (cardW - qrBoxW) / 2;
+          const qrBoxY = 44;
+          doc.roundedRect(qrBoxX, qrBoxY, qrBoxW, qrBoxH, 8).fillAndStroke('#FFFFFF', '#E2E8F0');
+
           const qrBuf = await QRCode.toBuffer(card.qrPayload, {
-            width: 110,
+            width: 90,
             margin: 1,
+            color: {
+              dark: '#000000',
+              light: '#FFFFFF'
+            },
             errorCorrectionLevel: 'M'
           });
 
-          const qrY = 44;
-          const qrX = (cardW - 100) / 2;
-          doc.image(qrBuf, qrX, qrY, { width: 100, height: 100 });
+          const qrSize = 90;
+          const qrX = (cardW - qrSize) / 2;
+          const qrY = qrBoxY + 8;
+          doc.image(qrBuf, qrX, qrY, { width: qrSize, height: qrSize });
 
-          // Verification ID & Scan Instruction
           doc.fillColor('#64748B')
-            .fontSize(6)
+            .fontSize(5.8)
             .font('Helvetica')
-            .text('SCAN TO VERIFY CREDENTIALS', 0, qrY + 102, { width: cardW, align: 'center' });
+            .text('SCAN TO VERIFY EMPLOYEE', qrBoxX, qrBoxY + 104, { width: qrBoxW, align: 'center' });
 
-          doc.fillColor('#0F172A')
-            .fontSize(7)
-            .font('Helvetica-Bold')
-            .text(card.verificationId, 0, qrY + 111, { width: cardW, align: 'center' });
-
-          // Divider Line
-          doc.moveTo(18, qrY + 124).lineTo(cardW - 18, qrY + 124).lineWidth(0.5).strokeColor('#E2E8F0').stroke();
-
-          // Official Company Details
-          const contactY = qrY + 130;
-          const cRowH = 13;
-
-          const contactRows = [
-            { label: 'Website', val: card.company.website },
-            { label: 'Official Email', val: card.company.email },
-            { label: 'Emergency Contact', val: card.employee.emergencyContactPhone },
-            { label: 'Office Address', val: card.company.officeAddress }
-          ];
-
-          contactRows.forEach((cr, cIdx) => {
-            const cy = contactY + (cIdx * cRowH);
-            doc.fillColor('#64748B')
-              .fontSize(6.5)
-              .font('Helvetica-Bold')
-              .text(cr.label.toUpperCase() + ':', 18, cy);
-
-            doc.fillColor('#0F172A')
-              .fontSize(6.5)
-              .font('Helvetica')
-              .text(cr.val, 85, cy, { width: cardW - 100, ellipsis: true });
-          });
-
-          // Emergency Notice Box
-          const noticeY = cardH - 74;
-          doc.roundedRect(14, noticeY, cardW - 28, 36, 4).fillAndStroke('#EFF6FF', '#BFDBFE');
-
-          doc.fillColor('#1E40AF')
+          doc.fillColor('#024E79')
             .fontSize(6.5)
             .font('Helvetica-Bold')
-            .text('NOTICE', 18, noticeY + 5, { width: cardW - 36, align: 'center' });
+            .text(card.verificationId, qrBoxX, qrBoxY + 114, { width: qrBoxW, align: 'center' });
 
-          doc.fillColor('#1E293B')
-            .fontSize(6)
-            .font('Helvetica')
-            .text(card.company.emergencyMessage, 18, noticeY + 16, { width: cardW - 36, align: 'center' });
+          // Official Company Details Box
+          const contactBoxX = 14;
+          const contactBoxY = qrBoxY + qrBoxH + 10;
+          const contactBoxW = cardW - 28;
+          const contactBoxH = 72;
+          doc.roundedRect(contactBoxX, contactBoxY, contactBoxW, contactBoxH, 8).fillAndStroke('#F8FAFC', '#E2E8F0');
+
+          // Row 1: Website
+          doc.fillColor('#0072BC').fontSize(6.8).font('Helvetica-Bold')
+            .text(card.company.website, contactBoxX + 12, contactBoxY + 8, { width: contactBoxW - 24 });
+
+          // Row 2: Official Email
+          doc.fillColor('#024E79').fontSize(6.5).font('Helvetica')
+            .text(card.company.email, contactBoxX + 12, contactBoxY + 21, { width: contactBoxW - 24 });
+
+          // Row 3: Emergency Contact Phone (No overlapping, clearly styled)
+          const emergencyPhone = card.employee.emergencyContactPhone || card.company.phone || '9654503616';
+          doc.fillColor('#64748B').fontSize(6.5).font('Helvetica')
+            .text('Emergency: ', contactBoxX + 12, contactBoxY + 34, { continued: true })
+            .fillColor('#DC2626').font('Helvetica-Bold')
+            .text(emergencyPhone);
+
+          // Row 4: Office Address
+          doc.fillColor('#64748B').fontSize(5.8).font('Helvetica')
+            .text(card.company.officeAddress, contactBoxX + 12, contactBoxY + 47, { width: contactBoxW - 24, lineGap: 1.5 });
+
+          // Emergency Notice Box
+          const noticeY = contactBoxY + contactBoxH + 8;
+          const noticeH = 26;
+          doc.roundedRect(14, noticeY, cardW - 28, noticeH, 6).fillAndStroke('#F0F9FF', '#7DD3FC');
+
+          doc.fillColor('#0369A1')
+            .fontSize(6.2)
+            .font('Helvetica-Bold')
+            .text('"If found, please return this card to Falcon Info Solutions Pvt. Ltd."', 18, noticeY + 9, { width: cardW - 36, align: 'center' });
 
           // Back Footer
-          doc.rect(0, cardH - 24, cardW, 24).fill('#0F172A');
-          doc.fillColor('#94A3B8')
-            .fontSize(6)
-            .font('Helvetica')
-            .text('This card is the property of Falcon Info Solutions Pvt. Ltd.', 0, cardH - 16, { width: cardW, align: 'center' });
+          doc.rect(0, cardH - 24, cardW, 24).fill('#0072BC');
+          doc.rect(0, cardH - 24, cardW, 2).fill('#38BDF8');
+          doc.fillColor('#BAE6FD')
+            .fontSize(6.2)
+            .font('Helvetica-Bold')
+            .text('Property of Falcon Info Solutions Pvt. Ltd.', 0, cardH - 16, { width: cardW, align: 'center' });
         }
 
         doc.end();

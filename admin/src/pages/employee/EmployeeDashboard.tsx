@@ -24,7 +24,9 @@ import {
   Coffee,
   Check,
   FileCheck,
-  CalendarDays
+  CalendarDays,
+  Monitor,
+  Lock
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import Avatar from '../../components/common/Avatar';
@@ -105,24 +107,90 @@ export default function EmployeeDashboard() {
     return () => clearInterval(timer);
   }, []);
 
+  const [punchLoading, setPunchLoading] = useState(false);
+  const [punchError, setPunchError] = useState<string | null>(null);
+  const [punchSuccess, setPunchSuccess] = useState<string | null>(null);
+
+  const fetchData = async () => {
+    try {
+      const response = await axios.get(
+        `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/employee/dashboard`,
+        {
+          headers: { Authorization: `Bearer ${token}` }
+        }
+      );
+      setData(response.data);
+    } catch (err: any) {
+      setError(err.response?.data?.error || err.message || 'Failed to load dashboard data.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const response = await axios.get(
-          `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/employee/dashboard`,
-          {
-            headers: { Authorization: `Bearer ${token}` }
-          }
-        );
-        setData(response.data);
-      } catch (err: any) {
-        setError(err.response?.data?.error || err.message || 'Failed to load dashboard data.');
-      } finally {
-        setLoading(false);
-      }
-    };
     if (token) fetchData();
   }, [token]);
+
+  const handleWebPunch = (action: 'check-in' | 'check-out') => {
+    if (!navigator.geolocation) {
+      setPunchError('Location access is required to mark attendance. Please enable location services and try again.');
+      return;
+    }
+
+    setPunchLoading(true);
+    setPunchError(null);
+    setPunchSuccess(null);
+
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const { latitude, longitude, accuracy } = pos.coords;
+          const endpoint = action === 'check-in' ? '/api/attendance/check-in' : '/api/attendance/check-out';
+          const res = await axios.post(
+            `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}${endpoint}`,
+            {
+              latitude,
+              longitude,
+              accuracy,
+              source: 'Web Portal'
+            },
+            {
+              headers: { Authorization: `Bearer ${token}` }
+            }
+          );
+
+          if (res.data.success) {
+            setPunchSuccess(action === 'check-in' ? 'Attendance marked successfully via Web Portal!' : 'Checked out successfully via Web Portal!');
+            fetchData();
+          } else {
+            setPunchError(res.data.error?.message || 'Failed to record attendance.');
+          }
+        } catch (err: any) {
+          const errRes = err.response?.data?.error;
+          if (errRes?.code === 'OUTSIDE_OFFICE') {
+            setPunchError('You are outside the authorized office location. Attendance cannot be marked.');
+          } else if (errRes?.code === 'WEB_ATTENDANCE_NOT_ALLOWED') {
+            setPunchError(errRes.message || 'You are not authorized to mark attendance from the Web Portal. Only authorized employees can mark attendance from a PC.');
+          } else if (errRes?.message) {
+            setPunchError(errRes.message);
+          } else {
+            setPunchError('Failed to record attendance. Please try again.');
+          }
+        } finally {
+          setPunchLoading(false);
+        }
+      },
+      (geoError) => {
+        setPunchLoading(false);
+        setPunchError('Location access is required to mark attendance. Please enable location services and try again.');
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0
+      }
+    );
+  };
 
   // Greeting helper
   const getGreeting = () => {
@@ -150,6 +218,7 @@ export default function EmployeeDashboard() {
   }
 
   const profile = data?.profile || user;
+  const allowWebAttendance = !!((profile as any)?.allowWebAttendance || (profile as any)?.allow_web_attendance);
   const todayAtt = data?.today_status;
   const isPresent = !!todayAtt && (todayAtt.status === 'PRESENT' || todayAtt.status === 'LATE');
   const isLate = todayAtt?.status === 'LATE';
@@ -408,8 +477,12 @@ export default function EmployeeDashboard() {
 
                 <p className="text-muted mb-0" style={{ fontSize: '13px', lineHeight: 1.45 }}>
                   {isPresent
-                    ? 'Attendance successfully verified with geolocation and facial selfie recognition.'
-                    : 'Please use your Falcon Office mobile app to punch in upon arrival at the office.'}
+                    ? (todayAtt?.attendance_source === 'Web Portal' || todayAtt?.attendanceSource === 'Web Portal'
+                        ? 'Attendance verified with geolocation and office geofence via Web Portal.'
+                        : 'Attendance successfully verified with geolocation and mobile device.')
+                    : (allowWebAttendance
+                        ? 'You are authorized to punch in from the Web Portal using office GPS verification.'
+                        : 'Please use your Falcon Office mobile app to punch in upon arrival at the office.')}
                 </p>
               </div>
 
@@ -472,6 +545,82 @@ export default function EmployeeDashboard() {
                 </div>
               </div>
             </div>
+
+              {/* Web Attendance Action Controls */}
+              <div className="mb-3">
+                {punchError && (
+                  <Alert variant="danger" className="py-2 px-3 mb-2 rounded-3 d-flex align-items-center gap-2" style={{ fontSize: '12.5px' }} onClose={() => setPunchError(null)} dismissible>
+                    <AlertCircle size={15} className="flex-shrink-0" />
+                    <span>{punchError}</span>
+                  </Alert>
+                )}
+                {punchSuccess && (
+                  <Alert variant="success" className="py-2 px-3 mb-2 rounded-3 d-flex align-items-center gap-2" style={{ fontSize: '12.5px' }} onClose={() => setPunchSuccess(null)} dismissible>
+                    <CheckCircle2 size={15} className="flex-shrink-0" />
+                    <span>{punchSuccess}</span>
+                  </Alert>
+                )}
+
+                {allowWebAttendance ? (
+                  !todayAtt?.check_in ? (
+                    <button
+                      className="btn btn-primary w-100 py-2.5 rounded-3 d-flex align-items-center justify-content-center gap-2 fw-semibold shadow-sm"
+                      onClick={() => handleWebPunch('check-in')}
+                      disabled={punchLoading}
+                      style={{ fontSize: '13.5px' }}
+                    >
+                      {punchLoading ? (
+                        <>
+                          <Spinner animation="border" size="sm" />
+                          <span>Verifying Location & Punching In...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Monitor size={16} />
+                          <span>Punch In (Web Portal)</span>
+                        </>
+                      )}
+                    </button>
+                  ) : !todayAtt?.check_out ? (
+                    <button
+                      className="btn btn-outline-danger w-100 py-2.5 rounded-3 d-flex align-items-center justify-content-center gap-2 fw-semibold"
+                      onClick={() => handleWebPunch('check-out')}
+                      disabled={punchLoading}
+                      style={{ fontSize: '13.5px' }}
+                    >
+                      {punchLoading ? (
+                        <>
+                          <Spinner animation="border" size="sm" />
+                          <span>Verifying Location & Punching Out...</span>
+                        </>
+                      ) : (
+                        <>
+                          <LogOut size={16} />
+                          <span>Punch Out (Web Portal)</span>
+                        </>
+                      )}
+                    </button>
+                  ) : (
+                    <div className="p-2.5 rounded-3 bg-success-subtle text-success border border-success-subtle d-flex align-items-center justify-content-between" style={{ fontSize: '12px' }}>
+                      <div className="d-flex align-items-center gap-1.5 fw-medium">
+                        <CheckCircle2 size={14} />
+                        <span>Today's Attendance Completed</span>
+                      </div>
+                      <span className="badge bg-white text-success border border-success-subtle">
+                        {todayAtt?.attendance_source || todayAtt?.attendanceSource || 'Web Portal'}
+                      </span>
+                    </div>
+                  )
+                ) : (
+                  <div className="p-2.5 rounded-3 bg-light border text-muted" style={{ fontSize: '12px' }}>
+                    <div className="d-flex align-items-center gap-1.5 fw-semibold text-secondary mb-1">
+                      <Lock size={13} />
+                      <span>Web Attendance Restricted</span>
+                    </div>
+                    <div>Only authorized employees can mark attendance from a PC. Please use the Falcon Mobile App.</div>
+                  </div>
+                )}
+              </div>
 
             {/* Footer Strip */}
             <div

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Form, Row, Col, Spinner } from 'react-bootstrap';
 import axios from 'axios';
-import { CalendarCheck, Calendar, Clock, AlertCircle } from 'lucide-react';
+import { CalendarCheck, Calendar, Clock, AlertCircle, Monitor, Smartphone } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 export default function MyAttendance() {
@@ -117,6 +117,7 @@ export default function MyAttendance() {
                   <th>Status</th>
                   <th>Check In</th>
                   <th>Check Out</th>
+                  <th>Source</th>
                   <th>Working Hours</th>
                   <th>Remarks</th>
                 </tr>
@@ -124,7 +125,7 @@ export default function MyAttendance() {
               <tbody>
                 {attendance.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="text-center py-5 text-muted">
+                    <td colSpan={8} className="text-center py-5 text-muted">
                       No attendance records found for this period.
                     </td>
                   </tr>
@@ -136,6 +137,21 @@ export default function MyAttendance() {
                       <td>{getStatusBadge(a.status, a.isLate)}</td>
                       <td style={{ fontWeight: 500 }}>{formatTime(a.checkIn)}</td>
                       <td style={{ fontWeight: 500 }}>{formatTime(a.checkOut)}</td>
+                      <td>
+                        {a.attendanceSource ? (
+                          a.attendanceSource === 'Web Portal' ? (
+                            <span className="badge bg-info-subtle text-info-emphasis border border-info-subtle fw-medium d-inline-flex align-items-center gap-1" style={{ fontSize: '11px', padding: '3px 8px' }}>
+                              <Monitor size={11} /> Web Portal
+                            </span>
+                          ) : (
+                            <span className="badge bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle fw-medium d-inline-flex align-items-center gap-1" style={{ fontSize: '11px', padding: '3px 8px' }}>
+                              <Smartphone size={11} /> Mobile App
+                            </span>
+                          )
+                        ) : (
+                          <span className="text-muted">-</span>
+                        )}
+                      </td>
                       <td>
                         <div className="d-flex align-items-center gap-1 text-muted" style={{ fontSize: '13.5px' }}>
                           <Clock size={13} />

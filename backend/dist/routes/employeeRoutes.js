@@ -59,7 +59,10 @@ router.get('/dashboard', async (req, res) => {
     `, [userId, startOfMonth, today]);
         // User profile info
         const userRes = await (0, db_1.query)(`
-      SELECT id, name, employee_id as employee_code, email, phone, designation, department, profile_photo_url, role
+      SELECT id, name, employee_id as employee_code, email, phone, designation, department, profile_photo_url, role,
+             COALESCE(allow_web_attendance, false) as allow_web_attendance,
+             COALESCE(allow_web_attendance, false) as allowWebAttendance,
+             COALESCE(attendance_mode, 'Office') as attendance_mode
       FROM users WHERE id = $1
     `, [userId]);
         // Latest payslip
@@ -160,7 +163,8 @@ router.get('/attendance', async (req, res) => {
                 workingMinutes: Math.round(result.workingMinutes),
                 leaveType: lve ? lve.leave_type : null,
                 holidayName: hol ? hol.name : null,
-                isLate: result.status === 'PRESENT' && result.isLate
+                isLate: result.status === 'PRESENT' && result.isLate,
+                attendanceSource: rec ? (rec.attendance_source || 'Mobile App') : null
             });
             curr.setDate(curr.getDate() + 1);
         }
@@ -214,9 +218,17 @@ router.get('/leave-requests', async (req, res) => {
         const result = await (0, db_1.query)(`SELECT lr.id, lr.from_date as start_date, lr.to_date as end_date, lr.days as total_days, 
               lr.reason, lr.status, lr.leave_type as leave_type_name,
               lr.remarks as admin_remarks, lr.approved_at as reviewed_at,
-              lr.assigned_to,
+              lr.assigned_to, lr.assigned_to_ids,
+              COALESCE(
+                (
+                  SELECT string_agg(u_sub.name, ', ' ORDER BY u_sub.name)
+                  FROM users u_sub
+                  WHERE u_sub.id = ANY(COALESCE(NULLIF(lr.assigned_to_ids, '{}'), ARRAY[lr.assigned_to]::integer[]))
+                ),
+                u_assigned.name
+              ) as assigned_to_name,
               u_admin.name as reviewed_by_name, u_admin.email as reviewed_by_email,
-              u_assigned.name as assigned_to_name, u_assigned.email as assigned_to_email
+              u_assigned.email as assigned_to_email
        FROM leave_requests lr
        LEFT JOIN users u_admin ON lr.approved_by = u_admin.id
        LEFT JOIN users u_assigned ON lr.assigned_to = u_assigned.id
@@ -263,7 +275,7 @@ router.post('/validate-leave', async (req, res) => {
 });
 router.post('/leave-requests', async (req, res) => {
     const userId = req.user.id;
-    const { leave_type_id, start_date, end_date, total_days, reason, assigned_to_admin_id } = req.body;
+    const { leave_type_id, start_date, end_date, total_days, reason, assigned_to_admin_id, assigned_to_admin_ids } = req.body;
     try {
         // Run Smart Leave Validation Engine before saving
         const validation = await leaveValidationService_1.LeaveValidationService.validateLeaveRequest(userId, start_date, end_date);
@@ -276,20 +288,32 @@ router.post('/leave-requests', async (req, res) => {
         const leaveType = validation.paidLeaveRequired === 0
             ? (validation.allWeeklyOffs ? 'Weekly Off' : 'Company Holiday')
             : (leave_type_id || 'Paid Leave');
-        const targetAdminId = assigned_to_admin_id ? parseInt(assigned_to_admin_id, 10) : null;
-        await (0, db_1.query)(`INSERT INTO leave_requests (employee_id, leave_type, from_date, to_date, days, reason, status, assigned_to)
-       VALUES ($1, $2, $3, $4, $5, $6, 'PENDING', $7)`, [userId, leaveType, start_date, end_date, validation.totalDays, reason, targetAdminId]);
+        let targetAdminIds = [];
+        if (Array.isArray(assigned_to_admin_ids) && assigned_to_admin_ids.length > 0) {
+            targetAdminIds = assigned_to_admin_ids.map(Number).filter(id => !isNaN(id) && id > 0);
+        }
+        else if (assigned_to_admin_id) {
+            const parsedId = parseInt(assigned_to_admin_id, 10);
+            if (!isNaN(parsedId) && parsedId > 0) {
+                targetAdminIds = [parsedId];
+            }
+        }
+        const primaryAdminId = targetAdminIds.length > 0 ? targetAdminIds[0] : null;
+        await (0, db_1.query)(`INSERT INTO leave_requests (employee_id, leave_type, from_date, to_date, days, reason, status, assigned_to, assigned_to_ids)
+       VALUES ($1, $2, $3, $4, $5, $6, 'PENDING', $7, $8)`, [userId, leaveType, start_date, end_date, validation.totalDays, reason, primaryAdminId, targetAdminIds]);
         // Notify admins and employee
         try {
-            if (targetAdminId) {
-                // Targeted notification to the chosen admin
-                await notificationService_1.NotificationService.notifyUser(targetAdminId, {
-                    title: 'Leave Request Assigned to You',
-                    message: `${req.user?.name || 'An employee'} applied for ${leaveType} from ${start_date} to ${end_date} and assigned you as approver.`,
-                    type: 'Leave',
-                    priority: 'High',
-                    actionUrl: '/leave',
-                });
+            if (targetAdminIds.length > 0) {
+                // Targeted notification to all chosen admins
+                for (const adminId of targetAdminIds) {
+                    await notificationService_1.NotificationService.notifyUser(adminId, {
+                        title: 'Leave Request Assigned to You',
+                        message: `${req.user?.name || 'An employee'} applied for ${leaveType} from ${start_date} to ${end_date} and assigned you as approver.`,
+                        type: 'Leave',
+                        priority: 'High',
+                        actionUrl: '/leave',
+                    });
+                }
             }
             else {
                 // Not assigned to a specific admin, notify all admins

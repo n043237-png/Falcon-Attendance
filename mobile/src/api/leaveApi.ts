@@ -71,7 +71,7 @@ export const getLeaveBalances = async (token: string) => {
 
 export const applyLeave = async (
   token: string,
-  data: { startDate: string; endDate: string; reason: string; assignedToAdminId?: number | null }
+  data: { startDate: string; endDate: string; reason: string; assignedToAdminId?: number | null; assignedToAdminIds?: number[] | null }
 ) => {
   try {
     const res = await axios.post(`${API_URL}/api/leave`, data, {

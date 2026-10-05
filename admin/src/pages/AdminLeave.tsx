@@ -194,8 +194,12 @@ export default function AdminLeave() {
                     </tr>
                   ) : (
                     leaves.map((lr) => {
+                      const assignedIds: number[] = lr.assignedToIds?.length > 0
+                        ? lr.assignedToIds.map(Number)
+                        : (lr.assignedTo ? [Number(lr.assignedTo)] : []);
+                      const isAssignedToMe = Boolean(user?.id && assignedIds.includes(Number(user.id)));
                       const isAssignedToOther = Boolean(
-                        lr.assignedTo && user?.id && Number(lr.assignedTo) !== Number(user.id)
+                        assignedIds.length > 0 && user?.id && !isAssignedToMe
                       );
 
                       return (
@@ -242,7 +246,7 @@ export default function AdminLeave() {
                             {lr.assignedToName ? (
                               <span
                                 className={`badge d-inline-flex align-items-center gap-1 ${
-                                  user?.id && Number(lr.assignedTo) === Number(user.id)
+                                  isAssignedToMe
                                     ? 'bg-primary-subtle text-primary border border-primary'
                                     : 'bg-light text-dark border'
                                 }`}
@@ -250,7 +254,7 @@ export default function AdminLeave() {
                               >
                                 <UserCheck size={12} />
                                 {lr.assignedToName}
-                                {user?.id && Number(lr.assignedTo) === Number(user.id) && ' (You)'}
+                                {isAssignedToMe && ' (Includes You)'}
                               </span>
                             ) : (
                               <span

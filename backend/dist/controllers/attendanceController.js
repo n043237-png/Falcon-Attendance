@@ -14,6 +14,7 @@ const coordsSchema = zod_1.z.object({
     accuracy: zod_1.z.number().positive().optional().default(10),
     address: zod_1.z.string().optional().nullable(),
     selfie: zod_1.z.string().optional().nullable(),
+    source: zod_1.z.string().optional().default('Mobile App'),
 });
 const checkIn = async (req, res) => {
     try {
@@ -24,10 +25,25 @@ const checkIn = async (req, res) => {
         }
         const { latitude, longitude, accuracy, address, selfie } = parsed.data;
         const employeeId = req.user.id;
-        // Check employee's assigned Attendance Mode (Office vs Field)
-        const userModeRes = await (0, db_1.query)('SELECT attendance_mode FROM users WHERE id = $1', [employeeId]);
+        const sourceRaw = (parsed.data.source || req.body?.source || 'Mobile App').trim();
+        const isWebPortal = sourceRaw.toLowerCase().includes('web');
+        const attendanceSource = isWebPortal ? 'Web Portal' : 'Mobile App';
+        // Check employee's assigned Attendance Mode & Web Attendance Permission
+        const userModeRes = await (0, db_1.query)('SELECT attendance_mode, allow_web_attendance FROM users WHERE id = $1', [employeeId]);
         const attendanceMode = userModeRes.rows[0]?.attendance_mode || 'Office';
+        const allowWebAttendance = !!userModeRes.rows[0]?.allow_web_attendance;
         const isFieldMode = attendanceMode.toLowerCase() === 'field';
+        // Falcon Web Attendance Policy: Admin Controls Check
+        if (isWebPortal && !allowWebAttendance) {
+            res.status(403).json({
+                success: false,
+                error: {
+                    code: 'WEB_ATTENDANCE_NOT_ALLOWED',
+                    message: 'You are not authorized to mark attendance from the Web Portal. Only authorized employees can mark attendance from a PC.'
+                }
+            });
+            return;
+        }
         // Process & store selfie image if optionally provided
         let selfieUrl = null;
         if (selfie && selfie.trim()) {
@@ -42,13 +58,13 @@ const checkIn = async (req, res) => {
         // 1. Verify location
         let locResult = {
             officeId: null,
-            officeName: isFieldMode ? 'Field Location' : 'Office',
+            officeName: isFieldMode && !isWebPortal ? 'Field Location' : 'Office',
             insideOffice: true,
             distanceMeters: 0,
             allowedRadiusMeters: 0
         };
-        if (!isFieldMode) {
-            // Office Mode: Strictly validate office geofence & radius
+        if (isWebPortal || !isFieldMode) {
+            // Office geofence validation strictly required for Office Mode and Web Portal attendance
             try {
                 const vr = await (0, locationService_1.verifyLocation)(latitude, longitude, accuracy);
                 locResult = {
@@ -67,11 +83,14 @@ const checkIn = async (req, res) => {
                 throw verr;
             }
             if (!locResult.insideOffice) {
+                const outsideMsg = isWebPortal
+                    ? 'You are outside the authorized office location. Attendance cannot be marked.'
+                    : `You are outside the permitted office location (${locResult.distanceMeters}m away). Check-in is only permitted within ${locResult.allowedRadiusMeters} metres of ${locResult.officeName || 'the office'}.`;
                 res.status(403).json({
                     success: false,
                     error: {
                         code: 'OUTSIDE_OFFICE',
-                        message: `You are outside the permitted office location (${locResult.distanceMeters}m away). Check-in is only permitted within ${locResult.allowedRadiusMeters} metres of ${locResult.officeName || 'the office'}.`
+                        message: outsideMsg
                     },
                     data: {
                         distanceMeters: locResult.distanceMeters,
@@ -83,12 +102,12 @@ const checkIn = async (req, res) => {
             }
         }
         else {
-            // Field Mode: Can check in from any location! Link to default office for foreign key if present
+            // Mobile Field Mode: Can check in from any location! Link to default office for foreign key if present
             const defOff = await (0, db_1.query)('SELECT id, name FROM offices WHERE status = $1 ORDER BY id ASC LIMIT 1', ['active']);
             locResult.officeId = defOff.rows[0]?.id || null;
             locResult.officeName = defOff.rows[0]?.name || 'Field Location';
         }
-        const recordedAddress = address?.trim() || (isFieldMode ? `GPS (${latitude.toFixed(5)}, ${longitude.toFixed(5)})` : (locResult.officeName || 'Office'));
+        const recordedAddress = address?.trim() || (isFieldMode && !isWebPortal ? `GPS (${latitude.toFixed(5)}, ${longitude.toFixed(5)})` : (locResult.officeName || 'Office'));
         // 2. Fetch employee's assigned shift
         const shift = await shiftService_1.ShiftService.getEmployeeShift(employeeId);
         // Determine shift attendance date (handling night shifts)
@@ -129,10 +148,11 @@ const checkIn = async (req, res) => {
             check_in_latitude = $9,
             check_in_longitude = $10,
             check_in_address = $11,
-            check_in_selfie_url = $12
-        WHERE id = $13
-        RETURNING id, attendance_date, check_in, status, shift_id, is_late, late_minutes, attendance_mode, check_in_address, check_in_selfie_url
-      `, [locResult.officeId, longitude, latitude, checkInStatus, shift.id, evalResult.isLate, evalResult.lateMinutes, attendanceMode, latitude, longitude, recordedAddress, selfieUrl, existRes.rows[0].id]);
+            check_in_selfie_url = $12,
+            attendance_source = $13
+        WHERE id = $14
+        RETURNING id, attendance_date, check_in, status, shift_id, is_late, late_minutes, attendance_mode, check_in_address, check_in_selfie_url, attendance_source
+      `, [locResult.officeId, longitude, latitude, checkInStatus, shift.id, evalResult.isLate, evalResult.lateMinutes, attendanceMode, latitude, longitude, recordedAddress, selfieUrl, attendanceSource, existRes.rows[0].id]);
             newRecord = updateRes.rows[0];
         }
         else {
@@ -140,12 +160,12 @@ const checkIn = async (req, res) => {
             const insertRes = await (0, db_1.query)(`
         INSERT INTO attendance (
           employee_id, office_id, attendance_date, check_in, check_out, check_in_location, status,
-          shift_id, is_late, late_minutes, attendance_mode, check_in_latitude, check_in_longitude, check_in_address, check_in_selfie_url
+          shift_id, is_late, late_minutes, attendance_mode, check_in_latitude, check_in_longitude, check_in_address, check_in_selfie_url, attendance_source
         ) VALUES (
           $1, $2, $3, CURRENT_TIMESTAMP, NULL, ST_SetSRID(ST_MakePoint($4, $5), 4326), $6,
-          $7, $8, $9, $10, $11, $12, $13, $14
-        ) RETURNING id, attendance_date, check_in, status, shift_id, is_late, late_minutes, attendance_mode, check_in_address, check_in_selfie_url
-      `, [employeeId, locResult.officeId, attendanceDate, longitude, latitude, checkInStatus, shift.id, evalResult.isLate, evalResult.lateMinutes, attendanceMode, latitude, longitude, recordedAddress, selfieUrl]);
+          $7, $8, $9, $10, $11, $12, $13, $14, $15
+        ) RETURNING id, attendance_date, check_in, status, shift_id, is_late, late_minutes, attendance_mode, check_in_address, check_in_selfie_url, attendance_source
+      `, [employeeId, locResult.officeId, attendanceDate, longitude, latitude, checkInStatus, shift.id, evalResult.isLate, evalResult.lateMinutes, attendanceMode, latitude, longitude, recordedAddress, selfieUrl, attendanceSource]);
             newRecord = insertRes.rows[0];
         }
         // Audit log for location coordinates
@@ -243,6 +263,7 @@ const checkIn = async (req, res) => {
                 checkIn: newRecord.check_in,
                 status: newRecord.status,
                 attendanceMode: newRecord.attendance_mode || attendanceMode,
+                attendanceSource: newRecord.attendance_source || attendanceSource,
                 address: newRecord.check_in_address,
                 selfieUrl: newRecord.check_in_selfie_url,
                 shift: {
@@ -272,10 +293,25 @@ const checkOut = async (req, res) => {
         }
         const { latitude, longitude, accuracy, address, selfie } = parsed.data;
         const employeeId = req.user.id;
-        // Check employee's assigned Attendance Mode
-        const userModeRes = await (0, db_1.query)('SELECT attendance_mode FROM users WHERE id = $1', [employeeId]);
+        const sourceRaw = (parsed.data.source || req.body?.source || 'Mobile App').trim();
+        const isWebPortal = sourceRaw.toLowerCase().includes('web');
+        const attendanceSource = isWebPortal ? 'Web Portal' : 'Mobile App';
+        // Check employee's assigned Attendance Mode & Web Attendance Permission
+        const userModeRes = await (0, db_1.query)('SELECT attendance_mode, allow_web_attendance FROM users WHERE id = $1', [employeeId]);
         const attendanceMode = userModeRes.rows[0]?.attendance_mode || 'Office';
+        const allowWebAttendance = !!userModeRes.rows[0]?.allow_web_attendance;
         const isFieldMode = attendanceMode.toLowerCase() === 'field';
+        // Falcon Web Attendance Policy: Admin Controls Check
+        if (isWebPortal && !allowWebAttendance) {
+            res.status(403).json({
+                success: false,
+                error: {
+                    code: 'WEB_ATTENDANCE_NOT_ALLOWED',
+                    message: 'You are not authorized to mark attendance from the Web Portal. Only authorized employees can mark attendance from a PC.'
+                }
+            });
+            return;
+        }
         // Process & store checkout selfie if provided
         let outSelfieUrl = null;
         if (selfie && selfie.trim()) {
@@ -290,13 +326,13 @@ const checkOut = async (req, res) => {
         // 1. Verify location
         let locResult = {
             officeId: null,
-            officeName: isFieldMode ? 'Field Location' : 'Office',
+            officeName: isFieldMode && !isWebPortal ? 'Field Location' : 'Office',
             insideOffice: true,
             distanceMeters: 0,
             allowedRadiusMeters: 0
         };
-        if (!isFieldMode) {
-            // Office Mode: Strictly validate office geofence & radius
+        if (isWebPortal || !isFieldMode) {
+            // Office Mode and Web Portal: Strictly validate office geofence & radius
             try {
                 const vr = await (0, locationService_1.verifyLocation)(latitude, longitude, accuracy);
                 locResult = {
@@ -315,11 +351,14 @@ const checkOut = async (req, res) => {
                 throw verr;
             }
             if (!locResult.insideOffice) {
+                const outsideMsg = isWebPortal
+                    ? 'You are outside the authorized office location. Attendance cannot be marked.'
+                    : `You are outside the permitted office location (${locResult.distanceMeters}m away). Check-out is only permitted within ${locResult.allowedRadiusMeters} metres of ${locResult.officeName || 'the office'}.`;
                 res.status(403).json({
                     success: false,
                     error: {
                         code: 'OUTSIDE_OFFICE',
-                        message: `You are outside the permitted office location (${locResult.distanceMeters}m away). Check-out is only permitted within ${locResult.allowedRadiusMeters} metres of ${locResult.officeName || 'the office'}.`
+                        message: outsideMsg
                     },
                     data: {
                         distanceMeters: locResult.distanceMeters,
@@ -333,7 +372,7 @@ const checkOut = async (req, res) => {
         else {
             locResult.officeName = 'Field Location';
         }
-        const recordedOutAddress = address?.trim() || (isFieldMode ? `GPS (${latitude.toFixed(5)}, ${longitude.toFixed(5)})` : (locResult.officeName || 'Office'));
+        const recordedOutAddress = address?.trim() || (isFieldMode && !isWebPortal ? `GPS (${latitude.toFixed(5)}, ${longitude.toFixed(5)})` : (locResult.officeName || 'Office'));
         // 2. Find open attendance record (supporting night shifts across midnight)
         const openRes = await (0, db_1.query)(`
       SELECT id, attendance_date, check_in, check_out, shift_id 
@@ -392,9 +431,10 @@ const checkOut = async (req, res) => {
         check_out_latitude = $10,
         check_out_longitude = $11,
         check_out_address = $12,
-        check_out_selfie_url = $13
-      WHERE id = $14
-      RETURNING id, attendance_date, check_in, check_out, working_minutes, overtime_minutes, early_departure_minutes, status, shift_id, is_late, late_minutes, attendance_mode, check_in_address, check_out_address
+        check_out_selfie_url = $13,
+        attendance_source = COALESCE(attendance_source, $14)
+      WHERE id = $15
+      RETURNING id, attendance_date, check_in, check_out, working_minutes, overtime_minutes, early_departure_minutes, status, shift_id, is_late, late_minutes, attendance_mode, attendance_source, check_in_address, check_out_address
     `, [
             longitude,
             latitude,
@@ -409,6 +449,7 @@ const checkOut = async (req, res) => {
             longitude,
             recordedOutAddress,
             outSelfieUrl,
+            attendanceSource,
             attendance.id
         ]);
         const updated = updateRes.rows[0];
@@ -491,6 +532,7 @@ const checkOut = async (req, res) => {
                 overtimeMinutes: Math.round(metrics.overtimeMinutes),
                 earlyDepartureMinutes: Math.round(metrics.earlyDepartureMinutes),
                 status: updated.status,
+                attendanceSource: updated.attendance_source || attendanceSource,
                 shift: {
                     id: shift.id,
                     name: shift.name,
@@ -513,6 +555,7 @@ const getToday = async (req, res) => {
             (0, db_1.query)(`
         SELECT id, attendance_date, check_in, check_out, working_minutes, status,
                COALESCE(attendance_mode, 'Office') as attendance_mode,
+               COALESCE(attendance_source, 'Mobile App') as attendance_source,
                check_in_address, check_in_selfie_url,
                check_out_address, check_out_selfie_url 
         FROM attendance WHERE employee_id = $1 AND attendance_date = $2
@@ -544,17 +587,19 @@ const getToday = async (req, res) => {
         // Fetch employee shift details and attendance mode for reminder & UI sync
         const userShiftRes = await (0, db_1.query)(`
       SELECT s.id, s.name, s.start_time as "startTime", s.end_time as "endTime", s.grace_minutes as "graceMinutes", s.late_after as "lateAfter",
-             COALESCE(u.attendance_mode, 'Office') as "attendanceMode"
+             COALESCE(u.attendance_mode, 'Office') as "attendanceMode",
+             COALESCE(u.allow_web_attendance, false) as "allowWebAttendance"
       FROM users u
       LEFT JOIN shifts s ON s.id = COALESCE(u.shift_id, (SELECT id FROM shifts ORDER BY id ASC LIMIT 1))
       WHERE u.id = $1
     `, [employeeId]);
         const userShift = userShiftRes.rows[0] || null;
         const userAttendanceMode = userShift?.attendanceMode || 'Office';
+        const allowWebAttendance = !!userShift?.allowWebAttendance;
         // Compute absolute state
         const result = (0, attendanceStatusService_1.calculateStatus)(today, record, setRes, holiday, leave, new Date());
         if (result.status === 'NOT_MARKED') {
-            res.json({ success: true, data: { attendance: null, attendanceMode: userAttendanceMode, shift: userShift, office: officeInfo } });
+            res.json({ success: true, data: { attendance: null, attendanceMode: userAttendanceMode, allowWebAttendance, shift: userShift, office: officeInfo } });
             return;
         }
         // Compute real-time working minutes (elapsed time if checked in but not yet checked out)
@@ -575,6 +620,7 @@ const getToday = async (req, res) => {
                     status: result.status,
                     isLate: result.isLate,
                     attendanceMode: record?.attendance_mode || userAttendanceMode,
+                    attendanceSource: record?.attendance_source || 'Mobile App',
                     checkInAddress: record?.check_in_address || null,
                     checkInSelfieUrl: record?.check_in_selfie_url || null,
                     checkOutAddress: record?.check_out_address || null,
@@ -583,6 +629,7 @@ const getToday = async (req, res) => {
                     leaveType: leave ? leave.leave_type : null
                 },
                 attendanceMode: userAttendanceMode,
+                allowWebAttendance,
                 shift: userShift,
                 office: officeInfo
             }
@@ -656,6 +703,7 @@ const getHistory = async (req, res) => {
                         status: result.status,
                         isLate: result.isLate,
                         attendanceMode: rec?.attendance_mode || 'Office',
+                        attendanceSource: rec?.attendance_source || 'Mobile App',
                         checkInAddress: rec?.check_in_address || null,
                         checkInSelfieUrl: rec?.check_in_selfie_url || null,
                         checkOutAddress: rec?.check_out_address || null,

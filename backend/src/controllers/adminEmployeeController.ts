@@ -73,6 +73,7 @@ const createEmployeeSchema = z.object({
     }),
   shiftId: z.number().int().positive().optional(),
   attendanceMode: z.string().default('Office').optional(),
+  allowWebAttendance: z.boolean().default(false).optional(),
   motherName: z.string().max(100).optional().or(z.literal('')).or(z.null()),
   fatherName: z.string().max(100).optional().or(z.literal('')).or(z.null()),
   reportingManager: z.string().max(100).optional().or(z.literal('')).or(z.null()),
@@ -159,6 +160,7 @@ export const getEmployees = async (req: AuthRequest, res: Response): Promise<voi
              u.name, u.email, u.phone, u.department, 
              u.designation, u.joining_date as "joiningDate", u.status, u.role, u.roles,
              COALESCE(u.attendance_mode, 'Office') as "attendanceMode",
+             COALESCE(u.allow_web_attendance, false) as "allowWebAttendance",
              COALESCE(u.job_status, 'Permanent') as "jobStatus",
              u.provisional_start_date as "provisionalStartDate",
              u.provisional_end_date as "provisionalEndDate",
@@ -230,6 +232,7 @@ export const getEmployeeDetail = async (req: AuthRequest, res: Response): Promis
       SELECT u.id, u.employee_id as "employeeId", u.name, u.email, u.phone, u.department, 
              u.designation, u.joining_date as "joiningDate", u.status, u.role, u.roles,
              COALESCE(u.attendance_mode, 'Office') as "attendanceMode",
+             COALESCE(u.allow_web_attendance, false) as "allowWebAttendance",
              COALESCE(u.job_status, 'Permanent') as "jobStatus",
              u.provisional_start_date as "provisionalStartDate",
              u.provisional_end_date as "provisionalEndDate",
@@ -344,7 +347,7 @@ export const createEmployee = async (req: AuthRequest, res: Response): Promise<v
       name, email, phone, department, designation, joiningDate,
       role, roles, useCustomEmployeeId, customEmployeeId, customIdReason,
       password, profilePhotoUrl, jobStatus, provisionalStartDate, provisionalEndDate,
-      shiftId, attendanceMode,
+      shiftId, attendanceMode, allowWebAttendance,
       motherName, fatherName, reportingManager
     } = parsed.data;
 
@@ -410,20 +413,22 @@ export const createEmployee = async (req: AuthRequest, res: Response): Promise<v
       INSERT INTO users (
         employee_id, employee_code, is_custom_employee_id, name, email, phone, department, designation, 
         joining_date, role, roles, password_hash, status, profile_photo_url,
-        job_status, provisional_start_date, provisional_end_date, shift_id, attendance_mode
+        job_status, provisional_start_date, provisional_end_date, shift_id, attendance_mode,
+        allow_web_attendance
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, 'active', $13, $14, $15, $16, $17, $18)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, 'active', $13, $14, $15, $16, $17, $18, $19)
       RETURNING id, employee_id as "employeeId", employee_code as "employeeCode",
                 is_custom_employee_id as "isCustomEmployeeId", profile_photo_url as "profilePhotoUrl",
                 job_status as "jobStatus", provisional_start_date as "provisionalStartDate",
                 provisional_end_date as "provisionalEndDate", roles, role, shift_id as "shiftId",
-                attendance_mode as "attendanceMode"
+                attendance_mode as "attendanceMode", allow_web_attendance as "allowWebAttendance"
     `;
     const insertParams = [
       employeeCode, employeeCode, isCustom, name, email ? email.trim().toLowerCase() : email, phone || null, department || null, designation || null,
       joiningDate || null, primaryRole, JSON.stringify(userRoles), hashed, profilePhotoUrl || null,
       jobStatus || 'Permanent', provisionalStartDate || null, provisionalEndDate || null, targetShiftId || null,
-      attendanceMode || 'Office'
+      attendanceMode || 'Office',
+      allowWebAttendance !== undefined ? allowWebAttendance : false
     ];
 
     const result = await client.query(insertQuery, insertParams);
@@ -510,7 +515,7 @@ export const editEmployee = async (req: AuthRequest, res: Response): Promise<voi
       return;
     }
 
-    const { name, email, phone, department, designation, joiningDate, role, roles, profilePhotoUrl, jobStatus, provisionalStartDate, provisionalEndDate, shiftId, attendanceMode, motherName, fatherName, reportingManager } = parsed.data;
+    const { name, email, phone, department, designation, joiningDate, role, roles, profilePhotoUrl, jobStatus, provisionalStartDate, provisionalEndDate, shiftId, attendanceMode, allowWebAttendance, motherName, fatherName, reportingManager } = parsed.data;
 
     // Safety check: Prevent logged-in admin from accidentally removing their own admin role
     if (req.user?.id === id) {
@@ -569,6 +574,9 @@ export const editEmployee = async (req: AuthRequest, res: Response): Promise<voi
     addField(provisionalEndDate, 'provisional_end_date');
     if (attendanceMode !== undefined) {
       addField(attendanceMode, 'attendance_mode');
+    }
+    if (allowWebAttendance !== undefined) {
+      addField(allowWebAttendance, 'allow_web_attendance');
     }
 
     if (shiftId !== undefined) {

@@ -105,7 +105,7 @@ export const DigitalIdCardModal: React.FC<DigitalIdCardModalProps> = ({
           <View style={styles.modalHeader}>
             <View style={styles.headerTitleRow}>
               <View style={styles.badgeIcon}>
-                <Ionicons name="card" size={18} color="#2563EB" />
+                <Ionicons name="card" size={18} color="#0072BC" />
               </View>
               <View>
                 <Text style={styles.modalTitle}>Official Employee ID Card</Text>
@@ -125,7 +125,7 @@ export const DigitalIdCardModal: React.FC<DigitalIdCardModalProps> = ({
           >
             {loading ? (
               <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#2563EB" />
+                <ActivityIndicator size="large" color="#0072BC" />
                 <Text style={styles.loadingText}>Generating secure digital credential...</Text>
               </View>
             ) : employee ? (
@@ -251,11 +251,11 @@ export const DigitalIdCardModal: React.FC<DigitalIdCardModalProps> = ({
                         {/* Company Details Box */}
                         <View style={styles.backDetailsBox}>
                           <View style={styles.backDetailRow}>
-                            <Ionicons name="globe-outline" size={13} color="#2563EB" style={{ marginRight: 6 }} />
+                            <Ionicons name="globe-outline" size={13} color="#0072BC" style={{ marginRight: 6 }} />
                             <Text style={styles.backDetailText}>{company?.website || 'www.falconinfosolutions.com'}</Text>
                           </View>
                           <View style={styles.backDetailRow}>
-                            <Ionicons name="mail-outline" size={13} color="#2563EB" style={{ marginRight: 6 }} />
+                            <Ionicons name="mail-outline" size={13} color="#0072BC" style={{ marginRight: 6 }} />
                             <Text style={styles.backDetailText}>{company?.email || 'hr@falconinfosolutions.com'}</Text>
                           </View>
                           <View style={styles.backDetailRow}>
@@ -265,7 +265,7 @@ export const DigitalIdCardModal: React.FC<DigitalIdCardModalProps> = ({
                             </Text>
                           </View>
                           <View style={styles.backDetailRow}>
-                            <Ionicons name="business-outline" size={13} color="#2563EB" style={{ marginRight: 6 }} />
+                            <Ionicons name="business-outline" size={13} color="#0072BC" style={{ marginRight: 6 }} />
                             <Text style={[styles.backDetailText, { fontSize: 10 }]}>
                               {company?.officeAddress || 'Falcon Info Solutions HQ, Sector 62, Noida, UP - 201309'}
                             </Text>
@@ -403,7 +403,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     overflow: 'hidden',
     backgroundColor: '#FFFFFF',
-    shadowColor: '#0F172A',
+    shadowColor: '#023E60',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.15,
     shadowRadius: 16,
@@ -416,11 +416,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   cardHeaderNavy: {
-    backgroundColor: '#0F172A',
+    backgroundColor: '#0072BC',
     paddingVertical: 12,
     paddingHorizontal: 14,
     borderBottomWidth: 3,
-    borderBottomColor: '#2563EB',
+    borderBottomColor: '#38BDF8',
     alignItems: 'center',
   },
   cardHeaderContent: {
@@ -439,7 +439,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
   },
   companySubText: {
-    color: '#94A3B8',
+    color: '#BAE6FD',
     fontSize: 7.5,
     fontWeight: '600',
     letterSpacing: 0.5,
@@ -455,7 +455,7 @@ const styles = StyleSheet.create({
     height: 84,
     borderRadius: 16,
     padding: 3,
-    backgroundColor: '#2563EB',
+    backgroundColor: '#0072BC',
     marginBottom: 8,
   },
   photoImage: {
@@ -467,25 +467,25 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     borderRadius: 13,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F0F9FF',
     alignItems: 'center',
     justifyContent: 'center',
   },
   initialsText: {
     fontSize: 24,
     fontWeight: '800',
-    color: '#2563EB',
+    color: '#0072BC',
   },
   employeeNameText: {
     fontSize: 15,
     fontWeight: '800',
-    color: '#0F172A',
+    color: '#023E60',
     textAlign: 'center',
   },
   designationText: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#2563EB',
+    color: '#0072BC',
     marginTop: 2,
     textAlign: 'center',
   },
@@ -538,19 +538,19 @@ const styles = StyleSheet.create({
   detailValue: {
     fontSize: 10.5,
     fontWeight: '600',
-    color: '#0F172A',
+    color: '#023E60',
   },
   detailValueBold: {
     fontSize: 10.5,
     fontWeight: '700',
-    color: '#0F172A',
+    color: '#023E60',
   },
   cardFooter: {
-    backgroundColor: '#0F172A',
+    backgroundColor: '#0072BC',
     paddingVertical: 8,
     alignItems: 'center',
     borderTopWidth: 2,
-    borderTopColor: '#2563EB',
+    borderTopColor: '#38BDF8',
   },
   cardFooterText: {
     color: '#FFFFFF',
@@ -567,7 +567,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
   },
   backHeaderSub: {
-    color: '#94A3B8',
+    color: '#BAE6FD',
     fontSize: 7.5,
     fontWeight: '600',
     letterSpacing: 0.4,
@@ -603,7 +603,7 @@ const styles = StyleSheet.create({
   verificationCodeText: {
     fontSize: 8.5,
     fontWeight: '700',
-    color: '#0F172A',
+    color: '#023E60',
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
   },
   backDetailsBox: {
@@ -626,17 +626,17 @@ const styles = StyleSheet.create({
   },
   returnNoticeBox: {
     width: '100%',
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F0F9FF',
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#BFDBFE',
+    borderColor: '#7DD3FC',
     borderStyle: 'dashed',
     padding: 6,
     marginTop: 6,
     alignItems: 'center',
   },
   returnNoticeText: {
-    color: '#1E40AF',
+    color: '#023E60',
     fontSize: 8.5,
     fontWeight: '600',
     textAlign: 'center',
@@ -657,12 +657,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#2563EB',
+    borderColor: '#0072BC',
     paddingVertical: 10,
     borderRadius: 12,
   },
   flipBtnText: {
-    color: '#2563EB',
+    color: '#0072BC',
     fontSize: 12,
     fontWeight: '700',
   },
@@ -671,7 +671,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#2563EB',
+    backgroundColor: '#0072BC',
     paddingVertical: 10,
     borderRadius: 12,
   },

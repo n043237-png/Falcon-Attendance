@@ -15,7 +15,11 @@ import {
   ShieldAlert,
   CalendarDays,
   FileCheck,
-  UserCheck
+  UserCheck,
+  Users,
+  ChevronDown,
+  X,
+  CheckCircle
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -28,6 +32,8 @@ export default function MyLeave() {
   const [submitting, setSubmitting] = useState(false);
   const [showApply, setShowApply] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [selectedAdminIds, setSelectedAdminIds] = useState<number[]>([]);
+  const [adminDropdownOpen, setAdminDropdownOpen] = useState(false);
 
   const [formData, setFormData] = useState({
     leave_type_id: 'Paid Leave',
@@ -138,14 +144,21 @@ export default function MyLeave() {
     setSubmitting(true);
     setShowConfirmModal(false);
     try {
+      const payload = {
+        ...formData,
+        assigned_to_admin_ids: selectedAdminIds,
+        assigned_to_admin_id: selectedAdminIds.length > 0 ? String(selectedAdminIds[0]) : ''
+      };
       await axios.post(
         `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/employee/leave-requests`,
-        formData,
+        payload,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setShowApply(false);
       setAlert({ show: true, message: 'Leave request submitted successfully.', variant: 'success' });
       setFormData({ leave_type_id: 'Paid Leave', start_date: '', end_date: '', total_days: 1, reason: '', assigned_to_admin_id: '' });
+      setSelectedAdminIds([]);
+      setAdminDropdownOpen(false);
       setValidation(null);
       fetchData();
     } catch (err: any) {
@@ -374,24 +387,158 @@ export default function MyLeave() {
                 </Form.Select>
               </Form.Group>
 
-              <Form.Group>
-                <Form.Label className="small fw-semibold d-flex align-items-center gap-1.5">
-                  <UserCheck size={14} className="text-primary" />
-                  <span>Approving Admin / Manager</span>
+              <Form.Group className="position-relative">
+                <Form.Label className="small fw-semibold d-flex align-items-center justify-content-between mb-1.5">
+                  <div className="d-flex align-items-center gap-1.5">
+                    <UserCheck size={14} className="text-primary" />
+                    <span>Approving Admin / Manager</span>
+                  </div>
+                  {selectedAdminIds.length > 0 && (
+                    <button
+                      type="button"
+                      className="btn btn-link btn-sm p-0 text-decoration-none text-muted"
+                      style={{ fontSize: '11.5px' }}
+                      onClick={() => setSelectedAdminIds([])}
+                    >
+                      Reset to All Admins
+                    </button>
+                  )}
                 </Form.Label>
-                <Form.Select
-                  value={formData.assigned_to_admin_id}
-                  onChange={(e) => setFormData({ ...formData, assigned_to_admin_id: e.target.value })}
+
+                {/* Interactive Multi-Select Trigger Container */}
+                <div
+                  className="form-control d-flex flex-wrap align-items-center gap-1.5"
+                  style={{
+                    minHeight: '42px',
+                    cursor: 'pointer',
+                    background: '#FFFFFF',
+                    borderColor: adminDropdownOpen ? '#3B82F6' : '#CBD5E1',
+                    boxShadow: adminDropdownOpen ? '0 0 0 3px rgba(59, 130, 246, 0.15)' : 'none'
+                  }}
+                  onClick={() => setAdminDropdownOpen(!adminDropdownOpen)}
                 >
-                  <option value="">All Admins (Default)</option>
-                  {admins.map((adm) => (
-                    <option key={adm.id} value={adm.id}>
-                      {adm.name} ({adm.email})
-                    </option>
-                  ))}
-                </Form.Select>
-                <Form.Text className="text-muted small" style={{ fontSize: '11.5px' }}>
-                  Select the specific admin or manager you are applying to, or leave as "All Admins".
+                  {selectedAdminIds.length === 0 ? (
+                    <div className="d-flex align-items-center justify-content-between w-100 text-muted" style={{ fontSize: '13.5px' }}>
+                      <span className="d-flex align-items-center gap-1.5">
+                        <Users size={14} className="text-secondary" />
+                        <span>All Admins (Default) &mdash; Any active administrator can approve</span>
+                      </span>
+                      <ChevronDown size={14} className="text-muted" />
+                    </div>
+                  ) : (
+                    <div className="d-flex align-items-center justify-content-between w-100 flex-wrap gap-1.5">
+                      <div className="d-flex flex-wrap gap-1.5 align-items-center">
+                        {selectedAdminIds.map(adminId => {
+                          const adm = admins.find(a => a.id === adminId);
+                          if (!adm) return null;
+                          return (
+                            <span
+                              key={adm.id}
+                              className="badge bg-primary-subtle text-primary border border-primary-subtle d-inline-flex align-items-center gap-1.5 py-1 px-2"
+                              style={{ fontSize: '12px', fontWeight: 600 }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedAdminIds(selectedAdminIds.filter(id => id !== adm.id));
+                              }}
+                            >
+                              <span>{adm.name}</span>
+                              <X size={12} className="cursor-pointer" />
+                            </span>
+                          );
+                        })}
+                      </div>
+                      <ChevronDown size={14} className="text-muted" />
+                    </div>
+                  )}
+                </div>
+
+                {/* Dropdown Menu with Checkboxes */}
+                {adminDropdownOpen && (
+                  <div
+                    className="position-absolute start-0 end-0 bg-white border rounded-3 shadow-lg p-2"
+                    style={{
+                      zIndex: 1050,
+                      marginTop: '4px',
+                      maxHeight: '260px',
+                      overflowY: 'auto'
+                    }}
+                  >
+                    <div className="px-2 py-1 text-muted small fw-semibold border-bottom mb-1" style={{ fontSize: '11px', textTransform: 'uppercase' }}>
+                      Select One or Multiple Approving Admins
+                    </div>
+
+                    {/* All Admins Option */}
+                    <div
+                      className={`d-flex align-items-center justify-content-between p-2 rounded-2 ${selectedAdminIds.length === 0 ? 'bg-primary-subtle text-primary fw-semibold' : 'text-dark'}`}
+                      style={{ cursor: 'pointer', fontSize: '13px' }}
+                      onClick={() => {
+                        setSelectedAdminIds([]);
+                      }}
+                    >
+                      <div className="d-flex align-items-center gap-2">
+                        <input
+                          type="checkbox"
+                          className="form-check-input mt-0"
+                          checked={selectedAdminIds.length === 0}
+                          onChange={() => setSelectedAdminIds([])}
+                        />
+                        <span>All Admins (Default)</span>
+                      </div>
+                      <span className="small text-muted" style={{ fontSize: '11px' }}>Any admin can approve</span>
+                    </div>
+
+                    {/* Admin Options */}
+                    {admins.map((adm) => {
+                      const isChecked = selectedAdminIds.includes(adm.id);
+                      return (
+                        <div
+                          key={adm.id}
+                          className={`d-flex align-items-center justify-content-between p-2 rounded-2 mt-1 ${isChecked ? 'bg-light fw-medium' : 'text-dark'}`}
+                          style={{ cursor: 'pointer', fontSize: '13px' }}
+                          onClick={() => {
+                            if (isChecked) {
+                              setSelectedAdminIds(selectedAdminIds.filter(id => id !== adm.id));
+                            } else {
+                              setSelectedAdminIds([...selectedAdminIds, adm.id]);
+                            }
+                          }}
+                        >
+                          <div className="d-flex align-items-center gap-2">
+                            <input
+                              type="checkbox"
+                              className="form-check-input mt-0"
+                              checked={isChecked}
+                              onChange={() => {}} // handled by parent onClick
+                            />
+                            <div>
+                              <div className="fw-semibold text-dark">{adm.name}</div>
+                              <div className="text-muted" style={{ fontSize: '11.5px' }}>{adm.email}</div>
+                            </div>
+                          </div>
+                          {isChecked && <CheckCircle size={15} className="text-primary" />}
+                        </div>
+                      );
+                    })}
+
+                    <div className="border-top pt-2 mt-2 d-flex justify-content-end">
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm px-3 py-1"
+                        style={{ fontSize: '12px' }}
+                        onClick={() => setAdminDropdownOpen(false)}
+                      >
+                        Done
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <Form.Text className="text-muted small d-block mt-1" style={{ fontSize: '11.5px' }}>
+                  {selectedAdminIds.length === 0
+                    ? 'All active administrators will be notified and can approve your request.'
+                    : selectedAdminIds.length === 1
+                    ? 'Only the selected admin will be notified and can approve your request.'
+                    : `Either of the ${selectedAdminIds.length} selected admins (${selectedAdminIds.map(id => admins.find(a => a.id === id)?.name).filter(Boolean).join(', ')}) can review and approve your request.`}
                 </Form.Text>
               </Form.Group>
 

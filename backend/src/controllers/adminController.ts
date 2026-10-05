@@ -123,6 +123,7 @@ export const getAttendance = async (req: AuthRequest, res: Response): Promise<vo
                ST_Y(att.check_out_location::geometry) as check_out_lat,
                ST_X(att.check_out_location::geometry) as check_out_lng,
                COALESCE(att.attendance_mode, u.attendance_mode, 'Office') as attendance_mode,
+               COALESCE(att.attendance_source, 'Mobile App') as attendance_source,
                att.check_in_address, att.check_in_selfie_url,
                att.check_out_address, att.check_out_selfie_url
         FROM users u
@@ -141,14 +142,14 @@ export const getAttendance = async (req: AuthRequest, res: Response): Promise<vo
                ST_X(a.check_in_location::geometry) as check_in_lng,
                ST_Y(a.check_out_location::geometry) as check_out_lat,
                ST_X(a.check_out_location::geometry) as check_out_lng,
-               a.attendance_mode, a.check_in_address, a.check_in_selfie_url,
+               a.attendance_mode, COALESCE(a.attendance_source, 'Mobile App') as attendance_source, a.check_in_address, a.check_in_selfie_url,
                a.check_out_address, a.check_out_selfie_url
         FROM attendance a
         UNION ALL
         SELECT NULL::integer as id, el.attendance_date, el.employee_id, 'ON LEAVE' as computed_status, NULL as check_in, NULL as check_out, 0 as working_minutes,
                false as is_late, 0 as late_minutes,
                NULL::numeric as check_in_lat, NULL::numeric as check_in_lng, NULL::numeric as check_out_lat, NULL::numeric as check_out_lng,
-               'Office' as attendance_mode, NULL as check_in_address, NULL as check_in_selfie_url,
+               'Office' as attendance_mode, NULL as attendance_source, NULL as check_in_address, NULL as check_in_selfie_url,
                NULL as check_out_address, NULL as check_out_selfie_url
         FROM expanded_leaves el
         WHERE NOT EXISTS (
@@ -161,6 +162,7 @@ export const getAttendance = async (req: AuthRequest, res: Response): Promise<vo
              a.is_late, a.late_minutes,
              a.check_in_lat, a.check_in_lng, a.check_out_lat, a.check_out_lng,
              COALESCE(a.attendance_mode, u.attendance_mode, 'Office') as attendance_mode,
+             a.attendance_source,
              a.check_in_address, a.check_in_selfie_url,
              a.check_out_address, a.check_out_selfie_url,
              u.name as employee_name, u.employee_id as employee_code, u.profile_photo_url as profile_photo_url,
@@ -205,6 +207,7 @@ export const getAttendance = async (req: AuthRequest, res: Response): Promise<vo
             isLate: isLateRecord,
             lateMinutes: rec.late_minutes ? Math.round(parseFloat(rec.late_minutes)) : 0,
             attendanceMode: rec.attendance_mode || 'Office',
+            attendanceSource: rec.attendance_source || 'Mobile App',
             address: rec.check_in_address || null,
             selfieUrl: rec.check_in_selfie_url || null,
             checkOutAddress: rec.check_out_address || null,

@@ -107,20 +107,79 @@ export default function DigitalIdCard({
     setIsFlipped(!isFlipped);
   };
 
+  // Cleanly capture a card side with smooth rounded corners and no 3D distortion
+  const captureCardSide = async (element: HTMLElement) => {
+    const prevTransform = element.style.transform;
+    const prevBackface = element.style.backfaceVisibility;
+    const prevWebkitBackface = (element.style as any).webkitBackfaceVisibility;
+    const prevBoxShadow = element.style.boxShadow;
+    const parentFlipper = element.closest('.id-card-flipper') as HTMLElement | null;
+    const prevFlipperTransform = parentFlipper ? parentFlipper.style.transform : '';
+
+    try {
+      // Temporarily flatten transforms and shadows in live DOM
+      // Keep border-radius (20px) and overflow: hidden for smooth rounded corners
+      element.style.transform = 'none';
+      element.style.backfaceVisibility = 'visible';
+      (element.style as any).webkitBackfaceVisibility = 'visible';
+      element.style.boxShadow = 'none';
+      if (parentFlipper) {
+        parentFlipper.style.transform = 'none';
+      }
+
+      return await html2canvas(element, {
+        scale: 3,
+        useCORS: true,
+        backgroundColor: null,
+        logging: false,
+        onclone: (_clonedDoc, clonedEl) => {
+          clonedEl.style.setProperty('transform', 'none', 'important');
+          clonedEl.style.setProperty('-webkit-transform', 'none', 'important');
+          clonedEl.style.setProperty('backface-visibility', 'visible', 'important');
+          clonedEl.style.setProperty('-webkit-backface-visibility', 'visible', 'important');
+          clonedEl.style.setProperty('border-radius', '20px', 'important');
+          clonedEl.style.setProperty('-webkit-border-radius', '20px', 'important');
+          clonedEl.style.setProperty('overflow', 'hidden', 'important');
+          clonedEl.style.setProperty('box-shadow', 'none', 'important');
+          clonedEl.style.setProperty('-webkit-box-shadow', 'none', 'important');
+
+          const flipper = clonedEl.closest('.id-card-flipper') as HTMLElement | null;
+          if (flipper) {
+            flipper.style.setProperty('transform', 'none', 'important');
+            flipper.style.setProperty('-webkit-transform', 'none', 'important');
+          }
+
+          const perspectiveContainer = clonedEl.closest('.id-card-perspective-container') as HTMLElement | null;
+          if (perspectiveContainer) {
+            perspectiveContainer.style.setProperty('perspective', 'none', 'important');
+          }
+        }
+      });
+    } finally {
+      element.style.transform = prevTransform;
+      element.style.backfaceVisibility = prevBackface;
+      (element.style as any).webkitBackfaceVisibility = prevWebkitBackface;
+      element.style.boxShadow = prevBoxShadow;
+      if (parentFlipper) {
+        parentFlipper.style.transform = prevFlipperTransform;
+      }
+    }
+  };
+
   // Download PNG (Front or Back or Both)
   const handleDownloadPNG = async (side: 'front' | 'back' | 'both' = 'both') => {
     setDownloading(true);
     try {
       if (side === 'front' && frontRef.current) {
-        const canvas = await html2canvas(frontRef.current, { scale: 3, useCORS: true, backgroundColor: null });
+        const canvas = await captureCardSide(frontRef.current);
         triggerDownload(canvas.toDataURL('image/png'), `ID_Card_${employee.employeeId}_Front.png`);
       } else if (side === 'back' && backRef.current) {
-        const canvas = await html2canvas(backRef.current, { scale: 3, useCORS: true, backgroundColor: null });
+        const canvas = await captureCardSide(backRef.current);
         triggerDownload(canvas.toDataURL('image/png'), `ID_Card_${employee.employeeId}_Back.png`);
       } else if (frontRef.current && backRef.current) {
         // Render both side-by-side onto a composite canvas
-        const canvasFront = await html2canvas(frontRef.current, { scale: 3, useCORS: true, backgroundColor: null });
-        const canvasBack = await html2canvas(backRef.current, { scale: 3, useCORS: true, backgroundColor: null });
+        const canvasFront = await captureCardSide(frontRef.current);
+        const canvasBack = await captureCardSide(backRef.current);
 
         const combinedCanvas = document.createElement('canvas');
         const gap = 40;
@@ -140,35 +199,13 @@ export default function DigitalIdCard({
     }
   };
 
-  // Download PDF (Server official PDF or client fallback)
+  // Download PDF (Exact 1:1 pixel-perfect reproduction of on-screen card)
   const handleDownloadPDF = async () => {
     setDownloading(true);
     try {
-      // Attempt backend high-resolution vector PDF download if token available
-      if (token) {
-        const downloadUrl = `${apiBaseUrl}/api/profile/id-card/pdf`;
-        const res = await fetch(downloadUrl, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (res.ok) {
-          const blob = await res.blob();
-          const url = window.URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `Falcon_ID_Card_${employee.employeeId}.pdf`;
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
-          window.URL.revokeObjectURL(url);
-          setDownloading(false);
-          return;
-        }
-      }
-
-      // Client-side fallback using jsPDF
       if (frontRef.current && backRef.current) {
-        const canvasFront = await html2canvas(frontRef.current, { scale: 3, useCORS: true });
-        const canvasBack = await html2canvas(backRef.current, { scale: 3, useCORS: true });
+        const canvasFront = await captureCardSide(frontRef.current);
+        const canvasBack = await captureCardSide(backRef.current);
 
         // CR80 standard dimensions: 54 mm x 85.6 mm (2.125" x 3.375" portrait)
         const pdf = new jsPDF({
@@ -177,17 +214,18 @@ export default function DigitalIdCard({
           format: [54, 85.6]
         });
 
-        const imgFront = canvasFront.toDataURL('image/png');
-        pdf.addImage(imgFront, 'PNG', 0, 0, 54, 85.6);
+        const imgFront = canvasFront.toDataURL('image/png', 1.0);
+        pdf.addImage(imgFront, 'PNG', 0, 0, 54, 85.6, undefined, 'FAST');
 
         pdf.addPage([54, 85.6], 'portrait');
-        const imgBack = canvasBack.toDataURL('image/png');
-        pdf.addImage(imgBack, 'PNG', 0, 0, 54, 85.6);
+        const imgBack = canvasBack.toDataURL('image/png', 1.0);
+        pdf.addImage(imgBack, 'PNG', 0, 0, 54, 85.6, undefined, 'FAST');
 
-        pdf.save(`Falcon_ID_Card_${employee.employeeId}.pdf`);
+        pdf.save(`Falcon_ID_Card_${employee.employeeId || 'EMP'}.pdf`);
       }
     } catch (err) {
       console.error('Failed to download PDF:', err);
+      alert('Failed to generate PDF. Please try downloading as PNG.');
     } finally {
       setDownloading(false);
     }
@@ -208,22 +246,24 @@ export default function DigitalIdCard({
       frontClone.style.transform = 'none';
       frontClone.style.position = 'relative';
       frontClone.style.boxShadow = 'none';
-      frontClone.style.border = '1px solid #CBD5E1';
+      frontClone.style.border = '1px solid rgba(15, 23, 42, 0.12)';
       frontClone.style.width = '320px';
       frontClone.style.height = '508px';
-      frontClone.style.maxHeight = '508px';
-      frontClone.style.margin = '0 auto';
+      frontClone.style.margin = '0';
       frontClone.style.backfaceVisibility = 'visible';
+      frontClone.style.borderRadius = '20px';
+      frontClone.style.overflow = 'hidden';
 
       backClone.style.transform = 'none';
       backClone.style.position = 'relative';
       backClone.style.boxShadow = 'none';
-      backClone.style.border = '1px solid #CBD5E1';
+      backClone.style.border = '1px solid rgba(15, 23, 42, 0.12)';
       backClone.style.width = '320px';
       backClone.style.height = '508px';
-      backClone.style.maxHeight = '508px';
-      backClone.style.margin = '0 auto';
+      backClone.style.margin = '0';
       backClone.style.backfaceVisibility = 'visible';
+      backClone.style.borderRadius = '20px';
+      backClone.style.overflow = 'hidden';
 
       let printIframe = document.getElementById('id-card-print-frame') as HTMLIFrameElement;
       if (printIframe) {
@@ -262,8 +302,8 @@ export default function DigitalIdCard({
             ${styles}
             <style>
               @page {
-                size: portrait;
-                margin: 6mm auto;
+                size: A4 portrait;
+                margin: 15mm 10mm;
               }
               * {
                 -webkit-print-color-adjust: exact !important;
@@ -274,48 +314,121 @@ export default function DigitalIdCard({
                 margin: 0 !important;
                 padding: 0 !important;
                 background: #ffffff !important;
-                width: 100% !important;
-                height: 100% !important;
-                overflow: hidden !important;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
               }
-              .print-cards-container {
+              .print-page-wrapper {
                 display: flex !important;
                 flex-direction: column !important;
                 align-items: center !important;
-                justify-content: center !important;
-                gap: 12px !important;
+                justify-content: flex-start !important;
                 width: 100% !important;
-                height: 100% !important;
-                margin: 0 auto !important;
-                padding: 0 !important;
+                padding-top: 8mm !important;
+              }
+              .print-header-notice {
+                text-align: center !important;
+                margin-bottom: 8mm !important;
+              }
+              .print-header-title {
+                font-size: 11pt !important;
+                font-weight: 800 !important;
+                color: #0F172A !important;
+                letter-spacing: 0.5px !important;
+              }
+              .print-header-sub {
+                font-size: 8.5pt !important;
+                color: #64748B !important;
+                margin-top: 2px !important;
+              }
+              .print-cards-row {
+                display: flex !important;
+                flex-direction: row !important;
+                align-items: flex-start !important;
+                justify-content: center !important;
+                gap: 12mm !important;
+                margin-bottom: 8mm !important;
                 page-break-inside: avoid !important;
                 break-inside: avoid !important;
               }
-              .id-card-face {
+              /* CR80 Physical Dimensions: 54 mm x 85.6 mm (2.125" x 3.375") */
+              .cr80-card-slot {
+                width: 54mm !important;
+                height: 85.6mm !important;
+                max-width: 54mm !important;
+                max-height: 85.6mm !important;
+                min-width: 54mm !important;
+                min-height: 85.6mm !important;
+                border-radius: 3.18mm !important;
+                border: 0.3mm dashed #94A3B8 !important;
+                position: relative !important;
+                overflow: hidden !important;
+                background: #FFFFFF !important;
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+              }
+              .cr80-card-slot-label {
+                font-size: 8pt !important;
+                font-weight: 700 !important;
+                color: #475569 !important;
+                text-align: center !important;
+                margin-bottom: 2mm !important;
+                text-transform: uppercase !important;
+                letter-spacing: 0.5px !important;
+              }
+              .cr80-scaler {
+                width: 320px !important;
+                height: 508px !important;
+                transform: scale(0.6378) !important;
+                transform-origin: top left !important;
+                margin: 0 !important;
+                padding: 0 !important;
+              }
+              .cr80-scaler .id-card-face {
                 position: relative !important;
                 width: 320px !important;
                 height: 508px !important;
-                max-height: 508px !important;
-                transform: none !important;
-                -webkit-transform: none !important;
-                backface-visibility: visible !important;
-                -webkit-backface-visibility: visible !important;
                 box-shadow: none !important;
-                border: 1px solid #CBD5E1 !important;
-                margin: 0 auto !important;
-                page-break-before: avoid !important;
-                page-break-after: avoid !important;
-                page-break-inside: avoid !important;
-                break-before: avoid !important;
-                break-after: avoid !important;
-                break-inside: avoid !important;
+                border: none !important;
+                border-radius: 0 !important;
+              }
+              .print-footer-guide {
+                font-size: 8pt !important;
+                color: #64748B !important;
+                text-align: center !important;
+                max-width: 130mm !important;
+                line-height: 1.4 !important;
               }
             </style>
           </head>
           <body>
-            <div class="print-cards-container">
-              ${frontClone.outerHTML}
-              ${backClone.outerHTML}
+            <div class="print-page-wrapper">
+              <div class="print-header-notice">
+                <div class="print-header-title">Falcon Info Solutions — Official Employee ID Card</div>
+                <div class="print-header-sub">Standard CR80 Size: 54.0 mm × 85.6 mm (2.125" × 3.375") • 100% Actual Scale</div>
+              </div>
+
+              <div class="print-cards-row">
+                <div>
+                  <div class="cr80-card-slot-label">Front Side</div>
+                  <div class="cr80-card-slot">
+                    <div class="cr80-scaler">
+                      ${frontClone.outerHTML}
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <div class="cr80-card-slot-label">Back Side</div>
+                  <div class="cr80-card-slot">
+                    <div class="cr80-scaler">
+                      ${backClone.outerHTML}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="print-footer-guide">
+                ✂ Cut along the outer dashed lines (54 mm × 85.6 mm). Sized 1:1 for standard ID card pouches, lanyards, and employee badge holders.
+              </div>
             </div>
           </body>
         </html>
@@ -383,19 +496,20 @@ export default function DigitalIdCard({
               borderRadius: '20px',
               overflow: 'hidden',
               background: '#FFFFFF',
+              border: '1px solid rgba(15, 23, 42, 0.12)',
               boxShadow: '0 20px 40px -15px rgba(15, 23, 42, 0.25), 0 0 0 1px rgba(15, 23, 42, 0.08)',
               display: 'flex',
               flexDirection: 'column'
             }}
           >
-            {/* Top Navy Header with Gradient & Hologram Accent */}
+            {/* Top Globe Blue Header with Falcon Brand Colors */}
             <div
               style={{
-                background: 'linear-gradient(135deg, #0F172A 0%, #1E293B 70%, #0F172A 100%)',
+                background: 'linear-gradient(135deg, #009EE2 0%, #0072BC 55%, #024E79 100%)',
                 padding: '16px 14px 12px 14px',
                 position: 'relative',
                 textAlign: 'center',
-                borderBottom: '3px solid #2563EB'
+                borderBottom: '3px solid #38BDF8'
               }}
             >
               {/* Subtle background security pattern */}
@@ -406,8 +520,8 @@ export default function DigitalIdCard({
                   left: 0,
                   right: 0,
                   bottom: 0,
-                  opacity: 0.06,
-                  backgroundImage: 'radial-gradient(#FFFFFF 1px, transparent 1px)',
+                  opacity: 0.08,
+                  backgroundImage: 'radial-gradient(#0072BC 1px, transparent 1px)',
                   backgroundSize: '10px 10px',
                   pointerEvents: 'none'
                 }}
@@ -438,7 +552,7 @@ export default function DigitalIdCard({
                   </div>
                   <div
                     style={{
-                      color: '#94A3B8',
+                      color: '#BAE6FD',
                       fontSize: '8px',
                       letterSpacing: '1px',
                       fontWeight: 600
@@ -462,8 +576,8 @@ export default function DigitalIdCard({
                   height: '92px',
                   borderRadius: '16px',
                   padding: '3px',
-                  background: 'linear-gradient(135deg, #2563EB 0%, #60A5FA 100%)',
-                  boxShadow: '0 8px 16px -4px rgba(37, 99, 235, 0.35)',
+                  background: 'linear-gradient(135deg, #0072BC 0%, #38BDF8 100%)',
+                  boxShadow: '0 8px 16px -4px rgba(0, 114, 188, 0.4)',
                   marginBottom: '10px'
                 }}
               >
@@ -486,11 +600,11 @@ export default function DigitalIdCard({
                       style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                       onError={(e: any) => {
                         e.target.style.display = 'none';
-                        e.target.parentElement.innerHTML = `<span style="font-size:24px;font-weight:700;color:#2563EB;">${initials}</span>`;
+                        e.target.parentElement.innerHTML = `<span style="font-size:24px;font-weight:700;color:#0072BC;">${initials}</span>`;
                       }}
                     />
                   ) : (
-                    <span style={{ fontSize: '26px', fontWeight: 800, color: '#2563EB' }}>
+                    <span style={{ fontSize: '26px', fontWeight: 800, color: '#0072BC' }}>
                       {initials}
                     </span>
                   )}
@@ -501,7 +615,7 @@ export default function DigitalIdCard({
               <h5
                 className="fw-bold mb-0 text-center"
                 style={{
-                  color: '#0F172A',
+                  color: '#023E60',
                   fontSize: '16px',
                   letterSpacing: '-0.3px',
                   lineHeight: 1.2
@@ -513,11 +627,12 @@ export default function DigitalIdCard({
               {/* Designation */}
               <div
                 style={{
-                  color: '#2563EB',
+                  color: '#0072BC',
                   fontSize: '11.5px',
-                  fontWeight: 600,
+                  fontWeight: 700,
                   marginTop: '2px',
-                  textAlign: 'center'
+                  textAlign: 'center',
+                  letterSpacing: '0.2px'
                 }}
               >
                 {employee.designation || 'Staff'}
@@ -611,10 +726,10 @@ export default function DigitalIdCard({
             {/* Front Card Footer */}
             <div
               style={{
-                background: '#0F172A',
+                background: 'linear-gradient(135deg, #024E79 0%, #0072BC 50%, #009EE2 100%)',
                 padding: '9px 12px',
                 textAlign: 'center',
-                borderTop: '2px solid #2563EB',
+                borderTop: '2.5px solid #38BDF8',
                 marginTop: 'auto'
               }}
             >
@@ -646,7 +761,8 @@ export default function DigitalIdCard({
               borderRadius: '20px',
               overflow: 'hidden',
               background: '#FFFFFF',
-              boxShadow: '0 20px 40px -15px rgba(15, 23, 42, 0.25), 0 0 0 1px rgba(15, 23, 42, 0.08)',
+              border: '1px solid rgba(2, 62, 96, 0.12)',
+              boxShadow: '0 20px 40px -15px rgba(2, 62, 96, 0.25), 0 0 0 1px rgba(2, 62, 96, 0.08)',
               transform: 'rotateY(180deg)',
               display: 'flex',
               flexDirection: 'column'
@@ -655,10 +771,10 @@ export default function DigitalIdCard({
             {/* Back Header */}
             <div
               style={{
-                background: 'linear-gradient(135deg, #0F172A 0%, #1E293B 100%)',
+                background: 'linear-gradient(135deg, #009EE2 0%, #0072BC 55%, #024E79 100%)',
                 padding: '12px 14px',
                 textAlign: 'center',
-                borderBottom: '3px solid #2563EB'
+                borderBottom: '3px solid #38BDF8'
               }}
             >
               <div
@@ -674,9 +790,10 @@ export default function DigitalIdCard({
               </div>
               <div
                 style={{
-                  color: '#94A3B8',
+                  color: '#BAE6FD',
                   fontSize: '8px',
-                  letterSpacing: '0.5px'
+                  letterSpacing: '0.5px',
+                  fontWeight: 600
                 }}
               >
                 SECURE QR CREDENTIAL
@@ -694,7 +811,7 @@ export default function DigitalIdCard({
                   padding: '8px',
                   borderRadius: '12px',
                   background: '#FFFFFF',
-                  boxShadow: '0 4px 12px rgba(15, 23, 42, 0.08)',
+                  boxShadow: '0 4px 12px rgba(2, 62, 96, 0.08)',
                   border: '1px solid #E2E8F0',
                   display: 'flex',
                   flexDirection: 'column',
@@ -757,12 +874,12 @@ export default function DigitalIdCard({
               >
                 <div className="d-flex flex-column gap-1.5" style={{ fontSize: '10.5px' }}>
                   <div className="d-flex align-items-center gap-2">
-                    <Globe size={12} className="text-primary flex-shrink-0" />
+                    <Globe size={12} style={{ color: '#0072BC' }} className="flex-shrink-0" />
                     <span className="text-dark fw-medium text-truncate">{company.website}</span>
                   </div>
 
                   <div className="d-flex align-items-center gap-2">
-                    <Mail size={12} className="text-primary flex-shrink-0" />
+                    <Mail size={12} style={{ color: '#0072BC' }} className="flex-shrink-0" />
                     <span className="text-dark fw-medium text-truncate">{company.email}</span>
                   </div>
 
@@ -777,7 +894,7 @@ export default function DigitalIdCard({
                   </div>
 
                   <div className="d-flex align-items-start gap-2">
-                    <Building2 size={12} className="text-primary flex-shrink-0 mt-0.5" />
+                    <Building2 size={12} style={{ color: '#0072BC' }} className="flex-shrink-0 mt-0.5" />
                     <span className="text-muted" style={{ fontSize: '9.5px', lineHeight: 1.3 }}>
                       {company.officeAddress}
                     </span>
@@ -789,8 +906,8 @@ export default function DigitalIdCard({
               <div
                 style={{
                   width: '100%',
-                  background: '#EFF6FF',
-                  border: '1px dashed #93C5FD',
+                  background: '#F0F9FF',
+                  border: '1px dashed #7DD3FC',
                   borderRadius: '8px',
                   padding: '6px 10px',
                   textAlign: 'center',
@@ -800,7 +917,7 @@ export default function DigitalIdCard({
                 <p
                   className="mb-0 fw-semibold"
                   style={{
-                    color: '#1E40AF',
+                    color: '#0369A1',
                     fontSize: '9px',
                     lineHeight: 1.3
                   }}
@@ -813,18 +930,18 @@ export default function DigitalIdCard({
             {/* Back Card Footer */}
             <div
               style={{
-                background: '#0F172A',
+                background: 'linear-gradient(135deg, #024E79 0%, #0072BC 50%, #009EE2 100%)',
                 padding: '7px 12px',
                 textAlign: 'center',
-                borderTop: '2px solid #2563EB',
+                borderTop: '2.5px solid #38BDF8',
                 marginTop: 'auto'
               }}
             >
               <div
                 style={{
-                  color: '#94A3B8',
+                  color: '#BAE6FD',
                   fontSize: '8.5px',
-                  fontWeight: 500
+                  fontWeight: 600
                 }}
               >
                 Property of Falcon Info Solutions Pvt. Ltd.
@@ -842,7 +959,7 @@ export default function DigitalIdCard({
             variant="outline-primary"
             className="d-flex align-items-center justify-content-center gap-2 w-100 py-2 shadow-sm rounded-3"
             onClick={handleFlip}
-            style={{ fontWeight: 600, fontSize: '13.5px' }}
+            style={{ fontWeight: 600, fontSize: '13.5px', color: '#0072BC', borderColor: '#0072BC' }}
           >
             <RotateCw size={16} />
             <span>{isFlipped ? 'Flip to Front Side' : 'Flip to Back Side'}</span>
@@ -855,7 +972,7 @@ export default function DigitalIdCard({
                 variant="primary"
                 className="w-100 d-flex align-items-center justify-content-center gap-1.5 py-2 shadow-sm rounded-3"
                 disabled={downloading}
-                style={{ fontWeight: 600, fontSize: '13px', backgroundColor: '#2563EB', borderColor: '#2563EB' }}
+                style={{ fontWeight: 600, fontSize: '13px', backgroundColor: '#0072BC', borderColor: '#0072BC' }}
               >
                 {downloading ? <Spinner size="sm" animation="border" /> : <Download size={15} />}
                 <span>Download</span>

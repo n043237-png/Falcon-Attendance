@@ -10,6 +10,7 @@ const applyLeaveSchema = z.object({
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format (YYYY-MM-DD)'),
   reason: z.string().min(3).max(500),
   assignedToAdminId: z.number().nullable().optional(),
+  assignedToAdminIds: z.array(z.number()).nullable().optional(),
 });
 
 export const getBalances = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -87,8 +88,14 @@ export const applyLeave = async (req: AuthRequest, res: Response): Promise<void>
       return;
     }
 
-    const { startDate, endDate, reason, assignedToAdminId } = parsed.data;
-    const targetAdminId = assignedToAdminId || null;
+    const { startDate, endDate, reason, assignedToAdminId, assignedToAdminIds } = parsed.data;
+    let targetAdminIds: number[] = [];
+    if (assignedToAdminIds && assignedToAdminIds.length > 0) {
+      targetAdminIds = assignedToAdminIds.filter(id => !isNaN(id) && id > 0);
+    } else if (assignedToAdminId) {
+      targetAdminIds = [assignedToAdminId];
+    }
+    const targetAdminId = targetAdminIds.length > 0 ? targetAdminIds[0] : null;
 
     // Run Smart Leave Validation Engine
     const validation = await LeaveValidationService.validateLeaveRequest(employeeId, startDate, endDate);
@@ -129,18 +136,18 @@ export const applyLeave = async (req: AuthRequest, res: Response): Promise<void>
       // Non-working days only (Sundays or Holidays)
       const leaveType = validation.allWeeklyOffs ? 'Weekly Off' : (validation.allCompanyHolidays ? 'Company Holiday' : 'Paid Leave');
       const insertRes = await client.query(`
-        INSERT INTO leave_requests (employee_id, from_date, to_date, days, reason, leave_type, status, assigned_to)
-        VALUES ($1, $2, $3, $4, $5, $6, 'PENDING', $7)
+        INSERT INTO leave_requests (employee_id, from_date, to_date, days, reason, leave_type, status, assigned_to, assigned_to_ids)
+        VALUES ($1, $2, $3, $4, $5, $6, 'PENDING', $7, $8)
         RETURNING id
-      `, [employeeId, startDate, endDate, totalDays, reason, leaveType, targetAdminId]);
+      `, [employeeId, startDate, endDate, totalDays, reason, leaveType, targetAdminId, targetAdminIds]);
       insertedIds.push(insertRes.rows[0].id);
     } else if (availableBalance >= paidLeaveRequired) {
       // Entire working duration covered by paid leave
       const insertRes = await client.query(`
-        INSERT INTO leave_requests (employee_id, from_date, to_date, days, reason, leave_type, status, assigned_to)
-        VALUES ($1, $2, $3, $4, $5, 'Paid Leave', 'PENDING', $6)
+        INSERT INTO leave_requests (employee_id, from_date, to_date, days, reason, leave_type, status, assigned_to, assigned_to_ids)
+        VALUES ($1, $2, $3, $4, $5, 'Paid Leave', 'PENDING', $6, $7)
         RETURNING id
-      `, [employeeId, startDate, endDate, totalDays, reason, targetAdminId]);
+      `, [employeeId, startDate, endDate, totalDays, reason, targetAdminId, targetAdminIds]);
       insertedIds.push(insertRes.rows[0].id);
     } else {
       // Split into Paid Leave and Leave Without Pay
@@ -153,8 +160,8 @@ export const applyLeave = async (req: AuthRequest, res: Response): Promise<void>
         paidEndDate.setDate(paidEndDate.getDate() + paidLeaveDays - 1);
 
         const insertRes1 = await client.query(`
-          INSERT INTO leave_requests (employee_id, from_date, to_date, days, reason, leave_type, status, assigned_to)
-          VALUES ($1, $2, $3, $4, $5, 'Paid Leave', 'PENDING', $6)
+          INSERT INTO leave_requests (employee_id, from_date, to_date, days, reason, leave_type, status, assigned_to, assigned_to_ids)
+          VALUES ($1, $2, $3, $4, $5, 'Paid Leave', 'PENDING', $6, $7)
           RETURNING id
         `, [
           employeeId, 
@@ -162,7 +169,8 @@ export const applyLeave = async (req: AuthRequest, res: Response): Promise<void>
           paidEndDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }), 
           paidLeaveDays, 
           reason,
-          targetAdminId
+          targetAdminId,
+          targetAdminIds
         ]);
         insertedIds.push(insertRes1.rows[0].id);
 
@@ -173,8 +181,8 @@ export const applyLeave = async (req: AuthRequest, res: Response): Promise<void>
 
       if (remainingDays > 0) {
         const insertRes2 = await client.query(`
-          INSERT INTO leave_requests (employee_id, from_date, to_date, days, reason, leave_type, status, assigned_to)
-          VALUES ($1, $2, $3, $4, $5, 'Leave Without Pay', 'PENDING', $6)
+          INSERT INTO leave_requests (employee_id, from_date, to_date, days, reason, leave_type, status, assigned_to, assigned_to_ids)
+          VALUES ($1, $2, $3, $4, $5, 'Leave Without Pay', 'PENDING', $6, $7)
           RETURNING id
         `, [
           employeeId, 
@@ -182,7 +190,8 @@ export const applyLeave = async (req: AuthRequest, res: Response): Promise<void>
           endDate, 
           remainingDays, 
           reason,
-          targetAdminId
+          targetAdminId,
+          targetAdminIds
         ]);
         insertedIds.push(insertRes2.rows[0].id);
       }
@@ -279,7 +288,16 @@ export const getLeaveHistory = async (req: AuthRequest, res: Response): Promise<
     const histRes = await query(`
       SELECT lr.id, lr.leave_type as "leaveType", lr.from_date, lr.to_date, lr.days as total_days, lr.reason, lr.status,
              lr.remarks as "adminComment", lr.approved_at as "reviewedAt",
-             lr.assigned_to as "assignedTo", u_assigned.name as "assignedToName", u_assigned.email as "assignedToEmail",
+             lr.assigned_to as "assignedTo", lr.assigned_to_ids as "assignedToIds",
+             COALESCE(
+               (
+                 SELECT string_agg(u_sub.name, ', ' ORDER BY u_sub.name)
+                 FROM users u_sub
+                 WHERE u_sub.id = ANY(COALESCE(NULLIF(lr.assigned_to_ids, '{}'), ARRAY[lr.assigned_to]::integer[]))
+               ),
+               u_assigned.name
+             ) as "assignedToName",
+             u_assigned.email as "assignedToEmail",
              u.name as "employeeName", u.employee_id as "employeeCode", u.profile_photo_url as "profilePhotoUrl",
              u_admin.name as "reviewerName", u_admin.email as "reviewerEmail"
       FROM leave_requests lr
@@ -309,6 +327,7 @@ export const getLeaveHistory = async (req: AuthRequest, res: Response): Promise<
           reviewerName: rec.reviewerName,
           reviewedAt: rec.reviewedAt,
           assignedTo: rec.assignedTo,
+          assignedToIds: (rec.assignedToIds && rec.assignedToIds.length > 0) ? rec.assignedToIds : (rec.assignedTo ? [rec.assignedTo] : []),
           assignedToName: rec.assignedToName,
           assignedToEmail: rec.assignedToEmail
         })),
@@ -328,8 +347,18 @@ export const getLeaveRequest = async (req: AuthRequest, res: Response): Promise<
 
     const leaveRes = await query(`
       SELECT lr.id, lr.leave_type as "leaveType", lr.from_date, lr.to_date, lr.days as total_days, lr.reason, lr.status,
-             lr.remarks as admin_comment, lr.approved_at as reviewed_at, lr.created_at
+             lr.remarks as admin_comment, lr.approved_at as reviewed_at, lr.created_at,
+             lr.assigned_to, lr.assigned_to_ids,
+             COALESCE(
+               (
+                 SELECT string_agg(u_sub.name, ', ' ORDER BY u_sub.name)
+                 FROM users u_sub
+                 WHERE u_sub.id = ANY(COALESCE(NULLIF(lr.assigned_to_ids, '{}'), ARRAY[lr.assigned_to]::integer[]))
+               ),
+               u_assigned.name
+             ) as assigned_to_name
       FROM leave_requests lr
+      LEFT JOIN users u_assigned ON lr.assigned_to = u_assigned.id
       WHERE lr.id = $1 AND lr.employee_id = $2
     `, [id, employeeId]);
 

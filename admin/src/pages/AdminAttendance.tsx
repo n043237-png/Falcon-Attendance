@@ -17,7 +17,9 @@ import {
   Building,
   Camera,
   ExternalLink,
-  X
+  X,
+  Monitor,
+  Smartphone
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import Avatar from '../components/common/Avatar';
@@ -51,6 +53,7 @@ export default function AdminAttendance() {
   const [status, setStatus] = useState(initialStatus);
   const [shiftFilter, setShiftFilter] = useState('All');
   const [modeFilter, setModeFilter] = useState('All');
+  const [sourceFilter, setSourceFilter] = useState('All');
   const [availableShifts, setAvailableShifts] = useState<any[]>([]);
 
   const [records, setRecords] = useState<any[]>([]);
@@ -402,7 +405,7 @@ export default function AdminAttendance() {
       {/* Filter Toolbar Card */}
       <div className="card p-4 mb-4">
         <Row className="g-3 align-items-end">
-          <Col md={3}>
+          <Col md={2}>
             <Form.Group>
               <Form.Label className="d-flex align-items-center gap-2">
                 <Calendar size={14} className="text-muted" />
@@ -446,16 +449,30 @@ export default function AdminAttendance() {
             </Form.Group>
           </Col>
 
-          <Col md={2}>
+          <Col md={1}>
             <Form.Group>
               <Form.Label className="d-flex align-items-center gap-2">
                 <MapPin size={14} className="text-muted" />
-                <span>Attendance Mode</span>
+                <span>Mode</span>
               </Form.Label>
               <Form.Select value={modeFilter} onChange={(e) => setModeFilter(e.target.value)}>
-                <option value="All">All Modes</option>
+                <option value="All">All</option>
                 <option value="Office">Office</option>
                 <option value="Field">Field</option>
+              </Form.Select>
+            </Form.Group>
+          </Col>
+
+          <Col md={2}>
+            <Form.Group>
+              <Form.Label className="d-flex align-items-center gap-2">
+                <Monitor size={14} className="text-muted" />
+                <span>Source</span>
+              </Form.Label>
+              <Form.Select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)}>
+                <option value="All">All Sources</option>
+                <option value="Mobile App">Mobile App</option>
+                <option value="Web Portal">Web Portal</option>
               </Form.Select>
             </Form.Group>
           </Col>
@@ -517,6 +534,7 @@ export default function AdminAttendance() {
                     <th>Shift</th>
                     <th>Date</th>
                     <th>Mode</th>
+                    <th>Source</th>
                     <th>Check-in</th>
                     <th>Check-out</th>
                     <th>Working Hours</th>
@@ -525,9 +543,9 @@ export default function AdminAttendance() {
                   </tr>
                 </thead>
                 <tbody>
-                  {records.filter(r => modeFilter === 'All' || (r.attendanceMode || 'Office').toLowerCase() === modeFilter.toLowerCase()).length > 0 ? (
+                  {records.filter(r => (modeFilter === 'All' || (r.attendanceMode || 'Office').toLowerCase() === modeFilter.toLowerCase()) && (sourceFilter === 'All' || (r.attendanceSource || 'Mobile App').toLowerCase() === sourceFilter.toLowerCase())).length > 0 ? (
                     records
-                      .filter(r => modeFilter === 'All' || (r.attendanceMode || 'Office').toLowerCase() === modeFilter.toLowerCase())
+                      .filter(r => (modeFilter === 'All' || (r.attendanceMode || 'Office').toLowerCase() === modeFilter.toLowerCase()) && (sourceFilter === 'All' || (r.attendanceSource || 'Mobile App').toLowerCase() === sourceFilter.toLowerCase()))
                       .map((r) => (
                       <tr key={r.attendanceId}>
                         <td>
@@ -572,6 +590,17 @@ export default function AdminAttendance() {
                           ) : (
                             <span className="badge bg-primary-subtle text-primary border border-primary-subtle fw-medium d-inline-flex align-items-center gap-1" style={{ fontSize: '11px', padding: '3px 8px' }}>
                               <Building size={11} /> Office
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          {(r.attendanceSource || 'Mobile App') === 'Web Portal' ? (
+                            <span className="badge bg-info-subtle text-info-emphasis border border-info-subtle fw-medium d-inline-flex align-items-center gap-1" style={{ fontSize: '11px', padding: '3px 8px' }}>
+                              <Monitor size={11} /> Web Portal
+                            </span>
+                          ) : (
+                            <span className="badge bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle fw-medium d-inline-flex align-items-center gap-1" style={{ fontSize: '11px', padding: '3px 8px' }}>
+                              <Smartphone size={11} /> Mobile App
                             </span>
                           )}
                         </td>
