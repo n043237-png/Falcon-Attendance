@@ -70,7 +70,7 @@ const getNotifications = async (req, res) => {
         (role = 'all' AND (COALESCE(recipient_user_id, employee_id) = $1 OR recipient_user_id IS NULL))
       ) AND role != 'admin'`;
         }
-        let filterQuery = `WHERE deleted_at IS NULL AND created_at >= (NOW() - INTERVAL '30 days') AND ${roleFilterClause}`;
+        let filterQuery = `WHERE deleted_at IS NULL AND created_at >= (NOW() - INTERVAL '30 days') AND title NOT ILIKE '%whatsapp%' AND message NOT ILIKE '%whatsapp%' AND title NOT ILIKE '%late attendance alert sent%' AND ${roleFilterClause}`;
         const queryParams = [userId];
         if (search) {
             queryParams.push(`%${search}%`);
@@ -108,6 +108,9 @@ const getNotifications = async (req, res) => {
        WHERE deleted_at IS NULL 
          AND is_read = FALSE 
          AND created_at >= (NOW() - INTERVAL '30 days')
+         AND title NOT ILIKE '%whatsapp%' 
+         AND message NOT ILIKE '%whatsapp%' 
+         AND title NOT ILIKE '%late attendance alert sent%'
          AND ${roleFilterClause}`, [userId]);
         const unreadCount = parseInt(unreadCountRes.rows[0].unread_count) || 0;
         // Fetch paginated rows
@@ -183,6 +186,9 @@ const getUnreadNotifications = async (req, res) => {
        WHERE deleted_at IS NULL 
          AND is_read = FALSE 
          AND created_at >= (NOW() - INTERVAL '30 days')
+         AND title NOT ILIKE '%whatsapp%' 
+         AND message NOT ILIKE '%whatsapp%' 
+         AND title NOT ILIKE '%late attendance alert sent%'
          AND ${roleFilterClause}`, [userId]);
         const count = parseInt(countRes.rows[0].unread_count) || 0;
         // Latest 10 notifications for dropdown
@@ -192,6 +198,9 @@ const getUnreadNotifications = async (req, res) => {
        FROM notifications
        WHERE deleted_at IS NULL 
          AND created_at >= (NOW() - INTERVAL '30 days')
+         AND title NOT ILIKE '%whatsapp%' 
+         AND message NOT ILIKE '%whatsapp%' 
+         AND title NOT ILIKE '%late attendance alert sent%'
          AND ${roleFilterClause}
        ORDER BY created_at DESC
        LIMIT 10`, [userId]);

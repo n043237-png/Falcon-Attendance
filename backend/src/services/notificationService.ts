@@ -91,6 +91,14 @@ export class NotificationService {
    */
   public static async send(payload: SendNotificationPayload): Promise<any> {
     try {
+      // Permanently block any WhatsApp alert messages
+      if (
+        (payload.title && (payload.title.toLowerCase().includes('whatsapp') || payload.title.toLowerCase().includes('late attendance alert sent'))) ||
+        (payload.message && payload.message.toLowerCase().includes('whatsapp'))
+      ) {
+        return { success: true, count: 0, blocked: true };
+      }
+
       const priority = payload.priority || 'Medium';
       const role = payload.role || 'employee';
 

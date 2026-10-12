@@ -74,7 +74,7 @@ export const getNotifications = async (req: AuthRequest, res: Response): Promise
       ) AND role != 'admin'`;
     }
 
-    let filterQuery = `WHERE deleted_at IS NULL AND created_at >= (NOW() - INTERVAL '30 days') AND ${roleFilterClause}`;
+    let filterQuery = `WHERE deleted_at IS NULL AND created_at >= (NOW() - INTERVAL '30 days') AND title NOT ILIKE '%whatsapp%' AND message NOT ILIKE '%whatsapp%' AND title NOT ILIKE '%late attendance alert sent%' AND ${roleFilterClause}`;
     const queryParams: any[] = [userId];
 
     if (search) {
@@ -117,6 +117,9 @@ export const getNotifications = async (req: AuthRequest, res: Response): Promise
        WHERE deleted_at IS NULL 
          AND is_read = FALSE 
          AND created_at >= (NOW() - INTERVAL '30 days')
+         AND title NOT ILIKE '%whatsapp%' 
+         AND message NOT ILIKE '%whatsapp%' 
+         AND title NOT ILIKE '%late attendance alert sent%'
          AND ${roleFilterClause}`,
       [userId]
     );
@@ -202,6 +205,9 @@ export const getUnreadNotifications = async (req: AuthRequest, res: Response): P
        WHERE deleted_at IS NULL 
          AND is_read = FALSE 
          AND created_at >= (NOW() - INTERVAL '30 days')
+         AND title NOT ILIKE '%whatsapp%' 
+         AND message NOT ILIKE '%whatsapp%' 
+         AND title NOT ILIKE '%late attendance alert sent%'
          AND ${roleFilterClause}`,
       [userId]
     );
@@ -215,6 +221,9 @@ export const getUnreadNotifications = async (req: AuthRequest, res: Response): P
        FROM notifications
        WHERE deleted_at IS NULL 
          AND created_at >= (NOW() - INTERVAL '30 days')
+         AND title NOT ILIKE '%whatsapp%' 
+         AND message NOT ILIKE '%whatsapp%' 
+         AND title NOT ILIKE '%late attendance alert sent%'
          AND ${roleFilterClause}
        ORDER BY created_at DESC
        LIMIT 10`,
