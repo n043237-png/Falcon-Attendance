@@ -282,8 +282,9 @@ export default function HomeScreen() {
   };
 
   const badge = getStatusBadge();
-  const isWeekendOrHoliday = status === 'SUNDAY' || status === 'HOLIDAY';
-  const showCompleted = status === 'ON_LEAVE' || isWeekendOrHoliday || hasCheckedOut;
+  const isHoliday = status === 'HOLIDAY';
+  // Keep punch button accessible on Sundays if employee chooses to work
+  const showCompleted = status === 'ON_LEAVE' || isHoliday || hasCheckedOut;
 
   const todayFormatted = new Date().toLocaleDateString('en-US', {
     weekday: 'short',
@@ -525,6 +526,15 @@ export default function HomeScreen() {
                   <Ionicons name="warning-outline" size={14} color="#B45309" />
                   <Text style={styles.lateNoticeText}>
                     You are checking in past the morning cutoff time.
+                  </Text>
+                </View>
+              )}
+
+              {status === 'SUNDAY' && !hasCheckedIn && (
+                <View style={styles.sundayNotice}>
+                  <Ionicons name="cafe-outline" size={14} color="#0F766E" />
+                  <Text style={styles.sundayNoticeText}>
+                    Sunday Off: Punch in if you are working today.
                   </Text>
                 </View>
               )}
@@ -1046,6 +1056,21 @@ const styles = StyleSheet.create({
   lateNoticeText: {
     marginLeft: 6,
     color: '#B45309',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  sundayNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#CCFBF1',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    marginTop: 12,
+  },
+  sundayNoticeText: {
+    marginLeft: 6,
+    color: '#0F766E',
     fontSize: 12,
     fontWeight: '600',
   },
