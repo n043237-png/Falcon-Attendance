@@ -3,17 +3,19 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.verifyLocation = void 0;
 const db_1 = require("../db");
 const MAX_ACCURACY = parseInt(process.env.MAX_LOCATION_ACCURACY_METERS || '100', 10);
-const WEB_OFFICE_RADIUS_METERS = parseInt(process.env.WEB_OFFICE_RADIUS_METERS || '12000', 10);
+const WEB_MAX_ACCURACY = parseInt(process.env.WEB_MAX_LOCATION_ACCURACY_METERS || '150', 10);
+const WEB_OFFICE_RADIUS_OVERRIDE = process.env.WEB_OFFICE_RADIUS_METERS
+    ? parseInt(process.env.WEB_OFFICE_RADIUS_METERS, 10)
+    : null;
 const verifyLocation = async (latitude, longitude, accuracy, isWeb = false) => {
-    // Mobile devices require high-precision GPS (<= 100m).
-    // Web Portal (PC/laptop) uses Wi-Fi / IP geolocation without GPS hardware.
-    const maxAllowedAccuracy = isWeb ? 50000 : MAX_ACCURACY;
+    // High-accuracy location required: <= 100m for mobile GPS, <= 150m for Web Portal Wi-Fi
+    const maxAllowedAccuracy = isWeb ? WEB_MAX_ACCURACY : MAX_ACCURACY;
     if (accuracy > maxAllowedAccuracy) {
         throw {
             status: 400,
             code: 'LOCATION_ACCURACY_TOO_LOW',
             message: isWeb
-                ? 'Location accuracy is too low. Please ensure location services are enabled.'
+                ? `Location accuracy is too low (${Math.round(accuracy)}m). Please enable Wi-Fi on your PC/laptop so your physical office location can be accurately verified.`
                 : 'GPS accuracy is too low. Please move to an area with better GPS signal and try again.',
         };
     }
@@ -36,9 +38,9 @@ const verifyLocation = async (latitude, longitude, accuracy, isWeb = false) => {
     }
     const office = officeResult.rows[0];
     const distanceMeters = parseFloat(office.distance_meters);
-    // For Web Portal, office PCs use wired broadband or Wi-Fi where ISP IP routing places them within regional exchange range (~7-10km).
-    const allowedRadius = isWeb
-        ? Math.max(office.radius_meters, WEB_OFFICE_RADIUS_METERS)
+    // Strictly enforce the office geofence radius for both Web Portal and Mobile
+    const allowedRadius = (isWeb && WEB_OFFICE_RADIUS_OVERRIDE !== null)
+        ? WEB_OFFICE_RADIUS_OVERRIDE
         : office.radius_meters;
     const insideOffice = distanceMeters <= allowedRadius;
     return {

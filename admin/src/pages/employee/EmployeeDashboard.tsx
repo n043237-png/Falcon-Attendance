@@ -168,7 +168,7 @@ export default function EmployeeDashboard() {
         } catch (err: any) {
           const errRes = err.response?.data?.error;
           if (errRes?.code === 'OUTSIDE_OFFICE') {
-            setPunchError('You are outside the authorized office location. Attendance cannot be marked.');
+            setPunchError(errRes.message || 'You are outside the authorized office location. Attendance cannot be marked.');
           } else if (errRes?.code === 'WEB_ATTENDANCE_NOT_ALLOWED') {
             setPunchError(errRes.message || 'You are not authorized to mark attendance from the Web Portal. Only authorized employees can mark attendance from a PC.');
           } else if (errRes?.message) {

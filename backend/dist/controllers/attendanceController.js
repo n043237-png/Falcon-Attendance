@@ -95,7 +95,7 @@ const checkIn = async (req, res) => {
             });
             if (!locResult.insideOffice) {
                 const outsideMsg = isWebPortal
-                    ? 'You are outside the authorized office location. Attendance cannot be marked.'
+                    ? `You are outside the permitted office location (${locResult.distanceMeters}m away). Web Portal attendance is only permitted within ${locResult.allowedRadiusMeters} metres of ${locResult.officeName || 'the office'}.`
                     : `You are outside the permitted office location (${locResult.distanceMeters}m away). Check-in is only permitted within ${locResult.allowedRadiusMeters} metres of ${locResult.officeName || 'the office'}.`;
                 res.status(403).json({
                     success: false,
@@ -389,7 +389,7 @@ const checkOut = async (req, res) => {
             });
             if (!locResult.insideOffice) {
                 const outsideMsg = isWebPortal
-                    ? 'You are outside the authorized office location. Attendance cannot be marked.'
+                    ? `You are outside the permitted office location (${locResult.distanceMeters}m away). Web Portal attendance is only permitted within ${locResult.allowedRadiusMeters} metres of ${locResult.officeName || 'the office'}.`
                     : `You are outside the permitted office location (${locResult.distanceMeters}m away). Check-out is only permitted within ${locResult.allowedRadiusMeters} metres of ${locResult.officeName || 'the office'}.`;
                 res.status(403).json({
                     success: false,
