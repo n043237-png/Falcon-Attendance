@@ -646,7 +646,7 @@ export const resumeAttendance = async (req: AuthRequest, res: Response): Promise
 
     // 1. Fetch latest attendance record for today
     const attRes = await query(`
-      SELECT a.*, s.name as shift_name, s.start_time, s.end_time, s.is_night_shift
+      SELECT a.*, s.name as shift_name, s.start_time, s.end_time
       FROM attendance a
       LEFT JOIN shifts s ON s.id = a.shift_id
       WHERE a.employee_id = $1 AND a.attendance_date = $2

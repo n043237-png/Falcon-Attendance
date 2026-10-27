@@ -616,7 +616,7 @@ const resumeAttendance = async (req, res) => {
         const today = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
         // 1. Fetch latest attendance record for today
         const attRes = await (0, db_1.query)(`
-      SELECT a.*, s.name as shift_name, s.start_time, s.end_time, s.is_night_shift
+      SELECT a.*, s.name as shift_name, s.start_time, s.end_time
       FROM attendance a
       LEFT JOIN shifts s ON s.id = a.shift_id
       WHERE a.employee_id = $1 AND a.attendance_date = $2
