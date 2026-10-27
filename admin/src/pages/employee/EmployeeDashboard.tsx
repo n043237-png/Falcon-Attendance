@@ -26,7 +26,8 @@ import {
   FileCheck,
   CalendarDays,
   Monitor,
-  Lock
+  Lock,
+  RotateCcw
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import Avatar from '../../components/common/Avatar';
@@ -108,6 +109,7 @@ export default function EmployeeDashboard() {
   }, []);
 
   const [punchLoading, setPunchLoading] = useState(false);
+  const [resumeLoading, setResumeLoading] = useState(false);
   const [punchError, setPunchError] = useState<string | null>(null);
   const [punchSuccess, setPunchSuccess] = useState<string | null>(null);
 
@@ -130,6 +132,31 @@ export default function EmployeeDashboard() {
   useEffect(() => {
     if (token) fetchData();
   }, [token]);
+
+  const handleResumeAttendance = async () => {
+    setResumeLoading(true);
+    setPunchError(null);
+    setPunchSuccess(null);
+    try {
+      const res = await axios.post(
+        `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/attendance/resume`,
+        {},
+        {
+          headers: { Authorization: `Bearer ${token}` }
+        }
+      );
+      if (res.data?.success) {
+        setPunchSuccess(res.data.message || 'Attendance resumed successfully. Your session is active again.');
+        fetchData();
+      } else {
+        setPunchError(res.data?.error?.message || 'Failed to resume attendance.');
+      }
+    } catch (err: any) {
+      setPunchError(err.response?.data?.error?.message || err.message || 'Failed to resume attendance.');
+    } finally {
+      setResumeLoading(false);
+    }
+  };
 
   const handleWebPunch = (action: 'check-in' | 'check-out') => {
     if (!navigator.geolocation) {
@@ -220,8 +247,23 @@ export default function EmployeeDashboard() {
   const profile = data?.profile || user;
   const allowWebAttendance = !!((profile as any)?.allowWebAttendance || (profile as any)?.allow_web_attendance);
   const todayAtt = data?.today_status;
-  const isPresent = !!todayAtt && (todayAtt.status === 'PRESENT' || todayAtt.status === 'LATE');
-  const isLate = todayAtt?.status === 'LATE';
+  const hasCheckedIn = !!todayAtt?.check_in;
+  const hasCheckedOut = !!todayAtt?.check_out;
+  const isResumed = !!todayAtt?.attendance_resumed || (todayAtt?.resume_count && todayAtt?.resume_count > 0);
+  const canResume = !!(todayAtt?.can_resume ?? todayAtt?.canResume);
+  const resumeReason = todayAtt?.resume_reason || todayAtt?.resumeReason;
+  const resumeExpiry = todayAtt?.resume_expiry_time || todayAtt?.resumeExpiryTime;
+
+  // Remaining minutes in 30-min accidental window
+  const getResumeMinutesLeft = () => {
+    if (!resumeExpiry) return 0;
+    const diff = new Date(resumeExpiry).getTime() - currentTime.getTime();
+    return Math.max(0, Math.ceil(diff / 60000));
+  };
+  const resumeMinutesLeft = getResumeMinutesLeft();
+
+  const isPresent = hasCheckedIn && !hasCheckedOut;
+  const isLate = todayAtt?.status === 'LATE' || !!todayAtt?.is_late;
   const shift = data?.assigned_shift;
   const monthStats = data?.month_stats;
   const payslip = data?.latest_payslip;
@@ -267,6 +309,68 @@ export default function EmployeeDashboard() {
   };
 
   const todayElapsedStr = getTodayElapsed();
+
+  const getStatusBadge = () => {
+    if (!hasCheckedIn) {
+      return { className: 'bg-secondary', label: 'NOT CHECKED IN' };
+    }
+    if (hasCheckedOut) {
+      if (canResume) return { className: 'bg-warning text-dark', label: 'CHECKED OUT (ACCIDENTAL)' };
+      if (todayAtt?.status === 'INSUFFICIENT_HOURS') return { className: 'bg-danger', label: 'INSUFFICIENT HOURS' };
+      return { className: 'bg-secondary', label: 'CHECKED OUT' };
+    }
+    if (isResumed) return { className: 'bg-success', label: 'RESUMED • ACTIVE' };
+    if (isLate) return { className: 'bg-warning text-dark', label: 'MARKED LATE' };
+    return { className: 'bg-success', label: 'MARKED PRESENT' };
+  };
+
+  const getStatusHeading = () => {
+    if (!hasCheckedIn) return 'Ready to Check In';
+    if (hasCheckedOut) {
+      if (canResume) return 'Accidental Check-Out';
+      if (resumeReason === 'SHIFT_ENDED') return 'Shift Ended';
+      if (resumeReason === 'WINDOW_EXPIRED') return 'Resume Expired';
+      return 'Attendance Closed';
+    }
+    if (isResumed) return 'Attendance Resumed';
+    return isLate ? 'Checked In (Late)' : 'Checked In (On Time)';
+  };
+
+  const getStatusDescription = () => {
+    if (!hasCheckedIn) {
+      return allowWebAttendance
+        ? 'You are authorized to punch in from the Web Portal using office GPS verification.'
+        : 'Please use your Falcon Office mobile app to punch in upon arrival at the office.';
+    }
+    if (hasCheckedOut) {
+      if (canResume) {
+        const checkoutTimeStr = todayAtt?.check_out ? new Date(todayAtt.check_out).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+        return `You checked out at ${checkoutTimeStr}. If this was accidental, you may resume your attendance within 30 minutes and before your shift ends.`;
+      }
+      if (resumeReason === 'SHIFT_ENDED') {
+        return 'Your shift has ended. Attendance is now closed.';
+      }
+      if (resumeReason === 'WINDOW_EXPIRED') {
+        return 'Resume window has expired. Please contact your Administrator if your attendance requires correction.';
+      }
+      return 'Today attendance has been finalized.';
+    }
+    if (isResumed) {
+      return 'Your attendance has been resumed. Working hours will be calculated from your original check-in to final check-out.';
+    }
+    return (todayAtt?.attendance_source === 'Web Portal' || todayAtt?.attendanceSource === 'Web Portal')
+      ? 'Attendance verified with geolocation and office geofence via Web Portal.'
+      : 'Attendance successfully verified with geolocation and mobile device.';
+  };
+
+  const renderStatusIcon = () => {
+    if (hasCheckedOut) {
+      return canResume ? <RotateCcw size={20} /> : <CheckCircle2 size={20} />;
+    }
+    return hasCheckedIn ? <CheckCircle2 size={20} /> : <Clock size={20} />;
+  };
+
+  const statusBadge = getStatusBadge();
 
   return (
     <div>
@@ -379,10 +483,18 @@ export default function EmployeeDashboard() {
               <span
                 className="stat-value fw-bold"
                 style={{
-                  color: isPresent ? (isLate ? '#D97706' : '#15803D') : '#64748B'
+                  color: !hasCheckedIn
+                    ? '#64748B'
+                    : hasCheckedOut
+                    ? (canResume ? '#D97706' : (todayAtt.status === 'INSUFFICIENT_HOURS' ? '#DC2626' : '#15803D'))
+                    : (isResumed ? '#059669' : (isLate ? '#D97706' : '#15803D'))
                 }}
               >
-                {isPresent ? (isLate ? 'Marked Late' : 'Present') : 'Not Checked In'}
+                {!hasCheckedIn
+                  ? 'Not Checked In'
+                  : hasCheckedOut
+                  ? (canResume ? 'Checked Out (Can Resume)' : (todayAtt.status === 'INSUFFICIENT_HOURS' ? 'Insufficient Hours' : (todayAtt.status === 'HALF_DAY' ? 'Half Day' : 'Completed')))
+                  : (isResumed ? 'Resumed (Active)' : (isLate ? 'Marked Late' : 'Present'))}
               </span>
             </div>
             <div className="hero-stat-chip">
@@ -423,11 +535,19 @@ export default function EmployeeDashboard() {
                 <div
                   className="p-2 rounded-3"
                   style={{
-                    background: isPresent ? '#DCFCE7' : '#F1F5F9',
-                    color: isPresent ? '#15803D' : '#64748B'
+                    background: !hasCheckedIn
+                      ? '#F1F5F9'
+                      : hasCheckedOut
+                      ? (canResume ? '#FEF3C7' : '#F1F5F9')
+                      : '#DCFCE7',
+                    color: !hasCheckedIn
+                      ? '#64748B'
+                      : hasCheckedOut
+                      ? (canResume ? '#D97706' : '#64748B')
+                      : '#15803D'
                   }}
                 >
-                  {isPresent ? <CheckCircle2 size={20} /> : <Clock size={20} />}
+                  {renderStatusIcon()}
                 </div>
               </div>
 
@@ -435,26 +555,24 @@ export default function EmployeeDashboard() {
               <div
                 className="p-3 rounded-3 mb-3"
                 style={{
-                  background: isPresent
-                    ? (isLate ? '#FFFBEB' : '#F0FDF4')
-                    : '#F8FAFC',
-                  border: isPresent
-                    ? (isLate ? '1px solid #FDE68A' : '1px solid #BBF7D0')
-                    : '1px solid #E2E8F0'
+                  background: !hasCheckedIn
+                    ? '#F8FAFC'
+                    : hasCheckedOut
+                    ? (canResume ? '#FFFBEB' : '#F8FAFC')
+                    : (isLate ? '#FFFBEB' : '#F0FDF4'),
+                  border: !hasCheckedIn
+                    ? '1px solid #E2E8F0'
+                    : hasCheckedOut
+                    ? (canResume ? '1px solid #FDE68A' : '1px solid #E2E8F0')
+                    : (isLate ? '1px solid #FDE68A' : '1px solid #BBF7D0')
                 }}
               >
                 <div className="d-flex align-items-center justify-content-between mb-1.5">
                   <span
-                    className={`badge ${
-                      isPresent
-                        ? (isLate ? 'bg-warning text-dark' : 'bg-success')
-                        : 'bg-secondary'
-                    }`}
+                    className={`badge ${statusBadge.className}`}
                     style={{ fontSize: '11px', fontWeight: 600, padding: '4px 8px' }}
                   >
-                    {isPresent
-                      ? (isLate ? 'MARKED LATE' : 'MARKED PRESENT')
-                      : 'NOT CHECKED IN'}
+                    {statusBadge.label}
                   </span>
                   <span className="caption-text text-muted" style={{ fontSize: '11.5px' }}>
                     {currentTime.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
@@ -465,24 +583,18 @@ export default function EmployeeDashboard() {
                   className="fw-bold mb-1"
                   style={{
                     fontSize: '20px',
-                    color: isPresent
-                      ? (isLate ? '#B45309' : '#15803D')
-                      : '#0F172A'
+                    color: !hasCheckedIn
+                      ? '#0F172A'
+                      : hasCheckedOut
+                      ? (canResume ? '#B45309' : (todayAtt?.status === 'INSUFFICIENT_HOURS' ? '#DC2626' : '#1E293B'))
+                      : (isResumed ? '#059669' : (isLate ? '#B45309' : '#15803D'))
                   }}
                 >
-                  {isPresent
-                    ? (isLate ? 'Checked In (Late)' : 'Checked In (On Time)')
-                    : 'Ready to Check In'}
+                  {getStatusHeading()}
                 </div>
 
                 <p className="text-muted mb-0" style={{ fontSize: '13px', lineHeight: 1.45 }}>
-                  {isPresent
-                    ? (todayAtt?.attendance_source === 'Web Portal' || todayAtt?.attendanceSource === 'Web Portal'
-                        ? 'Attendance verified with geolocation and office geofence via Web Portal.'
-                        : 'Attendance successfully verified with geolocation and mobile device.')
-                    : (allowWebAttendance
-                        ? 'You are authorized to punch in from the Web Portal using office GPS verification.'
-                        : 'Please use your Falcon Office mobile app to punch in upon arrival at the office.')}
+                  {getStatusDescription()}
                 </p>
               </div>
 
@@ -492,8 +604,8 @@ export default function EmployeeDashboard() {
                   <div
                     className="p-2.5 rounded-3 text-center"
                     style={{
-                      background: isPresent ? '#EFF6FF' : '#F8FAFC',
-                      border: isPresent ? '1px solid #BFDBFE' : '1px solid #E2E8F0'
+                      background: hasCheckedIn ? '#EFF6FF' : '#F8FAFC',
+                      border: hasCheckedIn ? '1px solid #BFDBFE' : '1px solid #E2E8F0'
                     }}
                   >
                     <div className="text-muted" style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
@@ -536,10 +648,10 @@ export default function EmployeeDashboard() {
                     >
                       {todayAtt?.check_out
                         ? new Date(todayAtt.check_out).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                        : (isPresent ? 'In Office' : '--:--')}
+                        : (isPresent ? (isResumed ? 'Resumed' : 'In Office') : '--:--')}
                     </div>
                     <div className="caption-text" style={{ fontSize: '11px', color: todayAtt?.check_out ? '#2563EB' : (isPresent ? '#15803D' : '#94A3B8') }}>
-                      {todayAtt?.check_out ? 'Completed' : (isPresent ? 'Active Session' : 'Pending')}
+                      {todayAtt?.check_out ? 'Completed' : (isPresent ? (isResumed ? 'Active Session' : 'Active Session') : 'Pending')}
                     </div>
                   </div>
                 </div>
@@ -561,7 +673,36 @@ export default function EmployeeDashboard() {
                   </Alert>
                 )}
 
-                {allowWebAttendance ? (
+                {canResume && resumeMinutesLeft > 0 ? (
+                  <div className="d-flex flex-column gap-2">
+                    <button
+                      className="btn btn-warning w-100 py-2.5 rounded-3 d-flex align-items-center justify-content-center gap-2 fw-bold shadow-sm"
+                      onClick={handleResumeAttendance}
+                      disabled={resumeLoading}
+                      style={{
+                        fontSize: '14px',
+                        background: 'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)',
+                        borderColor: '#D97706',
+                        color: '#FFFFFF'
+                      }}
+                    >
+                      {resumeLoading ? (
+                        <>
+                          <Spinner animation="border" size="sm" variant="light" />
+                          <span>Resuming Attendance...</span>
+                        </>
+                      ) : (
+                        <>
+                          <RotateCcw size={16} />
+                          <span>Resume Attendance ({resumeMinutesLeft}m left)</span>
+                        </>
+                      )}
+                    </button>
+                    <div className="text-center text-muted" style={{ fontSize: '11.5px' }}>
+                      Accidental check-out recovery window closes in {resumeMinutesLeft} min{resumeMinutesLeft === 1 ? '' : 's'}.
+                    </div>
+                  </div>
+                ) : allowWebAttendance ? (
                   !todayAtt?.check_in ? (
                     <button
                       className="btn btn-primary w-100 py-2.5 rounded-3 d-flex align-items-center justify-content-center gap-2 fw-semibold shadow-sm"
@@ -604,7 +745,7 @@ export default function EmployeeDashboard() {
                     <div className="p-2.5 rounded-3 bg-success-subtle text-success border border-success-subtle d-flex align-items-center justify-content-between" style={{ fontSize: '12px' }}>
                       <div className="d-flex align-items-center gap-1.5 fw-medium">
                         <CheckCircle2 size={14} />
-                        <span>Today's Attendance Completed</span>
+                        <span>{isResumed ? "Attendance Completed (Resumed)" : "Today's Attendance Completed"}</span>
                       </div>
                       <span className="badge bg-white text-success border border-success-subtle">
                         {todayAtt?.attendance_source || todayAtt?.attendanceSource || 'Web Portal'}

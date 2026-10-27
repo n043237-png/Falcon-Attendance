@@ -99,8 +99,55 @@ router.get('/dashboard', async (req: AuthRequest, res) => {
     const leaveCount = parseInt(mRow.leave_count || '0');
     const totalWorkingMinutes = parseInt(mRow.total_working_minutes || '0');
 
+    // Evaluate Resume Attendance for today
+    let todayStatus = todayRes.rows[0] || null;
+    if (todayStatus) {
+      let canResume = false;
+      let resumeExpiryTime: string | null = null;
+      let resumeReason: 'ELIGIBLE' | 'NOT_CHECKED_OUT' | 'ALREADY_RESUMED' | 'SHIFT_ENDED' | 'WINDOW_EXPIRED' | null = null;
+
+      if (todayStatus.check_in && todayStatus.check_out) {
+        if (todayStatus.attendance_resumed || (todayStatus.resume_count && todayStatus.resume_count >= 1)) {
+          resumeReason = 'ALREADY_RESUMED';
+        } else {
+          const endTimeStr = assignedShift?.endTime || (assignedShift as any)?.end_time || '18:30:00';
+          const [endH, endM, endS] = endTimeStr.split(':').map(Number);
+          const nowKolkata = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+          const shiftEndKolkata = new Date(nowKolkata);
+          shiftEndKolkata.setHours(endH, endM || 0, endS || 0, 0);
+
+          if (nowKolkata.getTime() >= shiftEndKolkata.getTime()) {
+            resumeReason = 'SHIFT_ENDED';
+          } else {
+            const checkoutDate = new Date(todayStatus.check_out);
+            const expiryMs = checkoutDate.getTime() + 30 * 60 * 1000;
+            resumeExpiryTime = new Date(expiryMs).toISOString();
+            const nowMs = new Date().getTime();
+            if (nowMs <= expiryMs) {
+              canResume = true;
+              resumeReason = 'ELIGIBLE';
+            } else {
+              resumeReason = 'WINDOW_EXPIRED';
+            }
+          }
+        }
+      } else if (!todayStatus.check_out) {
+        resumeReason = 'NOT_CHECKED_OUT';
+      }
+
+      todayStatus = {
+        ...todayStatus,
+        can_resume: canResume,
+        canResume,
+        resume_expiry_time: resumeExpiryTime,
+        resumeExpiryTime,
+        resume_reason: resumeReason,
+        resumeReason
+      };
+    }
+
     res.json({
-      today_status: todayRes.rows[0] || null,
+      today_status: todayStatus,
       leave_balances,
       recent_notifications: notifRes.rows,
       assigned_shift: assignedShift,
