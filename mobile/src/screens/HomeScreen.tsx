@@ -310,7 +310,7 @@ export default function HomeScreen() {
   const showCompleted = status === 'ON_LEAVE' || isHoliday || hasCheckedOut;
 
   // Shift end time calculation (default Day Shift: 09:30 AM – 06:30 PM)
-  const shiftEndTimeStr = shift?.endTime || '18:30:00';
+  const shiftEndTimeStr = shiftInfo?.endTime || '18:30:00';
   const getIsShiftEnded = () => {
     try {
       const [endH, endM, endS] = shiftEndTimeStr.split(':').map(Number);
@@ -323,20 +323,26 @@ export default function HomeScreen() {
     }
   };
 
-  const isShiftEnded = getIsShiftEnded();
+  const isShiftEnded = attendance?.resumeReason === 'SHIFT_ENDED' || getIsShiftEnded();
 
   // Resume window calculation (within 30 minutes of checkout)
   const checkoutTimeMs = attendance?.checkOut ? new Date(attendance.checkOut).getTime() : 0;
   const minutesSinceCheckout = checkoutTimeMs ? Math.max(0, (currentTime.getTime() - checkoutTimeMs) / (1000 * 60)) : 999;
-  const isResumeWindowExpired = minutesSinceCheckout > 30;
-  const hasAlreadyResumed = Boolean(attendance?.attendanceResumed || (attendance?.resumeCount && attendance.resumeCount >= 1));
+  const isResumeWindowExpired = attendance?.resumeReason === 'WINDOW_EXPIRED' || minutesSinceCheckout > 30;
+  const hasAlreadyResumed = Boolean(
+    attendance?.attendanceResumed ||
+    (attendance?.resumeCount !== undefined && attendance.resumeCount >= 1) ||
+    attendance?.resumeReason === 'ALREADY_RESUMED'
+  );
 
   // Resume eligibility:
   // ✓ Employee has already checked out.
   // ✓ Current time is BEFORE the official shift end (06:30 PM).
   // ✓ Current time is within 30 minutes of the last check-out.
   // ✓ Attendance has not already been resumed once today.
-  const isEligibleToResume = hasCheckedOut && !isShiftEnded && !isResumeWindowExpired && !hasAlreadyResumed;
+  const isEligibleToResume = hasCheckedOut && !hasAlreadyResumed && (
+    attendance?.canResume === true || (!isShiftEnded && !isResumeWindowExpired)
+  );
   const remainingResumeMinutes = Math.max(0, Math.ceil(30 - minutesSinceCheckout));
 
   const todayFormatted = new Date().toLocaleDateString('en-US', {
