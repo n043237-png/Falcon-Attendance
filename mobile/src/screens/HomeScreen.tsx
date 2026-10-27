@@ -19,7 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import { getCurrentLocation, getReadableAddress } from '../services/locationService';
-import { getTodayAttendance, checkIn, checkOut, AttendanceRecord } from '../api/attendanceApi';
+import { getTodayAttendance, checkIn, checkOut, resumeAttendance, AttendanceRecord } from '../api/attendanceApi';
 import { resolvePhotoUrl } from '../api/profileApi';
 import {
   scheduleLocalShiftReminders,
@@ -210,6 +210,29 @@ export default function HomeScreen() {
     }
   };
 
+  const handleResumeAttendance = async () => {
+    if (!token) return;
+    try {
+      setActionLoading(true);
+      const res = await resumeAttendance(token);
+      if (res.success) {
+        Alert.alert(
+          'Attendance Resumed',
+          'Your accidental check-out has been cancelled. Your attendance session is active again!'
+        );
+        await loadAttendance(true);
+      } else {
+        const errorMsg = res.error?.message || 'Failed to resume attendance.';
+        Alert.alert('Unable to Resume', errorMsg);
+        await loadAttendance(true);
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'An error occurred while resuming attendance.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const formatTime = (isoString: string | null) => {
     if (!isoString) return '--:--';
     try {
@@ -285,6 +308,36 @@ export default function HomeScreen() {
   const isHoliday = status === 'HOLIDAY';
   // Keep punch button accessible on Sundays if employee chooses to work
   const showCompleted = status === 'ON_LEAVE' || isHoliday || hasCheckedOut;
+
+  // Shift end time calculation (default Day Shift: 09:30 AM – 06:30 PM)
+  const shiftEndTimeStr = shift?.endTime || '18:30:00';
+  const getIsShiftEnded = () => {
+    try {
+      const [endH, endM, endS] = shiftEndTimeStr.split(':').map(Number);
+      const nowKolkata = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+      const shiftEndKolkata = new Date(nowKolkata);
+      shiftEndKolkata.setHours(endH, endM || 0, endS || 0, 0);
+      return nowKolkata.getTime() >= shiftEndKolkata.getTime();
+    } catch {
+      return false;
+    }
+  };
+
+  const isShiftEnded = getIsShiftEnded();
+
+  // Resume window calculation (within 30 minutes of checkout)
+  const checkoutTimeMs = attendance?.checkOut ? new Date(attendance.checkOut).getTime() : 0;
+  const minutesSinceCheckout = checkoutTimeMs ? Math.max(0, (currentTime.getTime() - checkoutTimeMs) / (1000 * 60)) : 999;
+  const isResumeWindowExpired = minutesSinceCheckout > 30;
+  const hasAlreadyResumed = Boolean(attendance?.attendanceResumed || (attendance?.resumeCount && attendance.resumeCount >= 1));
+
+  // Resume eligibility:
+  // ✓ Employee has already checked out.
+  // ✓ Current time is BEFORE the official shift end (06:30 PM).
+  // ✓ Current time is within 30 minutes of the last check-out.
+  // ✓ Attendance has not already been resumed once today.
+  const isEligibleToResume = hasCheckedOut && !isShiftEnded && !isResumeWindowExpired && !hasAlreadyResumed;
+  const remainingResumeMinutes = Math.max(0, Math.ceil(30 - minutesSinceCheckout));
 
   const todayFormatted = new Date().toLocaleDateString('en-US', {
     weekday: 'short',
@@ -467,7 +520,9 @@ export default function HomeScreen() {
               </View>
               <Text style={[styles.completedTitle, { color: badge.color }]}>
                 {hasCheckedOut
-                  ? (status === 'INSUFFICIENT_HOURS' || (attendance?.workingMinutes !== undefined && attendance.workingMinutes < 255)
+                  ? (isShiftEnded
+                    ? 'Shift Ended'
+                    : isEligibleToResume || status === 'INSUFFICIENT_HOURS' || (attendance?.workingMinutes !== undefined && attendance.workingMinutes < 255)
                     ? 'Insufficient Hours'
                     : (status === 'HALF_DAY' || (attendance?.workingMinutes !== undefined && attendance.workingMinutes < 510)
                       ? 'Half Day Complete'
@@ -476,17 +531,41 @@ export default function HomeScreen() {
               </Text>
               <Text style={styles.completedSubtitle}>
                 {hasCheckedOut
-                  ? (status === 'INSUFFICIENT_HOURS' || (attendance?.workingMinutes !== undefined && attendance.workingMinutes < 255)
-                    ? `You checked out at ${formatTime(attendance?.checkOut || null)} (${formatDuration(attendance?.workingMinutes || 0)}). Less than the minimum half day requirement (4h 15m).`
-                    : (status === 'HALF_DAY' || (attendance?.workingMinutes !== undefined && attendance.workingMinutes < 510)
-                      ? `You checked out at ${formatTime(attendance?.checkOut || null)} (${formatDuration(attendance?.workingMinutes || 0)}). Half Day marked (Required for Full Day: 8h 30m).`
-                      : `You checked out at ${formatTime(attendance?.checkOut || null)}. Great work today!`))
+                  ? (isEligibleToResume
+                    ? `You checked out at ${formatTime(attendance?.checkOut || null)}.\n\nIf this was accidental, you may resume your attendance within 30 minutes and before your shift ends.`
+                    : isShiftEnded
+                    ? `Your shift has ended.\nAttendance is now closed.`
+                    : isResumeWindowExpired && !hasAlreadyResumed
+                    ? `Resume window has expired.\nPlease contact your Administrator if your attendance requires correction.`
+                    : (status === 'INSUFFICIENT_HOURS' || (attendance?.workingMinutes !== undefined && attendance.workingMinutes < 255)
+                      ? `You checked out at ${formatTime(attendance?.checkOut || null)} (${formatDuration(attendance?.workingMinutes || 0)}). Less than the minimum half day requirement (4h 15m).`
+                      : (status === 'HALF_DAY' || (attendance?.workingMinutes !== undefined && attendance.workingMinutes < 510)
+                        ? `You checked out at ${formatTime(attendance?.checkOut || null)} (${formatDuration(attendance?.workingMinutes || 0)}). Half Day marked (Required for Full Day: 8h 30m).`
+                        : `You checked out at ${formatTime(attendance?.checkOut || null)}. Great work today!`)))
                   : status === 'ON_LEAVE'
                   ? `Approved Leave: ${attendance?.leaveType || 'Annual Leave'}`
                   : status === 'HOLIDAY'
                   ? `Public Holiday: ${attendance?.holidayName || 'Holiday'}`
                   : 'Enjoy your restful Sunday off!'}
               </Text>
+              {hasCheckedOut && isEligibleToResume && (
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  style={[styles.resumeButton, actionLoading && styles.btnDisabled]}
+                  onPress={handleResumeAttendance}
+                  disabled={actionLoading}
+                >
+                  {actionLoading ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <View style={styles.resumeButtonContent}>
+                      <Ionicons name="refresh" size={18} color="#FFFFFF" />
+                      <Text style={styles.resumeButtonText}>Resume Attendance</Text>
+                      <Text style={styles.resumeButtonTimer}>({remainingResumeMinutes}m left)</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              )}
             </View>
           ) : (
             <View style={styles.actionSection}>
@@ -997,6 +1076,38 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
     paddingHorizontal: 12,
+  },
+  resumeButton: {
+    backgroundColor: '#2563EB',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    marginTop: 18,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  resumeButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  resumeButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  resumeButtonTimer: {
+    color: 'rgba(255, 255, 255, 0.85)',
+    fontSize: 13,
+    fontWeight: '500',
   },
   actionSection: {
     alignItems: 'center',

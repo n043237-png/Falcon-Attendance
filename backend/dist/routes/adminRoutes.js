@@ -87,6 +87,8 @@ router.get('/reports/attendance-policy-pdf', async (req, res) => {
 });
 router.get('/attendance', adminController_1.getAttendance);
 router.get('/attendance/summary', adminController_1.getDailySummary);
+router.get('/attendance/:id/timeline', adminController_1.getAttendanceTimeline);
+router.post('/attendance/:id/regularize', adminController_1.regularizeAttendance);
 router.get('/leave/is-initialized', (req, res, next) => {
     Promise.resolve().then(() => __importStar(require('../controllers/adminLeaveController'))).then(m => m.isInitialized(req, res)).catch(next);
 });

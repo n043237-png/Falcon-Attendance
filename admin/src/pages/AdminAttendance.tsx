@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Form, Row, Col, Spinner, Alert, Pagination } from 'react-bootstrap';
+import { Form, Row, Col, Spinner, Alert, Pagination, Modal, Button, Tabs, Tab, Badge } from 'react-bootstrap';
 import { useSearchParams } from 'react-router-dom';
 import {
   CalendarCheck,
@@ -19,7 +19,13 @@ import {
   ExternalLink,
   X,
   Monitor,
-  Smartphone
+  Smartphone,
+  History,
+  Edit3,
+  RotateCcw,
+  FileText,
+  CheckCircle,
+  AlertTriangle
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import Avatar from '../components/common/Avatar';
@@ -67,6 +73,112 @@ export default function AdminAttendance() {
 
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+
+  // Timeline & Regularization State
+  const [showTimelineModal, setShowTimelineModal] = useState(false);
+  const [selectedRecord, setSelectedRecord] = useState<any>(null);
+  const [timelineLoading, setTimelineLoading] = useState(false);
+  const [timelineData, setTimelineData] = useState<any>(null);
+  const [activeTab, setActiveTab] = useState<'timeline' | 'regularize'>('timeline');
+
+  // Regularization form fields
+  const [editCheckIn, setEditCheckIn] = useState('');
+  const [editCheckOut, setEditCheckOut] = useState('');
+  const [editStatus, setEditStatus] = useState('AUTO');
+  const [regReason, setRegReason] = useState('');
+  const [regLoading, setRegLoading] = useState(false);
+  const [regSuccess, setRegSuccess] = useState<string | null>(null);
+  const [regError, setRegError] = useState<string | null>(null);
+
+  const openTimelineModal = async (record: any) => {
+    setSelectedRecord(record);
+    setShowTimelineModal(true);
+    setActiveTab('timeline');
+    setRegSuccess(null);
+    setRegError(null);
+    setRegReason('');
+    setEditStatus('AUTO');
+
+    const formatHHMM = (iso?: string | null) => {
+      if (!iso) return '';
+      try {
+        const d = new Date(iso);
+        return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
+      } catch {
+        return '';
+      }
+    };
+
+    setEditCheckIn(formatHHMM(record.checkIn));
+    setEditCheckOut(formatHHMM(record.checkOut));
+
+    if (record.attendanceId) {
+      fetchTimeline(record.attendanceId);
+    }
+  };
+
+  const fetchTimeline = async (attendanceId: number) => {
+    try {
+      setTimelineLoading(true);
+      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/admin/attendance/${attendanceId}/timeline`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTimelineData(data.data);
+      }
+    } catch (err) {
+      console.error('Failed to load timeline:', err);
+    } finally {
+      setTimelineLoading(false);
+    }
+  };
+
+  const handleRegularize = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedRecord?.attendanceId) return;
+    if (!regReason.trim()) {
+      setRegError('Please provide a reason for modification.');
+      return;
+    }
+
+    try {
+      setRegLoading(true);
+      setRegError(null);
+      setRegSuccess(null);
+
+      const payload = {
+        checkIn: editCheckIn || null,
+        checkOut: editCheckOut || null,
+        reason: regReason.trim(),
+        statusOverride: editStatus !== 'AUTO' ? editStatus : undefined
+      };
+
+      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/admin/attendance/${selectedRecord.attendanceId}/regularize`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setRegSuccess('Attendance regularized successfully! Working hours and status recalculated.');
+        setRegReason('');
+        fetchRecords(page);
+        fetchSummary();
+        await fetchTimeline(selectedRecord.attendanceId);
+      } else {
+        setRegError(data.error?.message || 'Failed to regularize attendance.');
+      }
+    } catch (err: any) {
+      setRegError(err.message || 'Error occurred while saving regularization.');
+    } finally {
+      setRegLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (token) {
@@ -540,6 +652,7 @@ export default function AdminAttendance() {
                     <th>Working Hours</th>
                     <th>Status</th>
                     <th>Location & GPS</th>
+                    <th>Timeline & Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -547,7 +660,7 @@ export default function AdminAttendance() {
                     records
                       .filter(r => (modeFilter === 'All' || (r.attendanceMode || 'Office').toLowerCase() === modeFilter.toLowerCase()) && (sourceFilter === 'All' || (r.attendanceSource || 'Mobile App').toLowerCase() === sourceFilter.toLowerCase()))
                       .map((r) => (
-                      <tr key={r.attendanceId}>
+                      <tr key={r.attendanceId ? `att-${r.attendanceId}` : `emp-${r.employeeId || r.employeeCode}`}>
                         <td>
                           <div className="d-flex align-items-center gap-3">
                             <Avatar
@@ -647,6 +760,13 @@ export default function AdminAttendance() {
                               r.status?.toUpperCase()
                             )}
                           </span>
+                          {r.attendanceResumed && (
+                            <div className="mt-1">
+                              <span className="badge bg-info-subtle text-info border border-info-subtle d-inline-flex align-items-center gap-1" style={{ fontSize: '10px', padding: '2px 5px' }} title="Attendance session was resumed after accidental check-out">
+                                <RotateCcw size={10} /> Resumed
+                              </span>
+                            </div>
+                          )}
                         </td>
                         <td>
                           {r.attendanceMode === 'Field' ? (
@@ -718,11 +838,27 @@ export default function AdminAttendance() {
                             <span className="text-muted" style={{ fontSize: '12.5px' }}>-</span>
                           )}
                         </td>
+                        <td>
+                          {r.attendanceId ? (
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1.5"
+                              style={{ fontSize: '11.5px', padding: '4px 8px', borderRadius: '6px' }}
+                              title="View complete attendance timeline and regularize times"
+                              onClick={() => openTimelineModal(r)}
+                            >
+                              <History size={12} />
+                              <span>Timeline & Edit</span>
+                            </button>
+                          ) : (
+                            <span className="text-muted" style={{ fontSize: '12px' }}>-</span>
+                          )}
+                        </td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={10} className="text-center py-5 text-muted">
+                      <td colSpan={12} className="text-center py-5 text-muted">
                         No attendance records found for the selected criteria.
                       </td>
                     </tr>
@@ -771,6 +907,253 @@ export default function AdminAttendance() {
           </>
         )}
       </div>
+
+
+      {/* Attendance Timeline & Regularization Modal */}
+      <Modal show={showTimelineModal} onHide={() => setShowTimelineModal(false)} size="lg" centered>
+        <Modal.Header closeButton className="border-bottom pb-3">
+          <Modal.Title className="d-flex align-items-center gap-2" style={{ fontSize: '18px', fontWeight: 600 }}>
+            <History className="text-primary" size={20} />
+            <span>Attendance Timeline & Regularization</span>
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body className="p-4">
+          {selectedRecord && (
+            <div className="d-flex align-items-center justify-content-between p-3 bg-light rounded-3 mb-4">
+              <div className="d-flex align-items-center gap-3">
+                <Avatar src={selectedRecord.profilePhotoUrl} name={selectedRecord.employeeName} size={42} shape="rounded" />
+                <div>
+                  <div className="fw-bold text-dark" style={{ fontSize: '15px' }}>{selectedRecord.employeeName}</div>
+                  <div className="text-muted font-monospace" style={{ fontSize: '12px' }}>
+                    {selectedRecord.employeeId} • Shift: {selectedRecord.shiftName || selectedRecord.shiftCode || 'Day Shift'}
+                  </div>
+                </div>
+              </div>
+              <div className="text-end">
+                <span className="badge bg-secondary font-monospace" style={{ fontSize: '12px' }}>
+                  {new Date(selectedRecord.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
+                </span>
+                <div className="caption-text mt-1">Status: <strong>{selectedRecord.status}</strong></div>
+              </div>
+            </div>
+          )}
+
+          <Tabs activeKey={activeTab} onSelect={(k: any) => setActiveTab(k)} className="mb-4">
+            <Tab eventKey="timeline" title={<span><History size={14} className="me-1.5" /> Attendance Timeline</span>}>
+              {timelineLoading ? (
+                <div className="text-center py-5">
+                  <Spinner animation="border" variant="primary" size="sm" />
+                  <div className="text-muted mt-2" style={{ fontSize: '13px' }}>Loading timeline events...</div>
+                </div>
+              ) : (
+                <div>
+                  {/* Timeline events container */}
+                  <div className="mb-4">
+                    <h6 className="fw-semibold text-muted text-uppercase mb-3" style={{ fontSize: '11.5px', letterSpacing: '0.5px' }}>
+                      PUNCH & RESUME TIMELINE
+                    </h6>
+
+                    {timelineData?.timeline && timelineData.timeline.length > 0 ? (
+                      <div className="position-relative ps-4" style={{ borderLeft: '2px solid #E2E8F0', marginLeft: '12px' }}>
+                        {timelineData.timeline.map((ev: any, idx: number) => {
+                          const isCheckIn = ev.type === 'CHECK_IN';
+                          const isAccidentalOut = ev.type === 'ACCIDENTAL_CHECK_OUT';
+                          const isResume = ev.type === 'ATTENDANCE_RESUMED';
+                          const isFinalOut = ev.type === 'FINAL_CHECK_OUT' || ev.type === 'CHECK_OUT';
+
+                          const dotColor = isCheckIn ? '#16A34A' : isAccidentalOut ? '#DC2626' : isResume ? '#2563EB' : '#7C3AED';
+                          const badgeBg = isCheckIn ? '#DCFCE7' : isAccidentalOut ? '#FEE2E2' : isResume ? '#DBEAFE' : '#F3E8FF';
+                          const badgeText = isCheckIn ? '#15803D' : isAccidentalOut ? '#B91C1C' : isResume ? '#1D4ED8' : '#6B21A8';
+
+                          const formattedTime = new Date(ev.timestamp).toLocaleTimeString('en-US', {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            hour12: true,
+                            timeZone: 'Asia/Kolkata'
+                          });
+
+                          return (
+                            <div key={idx} className="mb-4 position-relative">
+                              <span
+                                style={{
+                                  position: 'absolute',
+                                  left: '-25px',
+                                  top: '2px',
+                                  width: '14px',
+                                  height: '14px',
+                                  borderRadius: '50%',
+                                  backgroundColor: dotColor,
+                                  border: '3px solid #FFFFFF',
+                                  boxShadow: '0 0 0 1px #CBD5E1'
+                                }}
+                              />
+                              <div className="d-flex align-items-center gap-2 mb-1">
+                                <span className="fw-bold font-monospace text-dark" style={{ fontSize: '15px' }}>
+                                  {formattedTime}
+                                </span>
+                                <span
+                                  className="badge fw-semibold"
+                                  style={{ backgroundColor: badgeBg, color: badgeText, fontSize: '12px', padding: '3px 8px' }}
+                                >
+                                  {ev.label}
+                                </span>
+                                {ev.isLate && (
+                                  <span className="badge bg-warning text-dark" style={{ fontSize: '11px' }}>
+                                    Late ({ev.lateMinutes ? Math.round(parseFloat(ev.lateMinutes)) : 0}m)
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-muted" style={{ fontSize: '13px' }}>
+                                {ev.details} {ev.source ? `• ${ev.source}` : ''}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="text-center py-4 text-muted" style={{ fontSize: '13px' }}>
+                        No punch timeline events recorded.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Regularization Logs Section */}
+                  {timelineData?.regularizations && timelineData.regularizations.length > 0 && (
+                    <div className="mt-4 pt-3 border-top">
+                      <h6 className="fw-semibold text-muted text-uppercase mb-3" style={{ fontSize: '11.5px', letterSpacing: '0.5px' }}>
+                        ADMIN REGULARIZATION AUDIT TRAIL
+                      </h6>
+                      <div className="table-responsive">
+                        <table className="table table-sm table-bordered mb-0" style={{ fontSize: '12.5px' }}>
+                          <thead className="table-light">
+                            <tr>
+                              <th>Modified By</th>
+                              <th>Date & Time</th>
+                              <th>Previous Timing</th>
+                              <th>New Timing</th>
+                              <th>Reason</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {timelineData.regularizations.map((log: any) => (
+                              <tr key={log.id}>
+                                <td className="fw-semibold text-dark">{log.admin_name}</td>
+                                <td className="text-muted">
+                                  {new Date(log.created_at).toLocaleString('en-US', { timeZone: 'Asia/Kolkata', dateStyle: 'short', timeStyle: 'short' })}
+                                </td>
+                                <td>
+                                  <div>In: {log.previous_check_in ? new Date(log.previous_check_in).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : '--:--'}</div>
+                                  <div>Out: {log.previous_check_out ? new Date(log.previous_check_out).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : '--:--'}</div>
+                                </td>
+                                <td>
+                                  <div className="text-success fw-medium">In: {log.new_check_in ? new Date(log.new_check_in).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : '--:--'}</div>
+                                  <div className="text-success fw-medium">Out: {log.new_check_out ? new Date(log.new_check_out).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : '--:--'}</div>
+                                </td>
+                                <td>
+                                  <span className="badge bg-light text-dark border fw-normal" style={{ whiteSpace: 'normal', textAlign: 'left' }}>
+                                    {log.reason}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </Tab>
+
+            <Tab eventKey="regularize" title={<span><Edit3 size={14} className="me-1.5" /> Regularize Attendance</span>}>
+              <Form onSubmit={handleRegularize}>
+                {regSuccess && <Alert variant="success" className="mb-3">{regSuccess}</Alert>}
+                {regError && <Alert variant="danger" className="mb-3">{regError}</Alert>}
+
+                <div className="bg-light p-3 rounded-3 mb-3 border">
+                  <div className="small text-muted mb-2">
+                    <strong>Admin Attendance Regularization Guidelines:</strong>
+                  </div>
+                  <ul className="mb-0 small text-muted ps-3">
+                    <li>Edit check-in or check-out times to correct accidental attendance or missed punches.</li>
+                    <li>Working hours, late arrivals, overtime, and final attendance status will be recalculated automatically using the assigned shift rules.</li>
+                    <li>Your admin name, exact timestamp, and mandatory modification reason will be permanently archived in the compliance audit log.</li>
+                  </ul>
+                </div>
+
+                <Row className="g-3 mb-3">
+                  <Col md={6}>
+                    <Form.Group>
+                      <Form.Label className="fw-semibold" style={{ fontSize: '13px' }}>Check-In Time (HH:MM)</Form.Label>
+                      <Form.Control
+                        type="time"
+                        value={editCheckIn}
+                        onChange={(e) => setEditCheckIn(e.target.value)}
+                        placeholder="09:30"
+                      />
+                    </Form.Group>
+                  </Col>
+                  <Col md={6}>
+                    <Form.Group>
+                      <Form.Label className="fw-semibold" style={{ fontSize: '13px' }}>Check-Out Time (HH:MM)</Form.Label>
+                      <Form.Control
+                        type="time"
+                        value={editCheckOut}
+                        onChange={(e) => setEditCheckOut(e.target.value)}
+                        placeholder="18:30"
+                      />
+                    </Form.Group>
+                  </Col>
+                </Row>
+
+                <Form.Group className="mb-3">
+                  <Form.Label className="fw-semibold" style={{ fontSize: '13px' }}>Attendance Status</Form.Label>
+                  <Form.Select value={editStatus} onChange={(e) => setEditStatus(e.target.value)}>
+                    <option value="AUTO">Auto-calculate from working hours (Recommended)</option>
+                    <option value="PRESENT">Force Present (Full Day)</option>
+                    <option value="HALF_DAY">Force Half Day</option>
+                    <option value="LATE">Force Late Check-In</option>
+                    <option value="INSUFFICIENT_HOURS">Force Insufficient Hours</option>
+                  </Form.Select>
+                </Form.Group>
+
+                <Form.Group className="mb-4">
+                  <Form.Label className="fw-semibold" style={{ fontSize: '13px' }}>
+                    Reason for Modification <span className="text-danger">*</span>
+                  </Form.Label>
+                  <Form.Control
+                    as="textarea"
+                    rows={3}
+                    value={regReason}
+                    onChange={(e) => setRegReason(e.target.value)}
+                    placeholder="E.g., Employee accidentally checked out at 10:47 AM, verified presence and completed full workday."
+                    required
+                  />
+                  <Form.Text className="text-muted">
+                    This reason will be recorded in the audit trail and visible in regularized reports.
+                  </Form.Text>
+                </Form.Group>
+
+                <div className="d-flex justify-content-end gap-2">
+                  <Button variant="outline-secondary" onClick={() => setShowTimelineModal(false)}>
+                    Close
+                  </Button>
+                  <Button variant="primary" type="submit" disabled={regLoading}>
+                    {regLoading ? (
+                      <>
+                        <Spinner size="sm" animation="border" className="me-2" />
+                        Saving & Recalculating...
+                      </>
+                    ) : (
+                      'Recalculate & Save Regularization'
+                    )}
+                  </Button>
+                </div>
+              </Form>
+            </Tab>
+          </Tabs>
+        </Modal.Body>
+      </Modal>
 
       <ImagePreviewModal
         show={showPreviewModal}

@@ -8,6 +8,11 @@
     "database"
   ],
   "scripts": {
+    "backend": "npm --prefix backend run dev",
+    "admin": "npm --prefix admin run dev",
+    "mobile": "npm --prefix mobile start",
+    "build:backend": "npm --prefix backend run build",
+    "build:admin": "npm --prefix admin run build",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,css}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,css}\""
   },

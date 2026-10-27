@@ -149,7 +149,7 @@ export class NotificationService {
           if (payload.type === 'Announcement' && prefs.announcement_notifications === false) continue;
         }
 
-        // Idempotency: Prevent duplicate notifications sent to the same user within 5 minutes or for the same attendance date
+        // Idempotency: Prevent duplicate notifications sent to the same user
         let dupCheckSql = `
           SELECT id FROM notifications
           WHERE recipient_user_id = $1
@@ -158,12 +158,26 @@ export class NotificationService {
         `;
         const dupParams: any[] = [userId, payload.title];
 
-        if (payload.attendanceDate) {
-          dupParams.push(payload.attendanceDate);
-          dupCheckSql += ` AND attendance_date = $3`;
-        } else {
+        if (role === 'admin' || role === 'all') {
+          // When notifying admins or broadcast, events for different employees have different messages.
+          // Deduplicate based on exact message and attendanceDate (or 5-minute window if no date).
           dupParams.push(payload.message);
-          dupCheckSql += ` AND message = $3 AND created_at >= (NOW() - INTERVAL '5 minutes')`;
+          dupCheckSql += ` AND message = $${dupParams.length}`;
+          if (payload.attendanceDate) {
+            dupParams.push(payload.attendanceDate);
+            dupCheckSql += ` AND attendance_date = $${dupParams.length}`;
+          } else {
+            dupCheckSql += ` AND created_at >= (NOW() - INTERVAL '5 minutes')`;
+          }
+        } else {
+          // For individual user recipient:
+          if (payload.attendanceDate) {
+            dupParams.push(payload.attendanceDate);
+            dupCheckSql += ` AND attendance_date = $${dupParams.length}`;
+          } else {
+            dupParams.push(payload.message);
+            dupCheckSql += ` AND message = $${dupParams.length} AND created_at >= (NOW() - INTERVAL '5 minutes')`;
+          }
         }
 
         const existingNotif = await query(dupCheckSql, dupParams);

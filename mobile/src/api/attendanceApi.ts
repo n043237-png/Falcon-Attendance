@@ -19,6 +19,14 @@ export interface AttendanceRecord {
   checkOutSelfieUrl?: string | null;
   holidayName?: string | null;
   leaveType?: string | null;
+  firstCheckoutTime?: string | null;
+  resumeTime?: string | null;
+  finalCheckoutTime?: string | null;
+  attendanceResumed?: boolean;
+  resumeCount?: number;
+  canResume?: boolean;
+  resumeExpiryTime?: string | null;
+  resumeReason?: string | null;
 }
 
 export interface TodayResponse {
@@ -138,6 +146,20 @@ export const getAttendanceSummary = async (token: string, year: number, month: n
     return res.data;
   } catch (error: any) {
     return error.response?.data || { success: false, error: { message: 'No internet connection.' } };
+  }
+};
+
+export const resumeAttendance = async (token: string) => {
+  try {
+    const res = await axios.post(`${API_URL}/api/attendance/resume`, {}, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    return res.data;
+  } catch (error: any) {
+    if (error.response?.data) {
+      return error.response.data;
+    }
+    return { success: false, error: { message: error.message || 'No internet connection.' } };
   }
 };
 

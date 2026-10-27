@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getCalendar = exports.getSummary = exports.getHistory = exports.getToday = exports.checkOut = exports.checkIn = void 0;
+exports.getCalendar = exports.getSummary = exports.getHistory = exports.getToday = exports.resumeAttendance = exports.checkOut = exports.checkIn = void 0;
 const zod_1 = require("zod");
 const db_1 = require("../db");
 const locationService_1 = require("../services/locationService");
@@ -266,6 +266,7 @@ const checkIn = async (req, res) => {
                     priority: 'Medium',
                     actionUrl: `/attendance?status=Late&date=${attendanceDate}&search=${encodeURIComponent(empName)}`,
                     attendanceDate: attendanceDate,
+                    senderUserId: employeeId,
                 });
             }
             else {
@@ -428,7 +429,9 @@ const checkOut = async (req, res) => {
         }
         // 2. Find open attendance record (supporting night shifts across midnight)
         const openRes = await (0, db_1.query)(`
-      SELECT id, attendance_date, check_in, check_out, shift_id 
+      SELECT id, attendance_date, check_in, check_out, shift_id,
+             first_checkout_time, resume_time, final_checkout_time, attendance_resumed, resume_count,
+             is_late
       FROM attendance 
       WHERE employee_id = $1 AND check_in IS NOT NULL AND check_out IS NULL
       ORDER BY check_in DESC 
@@ -446,13 +449,14 @@ const checkOut = async (req, res) => {
             return;
         }
         const attendance = openRes.rows[0];
+        const isResumedSession = !!attendance.attendance_resumed;
         const checkInDate = new Date(attendance.check_in);
         const now = new Date();
         // Fetch shift
         const shift = attendance.shift_id
             ? (await shiftService_1.ShiftService.getShiftById(attendance.shift_id)) || (await shiftService_1.ShiftService.getEmployeeShift(employeeId))
             : await shiftService_1.ShiftService.getEmployeeShift(employeeId);
-        // Calculate metrics using ShiftService
+        // Calculate metrics using ShiftService (Original Check In -> Final Check Out)
         const metrics = shiftService_1.ShiftService.evaluateAttendance(shift, checkInDate, now);
         // Determine final status (Required working time: 510 minutes / 8h 30m, Half day: 255 minutes)
         const requiredWorkingMins = shift.minimumWorkHours ? Math.round(shift.minimumWorkHours * 60) : 510;
@@ -469,6 +473,8 @@ const checkOut = async (req, res) => {
             finalStatus = 'INSUFFICIENT_HOURS';
         }
         // 3. Update checkout
+        // If attendance was resumed, preserve first_checkout_time and set final_checkout_time
+        // If not resumed, first_checkout_time is set to this checkout
         const updateRes = await (0, db_1.query)(`
       UPDATE attendance 
       SET 
@@ -485,9 +491,12 @@ const checkOut = async (req, res) => {
         check_out_longitude = $11,
         check_out_address = $12,
         check_out_selfie_url = $13,
-        attendance_source = COALESCE(attendance_source, $14)
+        attendance_source = COALESCE(attendance_source, $14),
+        first_checkout_time = COALESCE(first_checkout_time, CURRENT_TIMESTAMP),
+        final_checkout_time = CASE WHEN attendance_resumed = true THEN CURRENT_TIMESTAMP ELSE NULL END
       WHERE id = $15
-      RETURNING id, attendance_date, check_in, check_out, working_minutes, overtime_minutes, early_departure_minutes, status, shift_id, is_late, late_minutes, attendance_mode, attendance_source, check_in_address, check_out_address
+      RETURNING id, attendance_date, check_in, check_out, working_minutes, overtime_minutes, early_departure_minutes, status, shift_id, is_late, late_minutes, attendance_mode, attendance_source, check_in_address, check_out_address,
+                first_checkout_time, resume_time, final_checkout_time, attendance_resumed, resume_count
     `, [
             longitude,
             latitude,
@@ -600,6 +609,188 @@ const checkOut = async (req, res) => {
     }
 };
 exports.checkOut = checkOut;
+const resumeAttendance = async (req, res) => {
+    try {
+        const employeeId = req.user.id;
+        const now = new Date();
+        const today = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+        // 1. Fetch latest attendance record for today
+        const attRes = await (0, db_1.query)(`
+      SELECT a.*, s.name as shift_name, s.start_time, s.end_time, s.is_night_shift
+      FROM attendance a
+      LEFT JOIN shifts s ON s.id = a.shift_id
+      WHERE a.employee_id = $1 AND a.attendance_date = $2
+      ORDER BY a.id DESC
+      LIMIT 1
+    `, [employeeId, today]);
+        if (attRes.rows.length === 0) {
+            res.status(404).json({
+                success: false,
+                error: { code: 'NO_ATTENDANCE_RECORD', message: 'No attendance record found for today.' }
+            });
+            return;
+        }
+        const attendance = attRes.rows[0];
+        // Condition 1: Must be checked out
+        if (!attendance.check_out) {
+            res.status(400).json({
+                success: false,
+                error: { code: 'NOT_CHECKED_OUT', message: 'Attendance is currently active and has not been checked out.' }
+            });
+            return;
+        }
+        // Condition 4 (Business rule): Maximum resume_count per day = 1 (not already resumed today)
+        if (attendance.attendance_resumed || (attendance.resume_count && attendance.resume_count >= 1)) {
+            res.status(400).json({
+                success: false,
+                error: {
+                    code: 'ALREADY_RESUMED',
+                    message: 'Attendance has already been resumed once today. Maximum allowed is once per day.'
+                }
+            });
+            return;
+        }
+        // Shift timing & end calculation
+        const shift = attendance.shift_id
+            ? (await shiftService_1.ShiftService.getShiftById(attendance.shift_id)) || (await shiftService_1.ShiftService.getEmployeeShift(employeeId))
+            : await shiftService_1.ShiftService.getEmployeeShift(employeeId);
+        // Day Shift: 09:30 AM – 06:30 PM (default endTime: '18:30:00')
+        const endTimeStr = shift.endTime || '18:30:00';
+        const [endH, endM, endS] = endTimeStr.split(':').map(Number);
+        // Calculate shift end Date in Asia/Kolkata timezone
+        const nowKolkata = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+        const shiftEndKolkata = new Date(nowKolkata);
+        shiftEndKolkata.setHours(endH, endM || 0, endS || 0, 0);
+        if (shift.isNightShift && endH < 12) {
+            const curH = nowKolkata.getHours();
+            if (curH >= 12) {
+                shiftEndKolkata.setDate(shiftEndKolkata.getDate() + 1);
+            }
+        }
+        // Condition 2: Current time is BEFORE the official shift end (06:30 PM)
+        if (nowKolkata.getTime() >= shiftEndKolkata.getTime()) {
+            res.status(400).json({
+                success: false,
+                error: {
+                    code: 'SHIFT_ENDED',
+                    message: 'Your shift has ended. Attendance is now closed.'
+                }
+            });
+            return;
+        }
+        // Condition 3: Current time is within 30 minutes of the last check-out
+        const lastCheckout = new Date(attendance.check_out);
+        const diffMs = now.getTime() - lastCheckout.getTime();
+        const diffMinutes = diffMs / (1000 * 60);
+        if (diffMinutes > 30) {
+            res.status(400).json({
+                success: false,
+                error: {
+                    code: 'RESUME_WINDOW_EXPIRED',
+                    message: 'Resume window has expired. Please contact your Administrator if your attendance requires correction.'
+                }
+            });
+            return;
+        }
+        // All conditions met! Cancel the previous check-out, record resume
+        const firstCheckoutTime = attendance.first_checkout_time || attendance.check_out;
+        const restoredStatus = attendance.is_late ? 'LATE' : 'PRESENT';
+        const updateRes = await (0, db_1.query)(`
+      UPDATE attendance
+      SET
+        first_checkout_time = $1,
+        resume_time = CURRENT_TIMESTAMP,
+        check_out = NULL,
+        check_out_location = NULL,
+        check_out_latitude = NULL,
+        check_out_longitude = NULL,
+        check_out_address = NULL,
+        check_out_selfie_url = NULL,
+        attendance_resumed = TRUE,
+        resume_count = COALESCE(resume_count, 0) + 1,
+        status = $2,
+        working_minutes = NULL,
+        overtime_minutes = 0,
+        early_departure_minutes = 0,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $3
+      RETURNING id, attendance_date, check_in, check_out, first_checkout_time, resume_time,
+                final_checkout_time, attendance_resumed, resume_count, status, is_late, shift_id,
+                attendance_mode, attendance_source
+    `, [firstCheckoutTime, restoredStatus, attendance.id]);
+        const updated = updateRes.rows[0];
+        // Audit log
+        try {
+            await (0, db_1.query)(`
+        INSERT INTO audit_logs (user_id, action, entity_type, entity_id, metadata)
+        VALUES ($1, $2, $3, $4, $5)
+      `, [
+                employeeId,
+                'ATTENDANCE_RESUME',
+                'ATTENDANCE',
+                updated.id,
+                JSON.stringify({
+                    checkIn: attendance.check_in,
+                    accidentalCheckOut: attendance.check_out,
+                    firstCheckoutTime,
+                    resumeTime: now.toISOString(),
+                    resumeCount: 1,
+                    diffMinutes: Math.round(diffMinutes),
+                    shiftName: shift.name,
+                    shiftEndTime: endTimeStr,
+                    timestamp: now.toISOString()
+                })
+            ]);
+        }
+        catch (auditErr) {
+            console.error('Attendance resume audit log error:', auditErr);
+        }
+        // Smart Notification to user
+        try {
+            const timeStr12 = now.toLocaleTimeString('en-US', {
+                timeZone: 'Asia/Kolkata',
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: true
+            });
+            await notificationService_1.NotificationService.notifyUser(employeeId, {
+                title: 'Attendance Resumed',
+                message: `Your accidental check-out has been cancelled at ${timeStr12}. Your attendance session is active again.`,
+                type: 'Attendance',
+                priority: 'Medium',
+                actionUrl: '/my-attendance',
+                attendanceDate: today
+            });
+        }
+        catch (notifErr) {
+            console.error('Attendance resume notification error:', notifErr);
+        }
+        res.json({
+            success: true,
+            message: 'Attendance resumed successfully. Your session is active again.',
+            data: {
+                attendanceId: updated.id,
+                attendanceDate: updated.attendance_date,
+                checkIn: updated.check_in,
+                checkOut: null,
+                firstCheckoutTime: updated.first_checkout_time,
+                resumeTime: updated.resume_time,
+                attendanceResumed: updated.attendance_resumed,
+                resumeCount: updated.resume_count,
+                status: updated.status,
+                isLate: updated.is_late
+            }
+        });
+    }
+    catch (error) {
+        console.error('Resume attendance error:', error);
+        res.status(500).json({
+            success: false,
+            error: { code: 'INTERNAL_SERVER_ERROR', message: 'An error occurred while resuming attendance.' }
+        });
+    }
+};
+exports.resumeAttendance = resumeAttendance;
 const getToday = async (req, res) => {
     try {
         const employeeId = req.user.id;
@@ -612,7 +803,10 @@ const getToday = async (req, res) => {
                check_in_latitude, check_in_longitude,
                check_in_address, check_in_selfie_url,
                check_out_latitude, check_out_longitude,
-               check_out_address, check_out_selfie_url 
+               check_out_address, check_out_selfie_url,
+               first_checkout_time, resume_time, final_checkout_time,
+               COALESCE(attendance_resumed, false) as attendance_resumed,
+               COALESCE(resume_count, 0) as resume_count
         FROM attendance WHERE employee_id = $1 AND attendance_date = $2
       `, [employeeId, today]),
             (0, attendanceStatusService_1.getAttendanceSettings)(),
@@ -680,6 +874,41 @@ const getToday = async (req, res) => {
                 ? Math.round(result.workingMinutes)
                 : Math.max(0, Math.round((new Date().getTime() - new Date(result.checkIn).getTime()) / (1000 * 60))))
             : 0;
+        // Evaluate Resume Attendance eligibility
+        let canResume = false;
+        let resumeExpiryTime = null;
+        let resumeReason = null;
+        if (record?.check_in && record?.check_out) {
+            if (record.attendance_resumed || (record.resume_count && record.resume_count >= 1)) {
+                resumeReason = 'ALREADY_RESUMED';
+            }
+            else {
+                const endTimeStr = userShift?.endTime || '18:30:00';
+                const [endH, endM, endS] = endTimeStr.split(':').map(Number);
+                const nowKolkata = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+                const shiftEndKolkata = new Date(nowKolkata);
+                shiftEndKolkata.setHours(endH, endM || 0, endS || 0, 0);
+                if (nowKolkata.getTime() >= shiftEndKolkata.getTime()) {
+                    resumeReason = 'SHIFT_ENDED';
+                }
+                else {
+                    const checkoutDate = new Date(record.check_out);
+                    const expiryMs = checkoutDate.getTime() + 30 * 60 * 1000;
+                    resumeExpiryTime = new Date(expiryMs).toISOString();
+                    const nowMs = new Date().getTime();
+                    if (nowMs <= expiryMs) {
+                        canResume = true;
+                        resumeReason = 'ELIGIBLE';
+                    }
+                    else {
+                        resumeReason = 'WINDOW_EXPIRED';
+                    }
+                }
+            }
+        }
+        else if (!record?.check_out) {
+            resumeReason = 'NOT_CHECKED_OUT';
+        }
         res.json({
             success: true,
             data: {
@@ -697,6 +926,14 @@ const getToday = async (req, res) => {
                     checkInSelfieUrl: record?.check_in_selfie_url || null,
                     checkOutAddress: record?.check_out_address || null,
                     checkOutSelfieUrl: record?.check_out_selfie_url || null,
+                    firstCheckoutTime: record?.first_checkout_time || null,
+                    resumeTime: record?.resume_time || null,
+                    finalCheckoutTime: record?.final_checkout_time || null,
+                    attendanceResumed: !!record?.attendance_resumed,
+                    resumeCount: record?.resume_count || 0,
+                    canResume,
+                    resumeExpiryTime,
+                    resumeReason,
                     holidayName: holiday ? holiday.name : null,
                     leaveType: leave ? leave.leave_type : null
                 },
@@ -779,7 +1016,12 @@ const getHistory = async (req, res) => {
                         checkInAddress: rec?.check_in_address || null,
                         checkInSelfieUrl: rec?.check_in_selfie_url || null,
                         checkOutAddress: rec?.check_out_address || null,
-                        checkOutSelfieUrl: rec?.check_out_selfie_url || null
+                        checkOutSelfieUrl: rec?.check_out_selfie_url || null,
+                        firstCheckoutTime: rec?.first_checkout_time || null,
+                        resumeTime: rec?.resume_time || null,
+                        finalCheckoutTime: rec?.final_checkout_time || null,
+                        attendanceResumed: !!rec?.attendance_resumed,
+                        resumeCount: rec?.resume_count || 0
                     });
                 }
             }

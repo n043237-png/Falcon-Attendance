@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getAttendance, getDailySummary } from '../controllers/adminController';
+import { getAttendance, getDailySummary, getAttendanceTimeline, regularizeAttendance } from '../controllers/adminController';
 import { getAttendanceReport } from '../controllers/adminReportController';
 import { getAdminLeaves, approveLeave, rejectLeave, revokeLeave, adjustEmployeeLeaveBalance, getLeaveAdjustmentHistory, getEmployeeLeaveBalance } from '../controllers/adminLeaveController';
 import { 
@@ -90,8 +90,9 @@ router.get('/reports/attendance-policy-pdf', async (req, res) => {
 });
 
 router.get('/attendance', getAttendance);
-
 router.get('/attendance/summary', getDailySummary);
+router.get('/attendance/:id/timeline', getAttendanceTimeline);
+router.post('/attendance/:id/regularize', regularizeAttendance);
 
 router.get('/leave/is-initialized', (req, res, next) => {
   import('../controllers/adminLeaveController').then(m => m.isInitialized(req, res)).catch(next);
